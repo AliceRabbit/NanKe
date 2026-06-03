@@ -1,6 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { BookOpen, Download, MessageSquare, RefreshCw, Search, Send, Settings2, Upload, UserRound } from '@lucide/svelte';
+  import {
+    BookOpen,
+    Download,
+    MessageSquare,
+    RefreshCw,
+    Search,
+    Send,
+    Settings2,
+    Upload,
+    UserRound,
+    X
+  } from '@lucide/svelte';
 
   type Profile = { id: string; name: string; provider: { type: string; model: string } };
   type Character = { id: string; name: string };
@@ -8,12 +19,14 @@
   type Conversation = { id: string; title: string; messages?: ChatMessage[] };
   type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string };
   type View = 'chat' | 'characters' | 'worldbooks' | 'profiles';
+  type Drawer = 'chats' | 'characters' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
 
   let profiles: Profile[] = [];
   let characters: Character[] = [];
   let worldBooks: WorldBook[] = [];
   let conversations: Conversation[] = [];
   let activeView: View = 'chat';
+  let activeDrawer: Drawer = null;
   let activeProfileId = '';
   let activeCharacterId = '';
   let activeConversationId = '';
@@ -28,9 +41,48 @@
   let newCharacterDescription = '';
   let newWorldBookName = '';
 
+  $: activeProfile = profiles.find((profile) => profile.id === activeProfileId);
+  $: activeCharacter = characters.find((character) => character.id === activeCharacterId);
+  $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
+  $: drawerTitle =
+    activeDrawer === 'chats'
+      ? 'Chats'
+      : activeDrawer === 'characters'
+        ? 'Characters'
+        : activeDrawer === 'worldbooks'
+          ? 'World Books'
+          : activeDrawer === 'profiles'
+            ? 'Profiles'
+            : activeDrawer === 'import'
+              ? 'Import'
+              : activeDrawer === 'inspector'
+                ? 'Inspector'
+                : '';
+  $: drawerIsRight = activeDrawer === 'import' || activeDrawer === 'inspector';
+
   onMount(() => {
     void refreshAll();
   });
+
+  function openLibrary(view: Exclude<View, 'chat'>) {
+    activeView = view;
+    activeDrawer = activeDrawer === view ? null : view;
+  }
+
+  function openDrawer(drawer: Exclude<Drawer, null>) {
+    activeDrawer = activeDrawer === drawer ? null : drawer;
+  }
+
+  function closeDrawer() {
+    activeDrawer = null;
+  }
+
+  function startNewConversation() {
+    activeConversationId = '';
+    messages = [];
+    activeView = 'chat';
+    closeDrawer();
+  }
 
   async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     const response = await fetch(url, init);
@@ -67,8 +119,10 @@
 
   async function loadConversation(id: string) {
     activeConversationId = id;
+    activeView = 'chat';
     const conversation = await fetchJson<Conversation>(`/api/conversations?id=${encodeURIComponent(id)}`);
     messages = conversation.messages ?? [];
+    closeDrawer();
   }
 
   async function sendMessage() {
@@ -126,6 +180,11 @@
     inspector = await response.text();
   }
 
+  async function openInspector() {
+    await inspectCurrentPrompt();
+    activeDrawer = 'inspector';
+  }
+
   async function runImport() {
     status = 'Importing';
     const data = importKind === 'chat-jsonl' ? importText : JSON.parse(importText);
@@ -176,80 +235,121 @@
 
 <main class="workspace">
   <aside class="rail" aria-label="Navigation">
-    <div class="brand">NanKe</div>
-    <button class="icon-button" class:active={activeView === 'chat'} title="Chat" aria-label="Chat" aria-pressed={activeView === 'chat'} on:click={() => (activeView = 'chat')}><MessageSquare size={20} /></button>
-    <button class="icon-button" class:active={activeView === 'characters'} title="Characters" aria-label="Characters" aria-pressed={activeView === 'characters'} on:click={() => (activeView = 'characters')}><UserRound size={20} /></button>
-    <button class="icon-button" class:active={activeView === 'worldbooks'} title="World Books" aria-label="World Books" aria-pressed={activeView === 'worldbooks'} on:click={() => (activeView = 'worldbooks')}><BookOpen size={20} /></button>
-    <button class="icon-button" class:active={activeView === 'profiles'} title="Profiles" aria-label="Profiles" aria-pressed={activeView === 'profiles'} on:click={() => (activeView = 'profiles')}><Settings2 size={20} /></button>
+    <div class="brand">NK</div>
+    <button
+      class="icon-button"
+      class:active={activeView === 'chat' && activeDrawer !== 'chats'}
+      title="Chat"
+      aria-label="Chat"
+      aria-pressed={activeView === 'chat' && activeDrawer !== 'chats'}
+      on:click={() => {
+        activeView = 'chat';
+        closeDrawer();
+      }}
+    >
+      <MessageSquare size={20} />
+    </button>
+    <button
+      class="icon-button"
+      class:active={activeDrawer === 'characters'}
+      title="Characters"
+      aria-label="Characters"
+      aria-pressed={activeDrawer === 'characters'}
+      on:click={() => openLibrary('characters')}
+    >
+      <UserRound size={20} />
+    </button>
+    <button
+      class="icon-button"
+      class:active={activeDrawer === 'worldbooks'}
+      title="World Books"
+      aria-label="World Books"
+      aria-pressed={activeDrawer === 'worldbooks'}
+      on:click={() => openLibrary('worldbooks')}
+    >
+      <BookOpen size={20} />
+    </button>
+    <button
+      class="icon-button"
+      class:active={activeDrawer === 'profiles'}
+      title="Profiles"
+      aria-label="Profiles"
+      aria-pressed={activeDrawer === 'profiles'}
+      on:click={() => openLibrary('profiles')}
+    >
+      <Settings2 size={20} />
+    </button>
+    <div class="rail-spacer"></div>
+    <button
+      class="icon-button"
+      class:active={activeDrawer === 'import'}
+      title="Import"
+      aria-label="Import"
+      aria-pressed={activeDrawer === 'import'}
+      on:click={() => openDrawer('import')}
+    >
+      <Upload size={20} />
+    </button>
+    <button
+      class="icon-button"
+      class:active={activeDrawer === 'inspector'}
+      title="Prompt Inspector"
+      aria-label="Prompt Inspector"
+      aria-pressed={activeDrawer === 'inspector'}
+      on:click={openInspector}
+    >
+      <Search size={20} />
+    </button>
   </aside>
 
-  <section class="sidebar">
-    <div class="section-title">
-      <span>{activeView === 'chat' ? 'Chats' : activeView === 'characters' ? 'Characters' : activeView === 'worldbooks' ? 'World Books' : 'Profiles'}</span>
-      <button class="ghost" on:click={refreshAll} title="Refresh" aria-label="Refresh"><RefreshCw size={16} /></button>
-    </div>
+  <section class="stage" aria-label="Chat workspace">
+    <header class="chatbar">
+      <div class="scene">
+        <button class="conversation-button" type="button" on:click={() => openDrawer('chats')}>
+          <MessageSquare size={16} />
+          <span>{activeConversation?.title ?? 'New Chat'}</span>
+        </button>
+        <div class="scene-meta" aria-live="polite">
+          <span>{activeCharacter?.name ?? 'No character'}</span>
+          <span>{activeProfile?.name ?? 'No profile'}</span>
+          <span>{status}</span>
+        </div>
+      </div>
 
-    <div class="item-list">
-      {#if activeView === 'chat'}
-        {#each conversations as conversation}
-          <button class:active={conversation.id === activeConversationId} on:click={() => loadConversation(conversation.id)}>
-            {conversation.title}
-          </button>
-        {/each}
-      {:else if activeView === 'characters'}
-        {#each characters as character}
-          <button class:active={character.id === activeCharacterId} on:click={() => (activeCharacterId = character.id)}>
-            {character.name}
-          </button>
-        {/each}
-      {:else if activeView === 'worldbooks'}
-        {#each worldBooks as worldBook}
-          <button>{worldBook.name}</button>
-        {/each}
-      {:else}
-        {#each profiles as profile}
-          <button class:active={profile.id === activeProfileId} on:click={() => (activeProfileId = profile.id)}>
-            {profile.name}
-          </button>
-        {/each}
-      {/if}
-    </div>
-
-    {#if activeView === 'chat'}
-      <div class="field">
-        <label for="profile">Profile</label>
-        <select id="profile" bind:value={activeProfileId}>
+      <div class="toolbar">
+        <select aria-label="Profile" bind:value={activeProfileId}>
           {#each profiles as profile}
             <option value={profile.id}>{profile.name} · {profile.provider.type}</option>
           {/each}
         </select>
-      </div>
 
-      <div class="field">
-        <label for="character">Character</label>
-        <select id="character" bind:value={activeCharacterId}>
+        <select aria-label="Character" bind:value={activeCharacterId}>
           <option value="">None</option>
           {#each characters as character}
             <option value={character.id}>{character.name}</option>
           {/each}
         </select>
+
+        <button class="tool-button" type="button" on:click={refreshAll} title="Refresh" aria-label="Refresh">
+          <RefreshCw size={17} />
+        </button>
+        <button class="tool-button" type="button" on:click={openInspector} title="Prompt Inspector" aria-label="Prompt Inspector">
+          <Search size={17} />
+        </button>
+        <button class="tool-button" type="button" on:click={() => openDrawer('import')} title="Import" aria-label="Import">
+          <Upload size={17} />
+        </button>
       </div>
-    {/if}
-  </section>
+    </header>
 
-  <section class="chat">
-    {#if activeView === 'chat'}
-      <header class="topbar">
-        <div>
-          <h1>Chat Workspace</h1>
-          <span>{status}</span>
-        </div>
-        <button class="secondary" on:click={inspectCurrentPrompt}><Search size={16} />Prompt Inspector</button>
-      </header>
-
-      <div class="messages">
+    <div class="messages" aria-live="polite">
+      <div class="message-stack">
         {#if messages.length === 0}
-          <div class="empty">Start a conversation.</div>
+          <div class="empty-state">
+            <MessageSquare size={28} />
+            <h1>{activeCharacter?.name ?? 'NanKe'}</h1>
+            <p>{activeProfile ? `${activeProfile.provider.type} · ${activeProfile.provider.model}` : 'No profile selected'}</p>
+          </div>
         {/if}
         {#each messages as message}
           <article class="message {message.role}">
@@ -258,132 +358,154 @@
           </article>
         {/each}
       </div>
+    </div>
 
-      <form class="composer" on:submit|preventDefault={sendMessage}>
-        <textarea bind:value={input} rows="3" placeholder="Message"></textarea>
-        <button class="primary" type="submit"><Send size={18} />Send</button>
-      </form>
-    {:else if activeView === 'characters'}
-      <header class="topbar">
-        <div>
-          <h1>Characters</h1>
-          <span>{characters.length} total</span>
-        </div>
+    <form class="composer" on:submit|preventDefault={sendMessage}>
+      <textarea bind:value={input} rows="3" placeholder="Message"></textarea>
+      <button class="primary" type="submit"><Send size={18} /><span>Send</span></button>
+    </form>
+  </section>
+
+  {#if activeDrawer}
+    <button class="scrim" type="button" aria-label="Close drawer" on:click={closeDrawer}></button>
+    <aside class="drawer" class:right={drawerIsRight} aria-label={drawerTitle}>
+      <header class="drawer-header">
+        <h2>{drawerTitle}</h2>
+        <button class="tool-button" type="button" title="Close" aria-label="Close" on:click={closeDrawer}>
+          <X size={18} />
+        </button>
       </header>
 
-      <div class="panel">
-        <form class="editor" on:submit|preventDefault={createCharacter}>
-          <input bind:value={newCharacterName} placeholder="Name" />
-          <textarea bind:value={newCharacterDescription} rows="6" placeholder="Description"></textarea>
-          <button class="primary" type="submit"><UserRound size={18} />Create</button>
-        </form>
-
-        <div class="panel-list">
-          {#each characters as character}
-            <article class="panel-item">
-              <strong>{character.name}</strong>
-              <span>{character.id}</span>
-            </article>
+      {#if activeDrawer === 'chats'}
+        <div class="drawer-actions">
+          <button class="secondary full" type="button" on:click={startNewConversation}>
+            <MessageSquare size={16} />New Chat
+          </button>
+        </div>
+        <div class="item-list">
+          {#each conversations as conversation}
+            <button
+              class="drawer-item"
+              class:active={conversation.id === activeConversationId}
+              type="button"
+              on:click={() => loadConversation(conversation.id)}
+            >
+              <strong>{conversation.title}</strong>
+              <span>{conversation.id}</span>
+            </button>
           {/each}
         </div>
-      </div>
-    {:else if activeView === 'worldbooks'}
-      <header class="topbar">
-        <div>
-          <h1>World Books</h1>
-          <span>{worldBooks.length} total</span>
-        </div>
-      </header>
-
-      <div class="panel">
-        <form class="editor" on:submit|preventDefault={createWorldBook}>
-          <input bind:value={newWorldBookName} placeholder="Name" />
-          <button class="primary" type="submit"><BookOpen size={18} />Create</button>
+      {:else if activeDrawer === 'characters'}
+        <form class="editor" on:submit|preventDefault={createCharacter}>
+          <input bind:value={newCharacterName} placeholder="Name" />
+          <textarea bind:value={newCharacterDescription} rows="5" placeholder="Description"></textarea>
+          <button class="primary full" type="submit"><UserRound size={16} />Create</button>
         </form>
 
-        <div class="panel-list">
+        <div class="item-list">
+          {#each characters as character}
+            <button
+              class="drawer-item"
+              class:active={character.id === activeCharacterId}
+              type="button"
+              on:click={() => (activeCharacterId = character.id)}
+            >
+              <strong>{character.name}</strong>
+              <span>{character.id}</span>
+            </button>
+          {/each}
+        </div>
+      {:else if activeDrawer === 'worldbooks'}
+        <form class="editor" on:submit|preventDefault={createWorldBook}>
+          <input bind:value={newWorldBookName} placeholder="Name" />
+          <button class="primary full" type="submit"><BookOpen size={16} />Create</button>
+        </form>
+
+        <div class="item-list">
           {#each worldBooks as worldBook}
-            <article class="panel-item">
+            <article class="drawer-card">
               <strong>{worldBook.name}</strong>
               <span>{worldBook.entries.length} entries</span>
             </article>
           {/each}
         </div>
-      </div>
-    {:else}
-      <header class="topbar">
-        <div>
-          <h1>Profiles</h1>
-          <span>{profiles.length} total</span>
-        </div>
-      </header>
-
-      <div class="panel">
-        <div class="panel-list">
+      {:else if activeDrawer === 'profiles'}
+        <div class="item-list">
           {#each profiles as profile}
-            <article class="panel-item">
+            <button
+              class="drawer-item"
+              class:active={profile.id === activeProfileId}
+              type="button"
+              on:click={() => (activeProfileId = profile.id)}
+            >
               <strong>{profile.name}</strong>
               <span>{profile.provider.type} · {profile.provider.model}</span>
-            </article>
+            </button>
           {/each}
         </div>
-      </div>
-    {/if}
-  </section>
-
-  <aside class="tools">
-    <section>
-      <div class="section-title">
-        <span>Import</span>
-        <Upload size={16} />
-      </div>
-      <select bind:value={importKind}>
-        <option value="preset">Preset</option>
-        <option value="character-card-json">Character JSON</option>
-        <option value="worldbook">World Book</option>
-        <option value="chat-jsonl">Chat JSONL</option>
-      </select>
-      <input bind:value={importName} placeholder="Name" />
-      <textarea bind:value={importText} rows="8" placeholder="JSON or JSONL"></textarea>
-      <button class="secondary full" on:click={runImport}><Download size={16} />Import</button>
-    </section>
-
-    <section>
-      <div class="section-title">
-        <span>Inspector</span>
-        <Search size={16} />
-      </div>
-      <pre>{inspector}</pre>
-    </section>
-  </aside>
+      {:else if activeDrawer === 'import'}
+        <div class="import-panel">
+          <select aria-label="Import kind" bind:value={importKind}>
+            <option value="preset">Preset</option>
+            <option value="character-card-json">Character JSON</option>
+            <option value="worldbook">World Book</option>
+            <option value="chat-jsonl">Chat JSONL</option>
+          </select>
+          <input bind:value={importName} placeholder="Name" />
+          <textarea bind:value={importText} rows="10" placeholder="JSON or JSONL"></textarea>
+          <button class="secondary full" type="button" on:click={runImport}><Download size={16} />Import</button>
+        </div>
+      {:else if activeDrawer === 'inspector'}
+        <div class="inspector-panel">
+          <button class="secondary full" type="button" on:click={inspectCurrentPrompt}><Search size={16} />Inspect</button>
+          <pre>{inspector}</pre>
+        </div>
+      {/if}
+    </aside>
+  {/if}
 </main>
 
 <style>
   .workspace {
     display: grid;
-    grid-template-columns: 64px 280px minmax(0, 1fr) 340px;
+    grid-template-columns: 64px minmax(0, 1fr);
     min-height: 100vh;
+    background: #f5f6f4;
+    color: #1e2420;
   }
 
   .rail {
+    position: sticky;
+    top: 0;
+    z-index: 40;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
-    padding: 16px 10px;
-    background: #26302a;
+    gap: 10px;
+    height: 100vh;
+    padding: 14px 10px;
+    background: #203229;
     color: #fff;
   }
 
   .brand {
-    writing-mode: vertical-rl;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: 8px;
+    color: #f5f3ee;
+    font-weight: 800;
     letter-spacing: 0;
-    font-weight: 700;
-    margin-bottom: 12px;
+  }
+
+  .rail-spacer {
+    flex: 1;
   }
 
   .icon-button,
-  .ghost {
+  .tool-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -395,69 +517,93 @@
     color: inherit;
   }
 
+  .tool-button {
+    border: 1px solid #d6d8d3;
+    background: #fff;
+    color: #26302a;
+  }
+
   .icon-button.active,
   .icon-button:hover {
-    background: #d8ece0;
+    background: #e0efe6;
     color: #183125;
   }
 
-  .sidebar,
-  .tools {
-    border-right: 1px solid #dcddd7;
-    background: #ffffff;
-    padding: 18px;
-    overflow: auto;
+  .tool-button:hover {
+    border-color: #a9c8b3;
+    background: #edf6f0;
   }
 
-  .tools {
-    border-right: 0;
-    border-left: 1px solid #dcddd7;
+  .stage {
+    min-width: 0;
+    min-height: 100vh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
-  .section-title,
-  .topbar {
+  .chatbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 16px;
+    min-height: 72px;
+    border-bottom: 1px solid #dfe1dc;
+    padding: 12px 20px;
+    background: #ffffff;
   }
 
-  .section-title {
-    font-weight: 700;
-    margin-bottom: 12px;
-  }
-
-  .item-list {
+  .scene {
     display: grid;
-    gap: 6px;
-    margin-bottom: 20px;
+    gap: 5px;
+    min-width: 0;
   }
 
-  .item-list button {
-    border: 1px solid transparent;
-    border-radius: 8px;
-    background: #f3f4ef;
-    padding: 10px;
-    text-align: left;
-    color: #27302b;
-  }
-
-  .item-list button.active,
-  .item-list button:hover {
-    border-color: #9dc7ad;
-    background: #e8f3ec;
-  }
-
-  .field,
-  .tools section {
-    display: grid;
+  .conversation-button {
+    display: inline-flex;
+    align-items: center;
     gap: 8px;
-    margin-bottom: 18px;
+    max-width: min(520px, 48vw);
+    border: 0;
+    border-radius: 8px;
+    padding: 7px 9px;
+    background: transparent;
+    color: #1f2924;
+    font: inherit;
+    font-weight: 700;
   }
 
-  label {
+  .conversation-button:hover {
+    background: #f0f2ee;
+  }
+
+  .conversation-button span,
+  .scene-meta span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .scene-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    color: #68716b;
     font-size: 13px;
-    color: #59645d;
+  }
+
+  .scene-meta span + span::before {
+    content: '/';
+    margin-right: 6px;
+    color: #a0a8a2;
+  }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 0;
   }
 
   select,
@@ -471,112 +617,94 @@
     padding: 10px 12px;
   }
 
+  .toolbar select {
+    width: auto;
+    max-width: 320px;
+    min-height: 40px;
+  }
+
   textarea {
     resize: vertical;
   }
 
-  .chat {
-    min-width: 0;
+  .messages {
+    min-height: 0;
+    overflow: auto;
+    padding: 24px;
+  }
+
+  .message-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: min(100%, 880px);
+    min-height: 100%;
+    margin: 0 auto;
+  }
+
+  .empty-state {
     display: grid;
-    grid-template-rows: auto 1fr auto;
-    background: #f7f7f4;
+    place-items: center;
+    align-content: center;
+    gap: 8px;
+    min-height: 52vh;
+    color: #66706a;
+    text-align: center;
   }
 
-  .topbar {
-    border-bottom: 1px solid #dcddd7;
-    padding: 16px 20px;
-    background: #ffffff;
-  }
-
-  h1 {
+  .empty-state h1 {
     margin: 0;
-    font-size: 20px;
+    color: #1e2420;
+    font-size: 24px;
     letter-spacing: 0;
   }
 
-  .topbar span {
-    font-size: 13px;
-    color: #59645d;
-  }
-
-  .messages {
-    overflow: auto;
-    padding: 20px;
-  }
-
-  .panel {
-    overflow: auto;
-    padding: 20px;
-  }
-
-  .editor {
-    display: grid;
-    gap: 10px;
-    max-width: 720px;
-    margin-bottom: 20px;
-  }
-
-  .panel-list {
-    display: grid;
-    gap: 10px;
-    max-width: 920px;
-  }
-
-  .panel-item {
-    display: grid;
-    gap: 6px;
-    border: 1px solid #dcddd7;
-    border-radius: 8px;
-    background: #fff;
-    padding: 12px 14px;
-  }
-
-  .panel-item span {
-    color: #59645d;
-    font-size: 13px;
+  .empty-state p {
+    margin: 0;
     overflow-wrap: anywhere;
   }
 
-  .empty {
-    color: #737b75;
-  }
-
   .message {
-    max-width: 760px;
+    width: min(100%, 760px);
+    border: 1px solid #dfe1dc;
     border-radius: 8px;
-    padding: 12px 14px;
-    margin-bottom: 12px;
-    border: 1px solid #dcddd7;
     background: #fff;
+    padding: 12px 14px;
+    box-shadow: 0 1px 0 rgb(31 36 33 / 4%);
   }
 
   .message.user {
-    margin-left: auto;
-    background: #e8f3ec;
-    border-color: #bed9c8;
+    align-self: flex-end;
+    border-color: #b6d2bf;
+    background: #eaf5ee;
+  }
+
+  .message.assistant {
+    align-self: flex-start;
   }
 
   .message strong {
     display: block;
+    margin-bottom: 6px;
+    color: #68716b;
     font-size: 12px;
     text-transform: uppercase;
-    color: #59645d;
-    margin-bottom: 6px;
   }
 
   .message p {
     margin: 0;
-    white-space: pre-wrap;
     overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
 
   .composer {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 820px) auto;
+    justify-content: center;
     gap: 12px;
-    border-top: 1px solid #dcddd7;
-    padding: 14px;
-    background: #ffffff;
+    border-top: 1px solid #dfe1dc;
+    padding: 14px 20px;
+    background: #fff;
   }
 
   .primary,
@@ -599,28 +727,171 @@
     color: #1f2421;
   }
 
+  .secondary:hover,
+  .primary:hover {
+    filter: brightness(0.98);
+  }
+
   .full {
     width: 100%;
   }
 
-  pre {
-    margin: 0;
-    max-height: 360px;
-    overflow: auto;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    font-size: 12px;
-    color: #303832;
+  .scrim {
+    position: fixed;
+    inset: 0 0 0 64px;
+    z-index: 20;
+    border: 0;
+    background: rgb(20 24 22 / 28%);
   }
 
-  @media (max-width: 1100px) {
+  .drawer {
+    position: fixed;
+    inset: 0 auto 0 64px;
+    z-index: 30;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    width: min(390px, calc(100vw - 64px));
+    border-right: 1px solid #d7dad4;
+    background: #ffffff;
+    box-shadow: 16px 0 36px rgb(28 36 31 / 14%);
+  }
+
+  .drawer.right {
+    inset: 0 0 0 auto;
+    width: min(440px, calc(100vw - 64px));
+    border-right: 0;
+    border-left: 1px solid #d7dad4;
+    box-shadow: -16px 0 36px rgb(28 36 31 / 14%);
+  }
+
+  .drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 64px;
+    border-bottom: 1px solid #e1e3de;
+    padding: 12px 16px;
+  }
+
+  .drawer-header h2 {
+    margin: 0;
+    font-size: 18px;
+    letter-spacing: 0;
+  }
+
+  .drawer-actions,
+  .editor,
+  .import-panel,
+  .inspector-panel {
+    display: grid;
+    gap: 10px;
+    padding: 16px;
+  }
+
+  .item-list {
+    display: grid;
+    gap: 8px;
+    min-height: 0;
+    overflow: auto;
+    padding: 0 16px 16px;
+  }
+
+  .drawer-item,
+  .drawer-card {
+    display: grid;
+    gap: 5px;
+    border: 1px solid #dfe1dc;
+    border-radius: 8px;
+    background: #fff;
+    padding: 11px 12px;
+    color: #202823;
+    text-align: left;
+  }
+
+  .drawer-item.active,
+  .drawer-item:hover {
+    border-color: #9dc7ad;
+    background: #edf6f0;
+  }
+
+  .drawer-item span,
+  .drawer-card span {
+    color: #6c756f;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  pre {
+    min-height: 260px;
+    max-height: 62vh;
+    margin: 0;
+    border: 1px solid #dfe1dc;
+    border-radius: 8px;
+    background: #f6f7f5;
+    color: #303832;
+    overflow: auto;
+    overflow-wrap: anywhere;
+    padding: 12px;
+    white-space: pre-wrap;
+    font-size: 12px;
+  }
+
+  @media (max-width: 860px) {
     .workspace {
       grid-template-columns: 56px minmax(0, 1fr);
     }
 
-    .sidebar,
-    .tools {
-      display: none;
+    .rail {
+      padding: 10px 8px;
+    }
+
+    .brand,
+    .icon-button,
+    .tool-button {
+      width: 40px;
+      height: 40px;
+    }
+
+    .chatbar {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .conversation-button {
+      max-width: 100%;
+    }
+
+    .toolbar {
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+
+    .toolbar select {
+      flex: 1 1 150px;
+      max-width: none;
+    }
+
+    .messages {
+      padding: 18px 12px;
+    }
+
+    .composer {
+      grid-template-columns: minmax(0, 1fr);
+      padding: 12px;
+    }
+
+    .scrim {
+      left: 56px;
+    }
+
+    .drawer {
+      left: 56px;
+      width: calc(100vw - 56px);
+    }
+
+    .drawer.right {
+      width: calc(100vw - 56px);
     }
   }
 </style>

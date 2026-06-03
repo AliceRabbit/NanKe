@@ -20,6 +20,7 @@
     Trash2,
     Upload,
     UserRound,
+    SquarePen,
     X
   } from '@lucide/svelte';
 
@@ -1170,43 +1171,33 @@
           <MessageSquare size={16} />
           <span>{activeConversation?.title ?? 'New Chat'}</span>
         </button>
-        <div class="scene-meta" aria-live="polite">
-          <span>{activeCharacter?.name ?? 'No character'}</span>
-          <span>{activePersona?.name ?? 'User'}</span>
-          <span>{activeProfile?.name ?? 'No profile'}</span>
-          <span>{status}</span>
-        </div>
       </div>
 
-      <div class="toolbar">
-        <select aria-label="Profile" bind:value={activeProfileId}>
-          {#each profiles as profile}
-            <option value={profile.id}>{profile.name} · {profile.provider.type}</option>
-          {/each}
-        </select>
+      <div class="context-strip" aria-label="Current context">
+        <button class="context-chip" type="button" on:click={() => openLibrary('characters')}>
+          <Bot size={15} />
+          <span>{activeCharacter?.name ?? 'No character'}</span>
+        </button>
+        <button class="context-chip" type="button" on:click={() => openLibrary('personas')}>
+          <UserRound size={15} />
+          <span>{activePersona?.name ?? 'User'}</span>
+        </button>
+        <button class="context-chip profile" type="button" on:click={() => openLibrary('profiles')}>
+          <Settings2 size={15} />
+          <span>{activeProfile ? `${activeProfile.name} · ${activeProfile.provider.model}` : 'No profile'}</span>
+        </button>
+        <span class="status-pill">{status}</span>
+      </div>
 
-        <select aria-label="Character" bind:value={activeCharacterId}>
-          <option value="">None</option>
-          {#each characters as character}
-            <option value={character.id}>{character.name}</option>
-          {/each}
-        </select>
-
-        <select aria-label="Persona" bind:value={activePersonaId}>
-          <option value="">User</option>
-          {#each personas as persona}
-            <option value={persona.id}>{persona.name}{persona.isDefault ? ' · Default' : ''}</option>
-          {/each}
-        </select>
-
-        <button class="tool-button" type="button" on:click={refreshAll} title="Refresh" aria-label="Refresh">
-          <RefreshCw size={17} />
+      <div class="toolbar" aria-label="Chat actions">
+        <button class="tool-button" type="button" on:click={startNewConversation} title="New chat" aria-label="New chat">
+          <SquarePen size={17} />
         </button>
         <button class="tool-button" type="button" on:click={openInspector} title="Prompt Inspector" aria-label="Prompt Inspector">
           <Search size={17} />
         </button>
-        <button class="tool-button" type="button" on:click={() => openDrawer('import')} title="Import" aria-label="Import">
-          <Upload size={17} />
+        <button class="tool-button" type="button" on:click={refreshAll} title="Refresh" aria-label="Refresh">
+          <RefreshCw size={17} />
         </button>
       </div>
     </header>
@@ -1973,14 +1964,14 @@
   }
 
   .chatbar {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(180px, 0.75fr) minmax(280px, 1.45fr) auto;
     align-items: center;
-    justify-content: space-between;
-    gap: 16px;
+    gap: 12px;
     min-height: 72px;
     border-bottom: 1px solid #dfe1dc;
     padding: 12px 20px;
-    background: #ffffff;
+    background: #fbfcfa;
   }
 
   .scene {
@@ -1993,11 +1984,11 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    max-width: min(520px, 48vw);
-    border: 0;
+    max-width: 100%;
+    border: 1px solid #e0e4df;
     border-radius: 8px;
-    padding: 7px 9px;
-    background: transparent;
+    padding: 9px 10px;
+    background: #fff;
     color: #1f2924;
     font: inherit;
     font-weight: 700;
@@ -2008,25 +1999,56 @@
   }
 
   .conversation-button span,
-  .scene-meta span {
+  .context-chip span,
+  .status-pill {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .scene-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    color: #68716b;
-    font-size: 13px;
+  .context-strip {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 0.7fr) minmax(0, 1.25fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
   }
 
-  .scene-meta span + span::before {
-    content: '/';
-    margin-right: 6px;
-    color: #a0a8a2;
+  .context-chip,
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 40px;
+    border: 1px solid #e0e4df;
+    border-radius: 8px;
+    background: #fff;
+    color: #26302a;
+    padding: 8px 10px;
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .context-chip:hover,
+  .context-chip:focus-visible {
+    border-color: #a9c8b3;
+    background: #edf6f0;
+    outline: 0;
+  }
+
+  .context-chip.profile {
+    color: #1c4d35;
+  }
+
+  .status-pill {
+    justify-content: center;
+    min-width: 78px;
+    border-color: #bfd5c7;
+    background: #edf6f0;
+    color: #1c4d35;
+    font-weight: 700;
   }
 
   .toolbar {
@@ -2046,12 +2068,6 @@
     background: #fff;
     color: #1f2421;
     padding: 10px 12px;
-  }
-
-  .toolbar select {
-    width: auto;
-    max-width: 320px;
-    min-height: 40px;
   }
 
   textarea {
@@ -3165,22 +3181,26 @@
     }
 
     .chatbar {
+      grid-template-columns: minmax(0, 1fr);
       align-items: stretch;
-      flex-direction: column;
     }
 
     .conversation-button {
       max-width: 100%;
     }
 
-    .toolbar {
-      flex-wrap: wrap;
-      justify-content: flex-start;
+    .context-strip {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .toolbar select {
-      flex: 1 1 150px;
-      max-width: none;
+    .context-chip.profile,
+    .status-pill {
+      grid-column: auto;
+    }
+
+    .toolbar {
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
     .messages {

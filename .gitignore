@@ -1,0 +1,15 @@
+.svelte-kit/
+.vercel/
+build/
+node_modules/
+coverage/
+playwright-report/
+test-results/
+.nanke/
+data/
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example

@@ -1,0 +1,61 @@
+import { Buffer } from 'node:buffer';
+import {
+  importSillyTavernChatJsonl,
+  importSillyTavernCharacterCard,
+  importSillyTavernPreset,
+  importSillyTavernWorldBook,
+  readSillyTavernCardJsonFromPng
+} from '$lib/compat/sillytavern';
+import { createConversation } from '$lib/schemas/conversation';
+import type { createRequestContext } from '$lib/server/request-context';
+import { AppError } from '$lib/server/errors';
+
+export type ImportKind = 'character-card-json' | 'character-card-png' | 'worldbook' | 'preset' | 'chat-jsonl';
+
+export class ImportAppService {
+  constructor(private readonly context: ReturnType<typeof createRequestContext>) {}
+
+  import(kind: ImportKind, data: unknown, name?: string) {
+    if (kind === 'character-card-json') {
+      const { character, report } = importSillyTavernCharacterCard(data);
+      const saved = this.context.characters.save(character);
+      this.context.importReports.save(report);
+      return { type: 'character', item: saved, report };
+    }
+
+    if (kind === 'character-card-png') {
+      if (typeof data !== 'string') throw new AppError('PNG import expects base64 data.', 400, 'invalid_import_data');
+      const raw = readSillyTavernCardJsonFromPng(Buffer.from(data, 'base64'));
+      const { character, report } = importSillyTavernCharacterCard(raw);
+      const saved = this.context.characters.save(character);
+      this.context.importReports.save(report);
+      return { type: 'character', item: saved, report };
+    }
+
+    if (kind === 'worldbook') {
+      const { worldBook, report } = importSillyTavernWorldBook(data, name);
+      const saved = this.context.worldBooks.save(worldBook);
+      this.context.importReports.save(report);
+      return { type: 'worldbook', item: saved, report };
+    }
+
+    if (kind === 'preset') {
+      const { profile, report, kind: presetKind } = importSillyTavernPreset(data);
+      const saved = this.context.profiles.save(profile);
+      this.context.importReports.save(report);
+      return { type: 'profile', presetKind, item: saved, report };
+    }
+
+    if (kind === 'chat-jsonl') {
+      if (typeof data !== 'string') throw new AppError('Chat JSONL import expects string data.', 400, 'invalid_import_data');
+      const conversation = this.context.conversations.save(createConversation({ title: name ?? 'Imported Chat' }));
+      const { messages, metadata, report } = importSillyTavernChatJsonl(data, conversation.id);
+      for (const message of messages) this.context.conversations.appendMessage(message);
+      const saved = this.context.conversations.save({ ...conversation, metadata });
+      this.context.importReports.save(report);
+      return { type: 'conversation', item: saved, messages, report };
+    }
+
+    throw new AppError(`Unsupported import kind: ${kind}`, 400, 'unsupported_import_kind');
+  }
+}

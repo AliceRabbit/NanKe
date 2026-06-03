@@ -1,0 +1,22 @@
+import { json } from '@sveltejs/kit';
+import { createCharacter } from '$lib/schemas/character';
+import { createRequestContext } from '$lib/server/request-context';
+import { errorResponse } from '$lib/server/errors';
+
+export function GET() {
+  try {
+    return json(createRequestContext().characters.list());
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function POST({ request }) {
+  try {
+    const body = await request.json();
+    const character = createCharacter(body);
+    return json(createRequestContext().characters.save(character), { status: 201 });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}

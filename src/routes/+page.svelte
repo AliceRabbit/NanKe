@@ -1,14 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
+    ArrowDown,
+    ArrowUp,
     Bot,
     BookOpen,
     Copy,
     Download,
     GripHorizontal,
     MessageSquare,
+    Pencil,
     Plus,
     RefreshCw,
+    RotateCcw,
     Search,
     Send,
     Save,
@@ -143,6 +147,8 @@
     'custom'
   ];
   const promptRoles: PromptRole[] = ['system', 'user', 'assistant'];
+  const promptTriggerOptions = ['normal', 'continue', 'impersonate', 'swipe', 'regenerate', 'quiet'];
+  const maxContextTokens = 2_000_000;
 
   let profiles: Profile[] = [];
   let characters: Character[] = [];
@@ -204,6 +210,8 @@
   let profileDraftSlots: PromptSlot[] = [];
   let promptSlotQuery = '';
   let activePromptSlotId = '';
+  let promptEditorSlotId = '';
+  let promptEditorInitialSlot: PromptSlot | null = null;
 
   $: activeProfile = profiles.find((profile) => profile.id === activeProfileId);
   $: activeProfileStats = profileStats(activeProfile);
@@ -211,6 +219,7 @@
   $: draftPromptStats = promptSlotStats(profileDraftSlots);
   $: filteredPromptSlots = filterPromptSlots(profileDraftSlots, promptSlotQuery);
   $: activePromptSlot = profileDraftSlots.find((slot) => slot.id === activePromptSlotId);
+  $: promptEditorSlot = profileDraftSlots.find((slot) => slot.id === promptEditorSlotId);
   $: activeCharacter = characters.find((character) => character.id === activeCharacterId);
   $: activePersona = personas.find((persona) => persona.id === activePersonaId);
   $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
@@ -236,6 +245,10 @@
   }
   $: if (profileDraftSlots.length && !profileDraftSlots.some((slot) => slot.id === activePromptSlotId)) {
     activePromptSlotId = profileDraftSlots[0].id;
+  }
+  $: if (promptEditorSlotId && !profileDraftSlots.some((slot) => slot.id === promptEditorSlotId)) {
+    promptEditorSlotId = '';
+    promptEditorInitialSlot = null;
   }
   $: if (activePersonaId !== personaDraftId) {
     personaDraftId = activePersonaId;
@@ -386,6 +399,8 @@
       profileDraftSlots = [];
       activePromptSlotId = '';
       promptSlotQuery = '';
+      promptEditorSlotId = '';
+      promptEditorInitialSlot = null;
       return;
     }
 
@@ -417,6 +432,8 @@
     profileDraftSlots = clonePromptSlots(profile.prompt?.slots);
     activePromptSlotId = profileDraftSlots[0]?.id ?? '';
     promptSlotQuery = '';
+    promptEditorSlotId = '';
+    promptEditorInitialSlot = null;
   }
 
   function promptSlotStats(slots: PromptSlot[]) {
@@ -560,10 +577,10 @@
   }
 
   async function saveActiveProfile() {
-    if (!activeProfile) return;
+    if (!activeProfile) return false;
     if (!profileDraftName.trim()) {
       status = 'Profile name required';
-      return;
+      return false;
     }
 
     status = 'Saving';
@@ -573,9 +590,11 @@
       activeProfileId = saved.id;
       loadProfileDraft(saved);
       status = 'Ready';
+      return true;
     } catch (error) {
       console.error(error);
       status = 'Profile save failed';
+      return false;
     }
   }
 
@@ -620,6 +639,30 @@
     return parts.join(' · ');
   }
 
+  function slotKind(slot: PromptSlot) {
+    if (slot.injection?.position === 'absolute') return 'In-chat';
+    if (slot.legacy?.marker) return 'Marker';
+    if (slot.legacy?.systemPrompt && slot.legacy?.forbidOverrides) return 'Important';
+    if (slot.legacy?.systemPrompt) return 'System';
+    if (slot.source === 'custom') return 'Custom';
+    return 'Runtime';
+  }
+
+  function slotTokenEstimate(slot: PromptSlot) {
+    const contentLength = (slot.content ?? '').length;
+    if (!contentLength) return '-';
+    return `~${Math.max(1, Math.ceil(contentLength / 4))}`;
+  }
+
+  function isFirstPromptSlot(slot: PromptSlot) {
+    return profileDraftSlots.findIndex((item) => item.id === slot.id) <= 0;
+  }
+
+  function isLastPromptSlot(slot: PromptSlot) {
+    const index = profileDraftSlots.findIndex((item) => item.id === slot.id);
+    return index < 0 || index >= profileDraftSlots.length - 1;
+  }
+
   function canRemovePromptSlot(slot: PromptSlot) {
     return slot.source === 'custom' && profileDraftSlots.length > 1;
   }
@@ -657,10 +700,37 @@
     if (!slot || !canRemovePromptSlot(slot)) return;
     profileDraftSlots = profileDraftSlots.filter((item) => item.id !== slot.id);
     activePromptSlotId = profileDraftSlots[0]?.id ?? '';
+    if (promptEditorSlotId === slot.id) {
+      promptEditorSlotId = '';
+      promptEditorInitialSlot = null;
+    }
+  }
+
+  function moveDraftPromptSlot(slot: PromptSlot | undefined, direction: -1 | 1) {
+    if (!slot) return;
+    const index = profileDraftSlots.findIndex((item) => item.id === slot.id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= profileDraftSlots.length) return;
+    const next = [...profileDraftSlots];
+    const [item] = next.splice(index, 1);
+    next.splice(nextIndex, 0, item);
+    profileDraftSlots = next;
+    activePromptSlotId = slot.id;
   }
 
   function updateDraftSlot(id: string, patch: Partial<PromptSlot>) {
     profileDraftSlots = profileDraftSlots.map((slot) => (slot.id === id ? { ...slot, ...patch } : slot));
+  }
+
+  function replaceDraftSlot(slot: PromptSlot) {
+    profileDraftSlots = profileDraftSlots.map((item) => (item.id === slot.id ? structuredClone(slot) : item));
+  }
+
+  function updateDraftSlotLegacy(id: string, patch: Partial<NonNullable<PromptSlot['legacy']>>) {
+    profileDraftSlots = profileDraftSlots.map((slot) => {
+      if (slot.id !== id || !slot.legacy) return slot;
+      return { ...slot, legacy: { ...slot.legacy, ...patch } };
+    });
   }
 
   function updateDraftSlotInjection(id: string, patch: NonNullable<PromptSlot['injection']> | undefined) {
@@ -677,6 +747,54 @@
         }
       };
     });
+  }
+
+  function setPromptInjectionPosition(slot: PromptSlot, position: 'none' | 'relative' | 'absolute') {
+    if (position === 'none') {
+      updateDraftSlotInjection(slot.id, undefined);
+      return;
+    }
+    updateDraftSlotInjection(slot.id, {
+      position,
+      depth: slot.injection?.depth ?? 4,
+      order: slot.injection?.order ?? 100,
+      triggers: slot.injection?.triggers ?? []
+    });
+  }
+
+  function togglePromptTrigger(slot: PromptSlot, trigger: string) {
+    const triggers = new Set(slot.injection?.triggers ?? []);
+    if (triggers.has(trigger)) triggers.delete(trigger);
+    else triggers.add(trigger);
+    updateDraftSlotInjection(slot.id, {
+      position: slot.injection?.position ?? 'relative',
+      depth: slot.injection?.depth ?? 4,
+      order: slot.injection?.order ?? 100,
+      triggers: [...triggers]
+    });
+  }
+
+  function openPromptEditor(slot: PromptSlot | undefined = activePromptSlot) {
+    if (!slot) return;
+    activePromptSlotId = slot.id;
+    promptEditorSlotId = slot.id;
+    promptEditorInitialSlot = structuredClone(slot);
+  }
+
+  function closePromptEditor() {
+    promptEditorSlotId = '';
+    promptEditorInitialSlot = null;
+  }
+
+  function resetPromptEditor() {
+    if (!promptEditorInitialSlot) return;
+    replaceDraftSlot(promptEditorInitialSlot);
+    activePromptSlotId = promptEditorInitialSlot.id;
+  }
+
+  async function savePromptEditor() {
+    const saved = await saveActiveProfile();
+    if (saved) closePromptEditor();
   }
 
   function exportActiveProfile() {
@@ -1422,8 +1540,24 @@
                       <output>{profileDraftContextTokens || '8192'}</output>
                     </span>
                     <span class="sampler-control-body">
-                      <input class="sampler-range" type="range" min="1024" max="32768" step="512" value={profileDraftContextTokens || '8192'} on:input={(event) => (profileDraftContextTokens = (event.currentTarget as HTMLInputElement).value)} />
-                      <input class="sampler-number" value={profileDraftContextTokens} inputmode="numeric" placeholder="8192" on:input={(event) => (profileDraftContextTokens = (event.currentTarget as HTMLInputElement).value)} />
+                      <input
+                        class="sampler-range"
+                        type="range"
+                        min="1024"
+                        max={maxContextTokens}
+                        step="1024"
+                        value={profileDraftContextTokens || '8192'}
+                        on:input={(event) => (profileDraftContextTokens = (event.currentTarget as HTMLInputElement).value)}
+                      />
+                      <input
+                        class="sampler-number"
+                        value={profileDraftContextTokens}
+                        inputmode="numeric"
+                        min="1024"
+                        max={maxContextTokens}
+                        placeholder="8192"
+                        on:input={(event) => (profileDraftContextTokens = (event.currentTarget as HTMLInputElement).value)}
+                      />
                     </span>
                   </label>
                 </div>
@@ -1495,158 +1629,205 @@
                   <strong>Prompt Manager</strong>
                   <span>{draftPromptStats.enabled} enabled · {draftPromptStats.ordered} ordered · {draftPromptStats.total} total</span>
                 </div>
-                <button class="tool-button" type="button" on:click={addDraftPromptSlot} title="Add prompt" aria-label="Add prompt">
-                  <Plus size={16} />
-                </button>
+                <div class="preset-actions">
+                  <button class="tool-button" type="button" on:click={addDraftPromptSlot} title="Add prompt" aria-label="Add prompt">
+                    <Plus size={16} />
+                  </button>
+                  <button class="tool-button" type="button" on:click={() => openPromptEditor(activePromptSlot)} title="Edit selected prompt" aria-label="Edit selected prompt" disabled={!activePromptSlot}>
+                    <Pencil size={16} />
+                  </button>
+                  <button class="tool-button" type="button" on:click={() => duplicateDraftPromptSlot(activePromptSlot)} title="Duplicate selected prompt" aria-label="Duplicate selected prompt" disabled={!activePromptSlot}>
+                    <Copy size={16} />
+                  </button>
+                </div>
               </div>
 
-              <input class="profile-search" bind:value={promptSlotQuery} placeholder="Search prompts" aria-label="Search prompts" />
-
-              <div class="prompt-manager-grid">
-                <div class="prompt-slot-list" aria-label="Prompt slots">
-                  {#each filteredPromptSlots as slot}
-                    <div class="prompt-slot-row" class:active={slot.id === activePromptSlotId}>
-                      <input
-                        class="prompt-slot-toggle"
-                        type="checkbox"
-                        checked={slot.enabled !== false}
-                        title="Toggle prompt"
-                        aria-label={`Toggle ${slot.label || slot.id}`}
-                        on:change={(event) => updateDraftSlot(slot.id, { enabled: (event.currentTarget as HTMLInputElement).checked })}
-                      />
-                      <button type="button" on:click={() => (activePromptSlotId = slot.id)}>
-                        <strong>{slot.label || slot.id}</strong>
-                        <span>{slotMeta(slot)}</span>
-                      </button>
-                    </div>
-                  {:else}
-                    <div class="drawer-empty">No matching prompts</div>
-                  {/each}
-                </div>
-
+              <div class="prompt-manager-toolbar">
+                <input class="profile-search" bind:value={promptSlotQuery} placeholder="Search prompts" aria-label="Search prompts" />
                 {#if activePromptSlot}
-                  <div class="prompt-slot-editor">
-                    <div class="prompt-slot-editor-header">
-                      <div>
-                        <strong>{activePromptSlot.label || activePromptSlot.id}</strong>
-                        <span>{activePromptSlot.legacy?.identifier ?? activePromptSlot.id}</span>
-                      </div>
-                      <div class="preset-actions">
-                        <button class="tool-button" type="button" on:click={() => duplicateDraftPromptSlot(activePromptSlot)} title="Duplicate prompt" aria-label="Duplicate prompt">
-                          <Copy size={16} />
-                        </button>
-                        <button
-                          class="tool-button"
-                          type="button"
-                          on:click={() => removeDraftPromptSlot(activePromptSlot)}
-                          title="Remove prompt"
-                          aria-label="Remove prompt"
-                          disabled={!canRemovePromptSlot(activePromptSlot)}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="profile-field-grid">
-                      <label>
-                        <span>Label</span>
-                        <input
-                          value={activePromptSlot.label ?? ''}
-                          on:input={(event) => updateDraftSlot(activePromptSlot.id, { label: (event.currentTarget as HTMLInputElement).value })}
-                        />
-                      </label>
-                      <label>
-                        <span>Source</span>
-                        <select
-                          value={activePromptSlot.source}
-                          on:change={(event) => updateDraftSlot(activePromptSlot.id, { source: (event.currentTarget as HTMLSelectElement).value as PromptSlotSource })}
-                        >
-                          {#each promptSources as source}
-                            <option value={source}>{source}</option>
-                          {/each}
-                        </select>
-                      </label>
-                      <label>
-                        <span>Role</span>
-                        <select value={activePromptSlot.role} on:change={(event) => updateDraftSlot(activePromptSlot.id, { role: (event.currentTarget as HTMLSelectElement).value as PromptRole })}>
-                          {#each promptRoles as role}
-                            <option value={role}>{role}</option>
-                          {/each}
-                        </select>
-                      </label>
-                      <label>
-                        <span>Injection</span>
-                        <select
-                          value={activePromptSlot.injection?.position ?? 'none'}
-                          on:change={(event) => {
-                            const value = (event.currentTarget as HTMLSelectElement).value;
-                            updateDraftSlotInjection(activePromptSlot.id, value === 'none' ? undefined : { position: value as 'relative' | 'absolute' });
-                          }}
-                        >
-                          <option value="none">None</option>
-                          <option value="relative">Relative</option>
-                          <option value="absolute">In-chat</option>
-                        </select>
-                      </label>
-                    </div>
-
-                    {#if activePromptSlot.injection}
-                      <div class="profile-field-grid compact">
-                        <label>
-                          <span>Depth</span>
-                          <input
-                            value={activePromptSlot.injection.depth ?? 4}
-                            inputmode="numeric"
-                            on:input={(event) =>
-                              updateDraftSlotInjection(activePromptSlot.id, {
-                                ...activePromptSlot.injection,
-                                depth: optionalInteger((event.currentTarget as HTMLInputElement).value) ?? 0
-                              })}
-                          />
-                        </label>
-                        <label>
-                          <span>Order</span>
-                          <input
-                            value={activePromptSlot.injection.order ?? 100}
-                            inputmode="numeric"
-                            on:input={(event) =>
-                              updateDraftSlotInjection(activePromptSlot.id, {
-                                ...activePromptSlot.injection,
-                                order: optionalNumber((event.currentTarget as HTMLInputElement).value) ?? 100
-                              })}
-                          />
-                        </label>
-                      </div>
-                      <label class="profile-textarea-label">
-                        <span>Triggers</span>
-                        <textarea
-                          rows="2"
-                          value={(activePromptSlot.injection.triggers ?? []).join('\n')}
-                          on:input={(event) =>
-                            updateDraftSlotInjection(activePromptSlot.id, {
-                              ...activePromptSlot.injection,
-                              triggers: (event.currentTarget as HTMLTextAreaElement).value
-                                .split('\n')
-                                .map((item) => item.trim())
-                                .filter(Boolean)
-                            })}
-                        ></textarea>
-                      </label>
-                    {/if}
-
-                    <label class="profile-textarea-label prompt-content-label">
-                      <span>Prompt</span>
-                      <textarea
-                        rows="10"
-                        value={activePromptSlot.content ?? ''}
-                        on:input={(event) => updateDraftSlot(activePromptSlot.id, { content: (event.currentTarget as HTMLTextAreaElement).value })}
-                      ></textarea>
-                    </label>
+                  <div class="prompt-selection-summary">
+                    <strong>{activePromptSlot.label || activePromptSlot.id}</strong>
+                    <span>{slotMeta(activePromptSlot)} · {slotTokenEstimate(activePromptSlot)} tokens</span>
                   </div>
                 {/if}
               </div>
+
+              <div class="prompt-slot-list" aria-label="Prompt slots">
+                <div class="prompt-slot-list-header" aria-hidden="true">
+                  <span></span>
+                  <span>Prompt</span>
+                  <span>Type</span>
+                  <span>Tokens</span>
+                  <span>Actions</span>
+                </div>
+                {#each filteredPromptSlots as slot}
+                  <article class="prompt-slot-row" class:active={slot.id === activePromptSlotId}>
+                    <span class="prompt-slot-grip" title="Order">
+                      <GripHorizontal size={14} />
+                    </span>
+                    <input
+                      class="prompt-slot-toggle"
+                      type="checkbox"
+                      checked={slot.enabled !== false}
+                      title="Toggle prompt"
+                      aria-label={`Toggle ${slot.label || slot.id}`}
+                      on:change={(event) => updateDraftSlot(slot.id, { enabled: (event.currentTarget as HTMLInputElement).checked })}
+                    />
+                    <button class="prompt-slot-main" type="button" on:click={() => (activePromptSlotId = slot.id)}>
+                      <strong>{slot.label || slot.id}</strong>
+                      <span>{slotMeta(slot)}</span>
+                    </button>
+                    <span class="prompt-kind-badge">{slotKind(slot)}</span>
+                    <span class="prompt-token-count">{slotTokenEstimate(slot)}</span>
+                    <span class="prompt-row-actions">
+                      <button type="button" on:click={() => moveDraftPromptSlot(slot, -1)} title="Move up" aria-label={`Move ${slot.label || slot.id} up`} disabled={isFirstPromptSlot(slot)}>
+                        <ArrowUp size={14} />
+                      </button>
+                      <button type="button" on:click={() => moveDraftPromptSlot(slot, 1)} title="Move down" aria-label={`Move ${slot.label || slot.id} down`} disabled={isLastPromptSlot(slot)}>
+                        <ArrowDown size={14} />
+                      </button>
+                      <button type="button" on:click={() => openPromptEditor(slot)} title="Edit prompt" aria-label={`Edit ${slot.label || slot.id}`}>
+                        <Pencil size={14} />
+                      </button>
+                      <button type="button" on:click={() => duplicateDraftPromptSlot(slot)} title="Duplicate prompt" aria-label={`Duplicate ${slot.label || slot.id}`}>
+                        <Copy size={14} />
+                      </button>
+                      <button type="button" on:click={() => removeDraftPromptSlot(slot)} title="Remove prompt" aria-label={`Remove ${slot.label || slot.id}`} disabled={!canRemovePromptSlot(slot)}>
+                        <Trash2 size={14} />
+                      </button>
+                    </span>
+                  </article>
+                {:else}
+                  <div class="drawer-empty">No matching prompts</div>
+                {/each}
+              </div>
             </section>
+
+            {#if promptEditorSlot}
+              <div class="prompt-editor-overlay" role="dialog" aria-modal="true" aria-label="Edit prompt">
+                <form class="prompt-editor-window" on:submit|preventDefault={savePromptEditor}>
+                  <header class="prompt-editor-titlebar">
+                    <div>
+                      <h3>Edit Prompt</h3>
+                      <span>{promptEditorSlot.legacy?.identifier ?? promptEditorSlot.id} · {slotKind(promptEditorSlot)} · {slotTokenEstimate(promptEditorSlot)} tokens</span>
+                    </div>
+                    <div class="preset-actions">
+                      <button class="tool-button" type="button" on:click={resetPromptEditor} title="Reset prompt" aria-label="Reset prompt">
+                        <RotateCcw size={16} />
+                      </button>
+                      <button class="tool-button" type="submit" title="Save prompt" aria-label="Save prompt">
+                        <Save size={16} />
+                      </button>
+                      <button class="tool-button" type="button" on:click={closePromptEditor} title="Close prompt editor" aria-label="Close prompt editor">
+                        <X size={16} />
+                      </button>
+                    </div>
+                  </header>
+
+                  <div class="prompt-editor-fields">
+                    <label>
+                      <span>Name</span>
+                      <input value={promptEditorSlot.label ?? ''} on:input={(event) => updateDraftSlot(promptEditorSlot.id, { label: (event.currentTarget as HTMLInputElement).value })} />
+                    </label>
+                    <div class="segmented-field">
+                      <span>Role</span>
+                      <div class="mini-segment three" aria-label="Prompt role">
+                        {#each promptRoles as role}
+                          <button class:active={promptEditorSlot.role === role} type="button" on:click={() => updateDraftSlot(promptEditorSlot.id, { role })}>
+                            {role}
+                          </button>
+                        {/each}
+                      </div>
+                    </div>
+                    <label>
+                      <span>Source</span>
+                      <select value={promptEditorSlot.source} on:change={(event) => updateDraftSlot(promptEditorSlot.id, { source: (event.currentTarget as HTMLSelectElement).value as PromptSlotSource })}>
+                        {#each promptSources as source}
+                          <option value={source}>{source}</option>
+                        {/each}
+                      </select>
+                    </label>
+                    <div class="segmented-field">
+                      <span>Position</span>
+                      <div class="mini-segment three" aria-label="Prompt injection position">
+                        <button class:active={!promptEditorSlot.injection} type="button" on:click={() => setPromptInjectionPosition(promptEditorSlot, 'none')}>None</button>
+                        <button class:active={promptEditorSlot.injection?.position === 'relative'} type="button" on:click={() => setPromptInjectionPosition(promptEditorSlot, 'relative')}>Relative</button>
+                        <button class:active={promptEditorSlot.injection?.position === 'absolute'} type="button" on:click={() => setPromptInjectionPosition(promptEditorSlot, 'absolute')}>In-chat</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {#if promptEditorSlot.injection}
+                    <div class="prompt-editor-fields compact">
+                      <label>
+                        <span>Depth</span>
+                        <input
+                          value={promptEditorSlot.injection.depth ?? 4}
+                          inputmode="numeric"
+                          on:input={(event) =>
+                            updateDraftSlotInjection(promptEditorSlot.id, {
+                              ...promptEditorSlot.injection,
+                              depth: optionalInteger((event.currentTarget as HTMLInputElement).value) ?? 0
+                            })}
+                        />
+                      </label>
+                      <label>
+                        <span>Order</span>
+                        <input
+                          value={promptEditorSlot.injection.order ?? 100}
+                          inputmode="numeric"
+                          on:input={(event) =>
+                            updateDraftSlotInjection(promptEditorSlot.id, {
+                              ...promptEditorSlot.injection,
+                              order: optionalNumber((event.currentTarget as HTMLInputElement).value) ?? 100
+                            })}
+                        />
+                      </label>
+                    </div>
+                  {/if}
+
+                  <div class="prompt-trigger-panel">
+                    <span>Triggers</span>
+                    <div class="prompt-trigger-options" aria-label="Generation triggers">
+                      {#each promptTriggerOptions as trigger}
+                        <button class:active={(promptEditorSlot.injection?.triggers ?? []).includes(trigger)} type="button" on:click={() => togglePromptTrigger(promptEditorSlot, trigger)}>
+                          {trigger}
+                        </button>
+                      {/each}
+                    </div>
+                  </div>
+
+                  <div class="prompt-editor-source">
+                    <span><strong>Source:</strong> {promptEditorSlot.legacy?.source === 'sillytavern' ? 'SillyTavern preset' : 'NanKe profile'}</span>
+                    <label class="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={promptEditorSlot.legacy?.forbidOverrides ?? false}
+                        disabled={!promptEditorSlot.legacy}
+                        on:change={(event) => updateDraftSlotLegacy(promptEditorSlot.id, { forbidOverrides: (event.currentTarget as HTMLInputElement).checked })}
+                      />
+                      <span>Forbid Overrides</span>
+                    </label>
+                  </div>
+
+                  <label class="profile-textarea-label prompt-content-label">
+                    <span>Prompt</span>
+                    <textarea
+                      rows="14"
+                      value={promptEditorSlot.content ?? ''}
+                      placeholder="The prompt to be sent."
+                      on:input={(event) => updateDraftSlot(promptEditorSlot.id, { content: (event.currentTarget as HTMLTextAreaElement).value })}
+                    ></textarea>
+                  </label>
+
+                  <footer class="prompt-editor-footer">
+                    <button class="secondary" type="button" on:click={closePromptEditor}><X size={16} />Close</button>
+                    <button class="secondary" type="button" on:click={resetPromptEditor}><RotateCcw size={16} />Reset</button>
+                    <button class="primary" type="submit"><Save size={16} />Save</button>
+                  </footer>
+                </form>
+              </div>
+            {/if}
           {/if}
 
           <section class="profile-list-section" aria-label="Profiles">
@@ -2407,7 +2588,7 @@
 
   .profile-editor-header,
   .prompt-manager-header,
-  .prompt-slot-editor-header {
+  .prompt-editor-titlebar {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -2416,7 +2597,7 @@
 
   .profile-editor-header div,
   .prompt-manager-header div,
-  .prompt-slot-editor-header div {
+  .prompt-editor-titlebar div {
     display: grid;
     min-width: 0;
     gap: 3px;
@@ -2424,8 +2605,7 @@
 
   .profile-editor-header span,
   .prompt-manager-header span,
-  .prompt-slot-editor-header span,
-  .profile-field-grid span,
+  .prompt-editor-titlebar span,
   .provider-editor span,
   .request-panel span,
   .advanced-sampler-grid span,
@@ -2594,17 +2774,6 @@
     padding-top: 10px;
   }
 
-  .profile-field-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .profile-field-grid.compact {
-    grid-template-columns: repeat(2, minmax(0, 150px));
-  }
-
-  .profile-field-grid label,
   .profile-textarea-label,
   .advanced-sampler-grid label,
   .segmented-field {
@@ -2613,8 +2782,6 @@
     gap: 5px;
   }
 
-  .profile-field-grid input,
-  .profile-field-grid select,
   .profile-name-field input,
   .provider-config input,
   .vertex-strip input,
@@ -2637,6 +2804,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .mini-segment.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .mini-segment button,
   .toggle-pill {
     min-height: 36px;
@@ -2654,29 +2825,65 @@
     justify-content: flex-start;
   }
 
-  .prompt-manager-grid {
+  .prompt-manager-toolbar {
     display: grid;
-    grid-template-columns: minmax(200px, 0.82fr) minmax(0, 1.18fr);
-    gap: 12px;
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr) minmax(190px, auto);
+    gap: 10px;
+    align-items: center;
+  }
+
+  .prompt-selection-summary {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+    border: 1px solid #e0e4df;
+    border-radius: 8px;
+    background: #fbfcfa;
+    padding: 8px 10px;
+  }
+
+  .prompt-selection-summary strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .prompt-slot-list {
     display: grid;
     align-content: start;
-    max-height: 480px;
+    max-height: 520px;
     overflow: auto;
-    border: 1px solid #e0e4df;
+    border: 1px solid #dfe3dc;
     border-radius: 8px;
     background: #fbfcfa;
   }
 
+  .prompt-slot-list-header,
   .prompt-slot-row {
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-columns: 26px 28px minmax(0, 1fr) 86px 62px 176px;
     align-items: center;
+    gap: 8px;
+  }
+
+  .prompt-slot-list-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    border-bottom: 1px solid #e2e6e0;
+    background: #f5f7f4;
+    color: #66716a;
+    padding: 8px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .prompt-slot-row {
     border-bottom: 1px solid #eef0ec;
     background: #fff;
+    padding: 8px 10px;
   }
 
   .prompt-slot-row:last-child {
@@ -2688,45 +2895,187 @@
     box-shadow: inset 3px 0 0 #1c6b43;
   }
 
+  .prompt-slot-grip {
+    display: grid;
+    place-items: center;
+    color: #8b968f;
+  }
+
   .prompt-slot-toggle {
     width: 16px;
     height: 16px;
     margin: 0 auto;
   }
 
-  .prompt-slot-row button {
+  .prompt-slot-main {
     display: grid;
     gap: 3px;
     min-width: 0;
     border: 0;
     background: transparent;
     color: #202823;
-    padding: 9px 10px 9px 0;
+    padding: 0;
     text-align: left;
   }
 
-  .prompt-slot-row button strong,
-  .prompt-slot-editor-header strong {
+  .prompt-slot-main strong {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .prompt-slot-editor {
+  .prompt-kind-badge,
+  .prompt-token-count {
+    justify-self: start;
+    border: 1px solid #e0e4df;
+    border-radius: 999px;
+    background: #f8faf7;
+    color: #2f3a34;
+    padding: 3px 7px;
+    font-size: 11px;
+    line-height: 1.1;
+  }
+
+  .prompt-token-count {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+
+  .prompt-row-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  .prompt-row-actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid #d6d8d3;
+    border-radius: 6px;
+    background: #fff;
+    color: #26302a;
+  }
+
+  .prompt-row-actions button:hover {
+    border-color: #a9c8b3;
+    background: #edf6f0;
+  }
+
+  .prompt-row-actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.38;
+  }
+
+  .prompt-editor-overlay {
+    position: fixed;
+    inset: 64px auto 0 64px;
+    z-index: 42;
     display: grid;
-    gap: 10px;
-    min-width: 0;
+    align-items: start;
+    width: min(720px, calc(100vw - 64px));
+    overflow: auto;
+    border-right: 1px solid #d7dad4;
+    background: rgb(250 251 249 / 96%);
+    box-shadow: 16px 0 36px rgb(28 36 31 / 14%);
+    backdrop-filter: blur(8px);
+    padding: 16px;
+  }
+
+  .prompt-editor-window {
+    display: grid;
+    gap: 12px;
     border: 1px solid #dfe3dc;
     border-radius: 8px;
+    background: #fff;
+    padding: 14px;
+  }
+
+  .prompt-editor-titlebar {
+    border-bottom: 1px solid #eef0ec;
+    padding-bottom: 12px;
+  }
+
+  .prompt-editor-titlebar h3 {
+    margin: 0;
+    font-size: 18px;
+    letter-spacing: 0;
+  }
+
+  .prompt-editor-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .prompt-editor-fields.compact {
+    grid-template-columns: repeat(2, minmax(0, 130px));
+  }
+
+  .prompt-editor-fields label,
+  .prompt-trigger-panel {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+  }
+
+  .prompt-editor-fields input,
+  .prompt-editor-fields select {
+    min-height: 36px;
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .prompt-trigger-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .prompt-trigger-options button {
+    min-height: 30px;
+    border: 1px solid #d6d8d3;
+    border-radius: 999px;
+    background: #fff;
+    color: #314039;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .prompt-trigger-options button.active {
+    border-color: #a9c8b3;
+    background: #edf6f0;
+    color: #174b32;
+  }
+
+  .prompt-editor-source {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid #e0e4df;
+    border-radius: 8px;
     background: #fbfcfa;
-    padding: 12px;
+    padding: 9px 10px;
+    color: #4f5a53;
+    font-size: 12px;
   }
 
   .prompt-content-label textarea {
-    min-height: 220px;
+    min-height: 260px;
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
     line-height: 1.5;
+  }
+
+  .prompt-editor-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    border-top: 1px solid #eef0ec;
+    padding-top: 12px;
   }
 
   .profile-list-section {
@@ -2860,8 +3209,6 @@
       width: calc(100vw - 56px);
     }
 
-    .profile-field-grid,
-    .prompt-manager-grid,
     .provider-config,
     .vertex-strip {
       grid-template-columns: minmax(0, 1fr);
@@ -2873,6 +3220,40 @@
 
     .profile-mode-strip {
       grid-template-columns: minmax(0, 1fr);
+    }
+
+    .prompt-manager-toolbar,
+    .prompt-editor-fields {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .prompt-slot-list-header {
+      display: none;
+    }
+
+    .prompt-slot-row {
+      grid-template-columns: 26px 28px minmax(0, 1fr);
+    }
+
+    .prompt-kind-badge,
+    .prompt-token-count {
+      display: none;
+    }
+
+    .prompt-row-actions {
+      grid-column: 3;
+      justify-content: flex-start;
+    }
+
+    .prompt-editor-overlay {
+      inset: 64px auto 0 56px;
+      width: calc(100vw - 56px);
+      padding: 10px;
+    }
+
+    .prompt-editor-source {
+      align-items: flex-start;
+      flex-direction: column;
     }
 
     .avatar-viewer {

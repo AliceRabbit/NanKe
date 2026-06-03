@@ -15,7 +15,35 @@
     X
   } from '@lucide/svelte';
 
-  type Profile = { id: string; name: string; provider: { type: string; model: string } };
+  type Profile = {
+    id: string;
+    name: string;
+    provider: { type: string; model: string; endpoint?: string };
+    sampler?: {
+      temperature?: number;
+      topP?: number;
+      topK?: number;
+      maxTokens?: number;
+      contextTokens?: number;
+    };
+    prompt?: {
+      mode?: 'chat' | 'text';
+      macroMode?: 'none' | 'sillytavern';
+      squashSystemMessages?: boolean;
+      slots?: Array<{ enabled?: boolean; source?: string; legacy?: { source?: string; ordered?: boolean } }>;
+    };
+    metadata?: {
+      sillyTavern?: {
+        kind?: string;
+        promptManager?: {
+          promptCount?: number;
+          orderedPromptCount?: number;
+          enabledPromptCount?: number;
+          inactivePromptCount?: number;
+        };
+      };
+    };
+  };
   type Character = { id: string; name: string; firstMessage?: string; avatarAssetId?: string };
   type UserPersona = {
     id: string;
@@ -66,8 +94,11 @@
   let newWorldBookName = '';
   let openingPreviewCharacterId = '';
   let zoomedAvatar: ZoomedAvatar | null = null;
+  let profileQuery = '';
 
   $: activeProfile = profiles.find((profile) => profile.id === activeProfileId);
+  $: activeProfileStats = profileStats(activeProfile);
+  $: filteredProfiles = filterProfiles(profiles, profileQuery);
   $: activeCharacter = characters.find((character) => character.id === activeCharacterId);
   $: activePersona = personas.find((persona) => persona.id === activePersonaId);
   $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
@@ -120,6 +151,11 @@
     activeDrawer = activeDrawer === drawer ? null : drawer;
   }
 
+  function openPresetImport() {
+    importKind = 'preset';
+    activeDrawer = 'import';
+  }
+
   function closeDrawer() {
     activeDrawer = null;
   }
@@ -149,6 +185,49 @@
     activeCharacterId ||= characters[0]?.id ?? '';
     activePersonaId ||= personas.find((persona) => persona.isDefault)?.id ?? personas[0]?.id ?? '';
     status = 'Ready';
+  }
+
+  function profileStats(profile?: Profile) {
+    const slots = profile?.prompt?.slots ?? [];
+    const promptManager = profile?.metadata?.sillyTavern?.promptManager;
+    const total = promptManager?.promptCount ?? slots.length;
+    const ordered = promptManager?.orderedPromptCount ?? slots.filter((slot) => slot.legacy?.ordered !== false).length;
+    const enabled = promptManager?.enabledPromptCount ?? slots.filter((slot) => slot.enabled !== false).length;
+    const inactive = promptManager?.inactivePromptCount ?? Math.max(0, total - enabled);
+    return { total, ordered, enabled, inactive };
+  }
+
+  function profileOrigin(profile: Profile) {
+    const kind = profile.metadata?.sillyTavern?.kind;
+    return kind ? `SillyTavern ${kind}` : 'NanKe native';
+  }
+
+  function profileSamplerLine(profile: Profile) {
+    const sampler = profile.sampler ?? {};
+    const parts = [
+      sampler.temperature !== undefined ? `temp ${sampler.temperature}` : '',
+      sampler.topP !== undefined ? `top-p ${sampler.topP}` : '',
+      sampler.maxTokens !== undefined ? `${sampler.maxTokens} out` : '',
+      sampler.contextTokens !== undefined ? `${sampler.contextTokens} ctx` : ''
+    ].filter(Boolean);
+    return parts.join(' · ') || 'No sampler details';
+  }
+
+  function filterProfiles(items: Profile[], query: string) {
+    const text = query.trim().toLowerCase();
+    if (!text) return items;
+    return items.filter((profile) => [profile.name, profile.provider.type, profile.provider.model, profileOrigin(profile)].join(' ').toLowerCase().includes(text));
+  }
+
+  function exportActiveProfile() {
+    if (!activeProfile) return;
+    const blob = new Blob([JSON.stringify(activeProfile, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${activeProfile.name.replace(/[\\/:*?"<>|]+/g, '_')}.nanke-profile.json`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   async function ensureConversation(): Promise<string> {
@@ -707,17 +786,74 @@
           {/each}
         </div>
       {:else if activeDrawer === 'profiles'}
-        <div class="item-list">
-          {#each profiles as profile}
+        <div class="profile-panel">
+          <div class="preset-toolbar" aria-label="Preset tools">
+            <select aria-label="Selected profile" bind:value={activeProfileId}>
+              {#each profiles as profile}
+                <option value={profile.id}>{profile.name}</option>
+              {/each}
+            </select>
+            <div class="preset-actions">
+              <button class="tool-button" type="button" on:click={openPresetImport} title="Import preset" aria-label="Import preset">
+                <Upload size={16} />
+              </button>
+              <button class="tool-button" type="button" on:click={exportActiveProfile} title="Export profile" aria-label="Export profile" disabled={!activeProfile}>
+                <Download size={16} />
+              </button>
+              <button class="tool-button" type="button" on:click={inspectCurrentPrompt} title="Prompt Inspector" aria-label="Prompt Inspector" disabled={!activeProfile}>
+                <Search size={16} />
+              </button>
+            </div>
+          </div>
+
+          {#if activeProfile}
+            <section class="profile-summary" aria-label="Active profile summary">
+              <div class="profile-summary-heading">
+                <div>
+                  <strong>{activeProfile.name}</strong>
+                  <span>{profileOrigin(activeProfile)}</span>
+                </div>
+                <span class="provider-pill">{activeProfile.provider.type}</span>
+              </div>
+              <div class="profile-model">{activeProfile.provider.model}</div>
+              <div class="profile-chips" aria-label="Prompt statistics">
+                <span>{activeProfileStats.enabled} enabled</span>
+                <span>{activeProfileStats.ordered} ordered</span>
+                <span>{activeProfileStats.total} total</span>
+                {#if activeProfile.prompt?.macroMode === 'sillytavern'}
+                  <span>ST macros</span>
+                {/if}
+                {#if activeProfile.prompt?.squashSystemMessages}
+                  <span>squash system</span>
+                {/if}
+              </div>
+              <div class="profile-sampler">{profileSamplerLine(activeProfile)}</div>
+            </section>
+          {/if}
+
+          <input class="profile-search" bind:value={profileQuery} placeholder="Search profiles" aria-label="Search profiles" />
+        </div>
+
+        <div class="profile-list">
+          {#each filteredProfiles as profile}
+            {@const stats = profileStats(profile)}
             <button
-              class="drawer-item"
+              class="profile-row"
               class:active={profile.id === activeProfileId}
               type="button"
               on:click={() => (activeProfileId = profile.id)}
             >
-              <strong>{profile.name}</strong>
-              <span>{profile.provider.type} · {profile.provider.model}</span>
+              <span class="profile-row-main">
+                <strong>{profile.name}</strong>
+                <span>{profile.provider.type} · {profile.provider.model}</span>
+              </span>
+              <span class="profile-row-meta">
+                <span>{stats.enabled}/{stats.total}</span>
+                <span>{profileOrigin(profile)}</span>
+              </span>
             </button>
+          {:else}
+            <div class="drawer-empty">No matching profiles</div>
           {/each}
         </div>
       {:else if activeDrawer === 'import'}
@@ -823,6 +959,11 @@
   .tool-button:hover {
     border-color: #a9c8b3;
     background: #edf6f0;
+  }
+
+  .tool-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.42;
   }
 
   .stage {
@@ -1315,6 +1456,165 @@
     color: #6c756f;
     font-size: 12px;
     overflow-wrap: anywhere;
+  }
+
+  .profile-panel {
+    display: grid;
+    gap: 12px;
+    border-bottom: 1px solid #e6e8e3;
+    padding: 14px 16px 16px;
+    background: #fbfcfa;
+  }
+
+  .preset-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .preset-toolbar select {
+    min-height: 40px;
+    padding-block: 8px;
+  }
+
+  .preset-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .preset-actions .tool-button {
+    width: 38px;
+    height: 38px;
+    border-radius: 7px;
+  }
+
+  .profile-summary {
+    display: grid;
+    gap: 9px;
+    border: 1px solid #dfe3dc;
+    border-radius: 8px;
+    background: #fff;
+    padding: 12px;
+  }
+
+  .profile-summary-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .profile-summary-heading div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .profile-summary-heading strong,
+  .profile-row strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .profile-summary-heading span,
+  .profile-model,
+  .profile-sampler,
+  .profile-row-main span,
+  .profile-row-meta {
+    color: #66716a;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .provider-pill {
+    flex: 0 0 auto;
+    border: 1px solid #bfd5c7;
+    border-radius: 999px;
+    background: #edf6f0;
+    color: #22533b !important;
+    padding: 3px 7px;
+    font-size: 11px !important;
+    line-height: 1.2;
+  }
+
+  .profile-model {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+
+  .profile-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .profile-chips span {
+    border: 1px solid #e0e4df;
+    border-radius: 999px;
+    background: #f5f7f4;
+    color: #2f3a34;
+    padding: 4px 8px;
+    font-size: 12px;
+    line-height: 1.1;
+  }
+
+  .profile-search {
+    min-height: 38px;
+    padding-block: 8px;
+  }
+
+  .profile-list {
+    display: grid;
+    align-content: start;
+    gap: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .profile-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    border: 0;
+    border-bottom: 1px solid #eef0ec;
+    background: #fff;
+    color: #202823;
+    padding: 10px 16px;
+    text-align: left;
+  }
+
+  .profile-row:hover,
+  .profile-row.active {
+    background: #edf6f0;
+  }
+
+  .profile-row.active {
+    box-shadow: inset 3px 0 0 #1c6b43;
+  }
+
+  .profile-row-main {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .profile-row-meta {
+    display: grid;
+    justify-items: end;
+    gap: 3px;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .drawer-empty {
+    color: #66716a;
+    padding: 18px 16px;
+    font-size: 13px;
   }
 
   pre {

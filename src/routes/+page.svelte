@@ -1318,122 +1318,174 @@
                 </div>
               </div>
 
-              <div class="profile-field-grid">
-                <label>
+              <section class="provider-editor" aria-label="Provider settings">
+                <label class="profile-name-field">
                   <span>Name</span>
                   <input bind:value={profileDraftName} placeholder="Preset name" />
                 </label>
-                <label>
-                  <span>Provider</span>
-                  <select value={profileDraftProviderType} aria-label="Provider type" on:change={(event) => changeProfileProviderType((event.currentTarget as HTMLSelectElement).value as ProviderType)}>
-                    <option value="openai-compatible">OpenAI-compatible</option>
-                    <option value="gemini">Gemini / Vertex</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Model</span>
-                  <input bind:value={profileDraftProviderModel} placeholder="Model" />
-                </label>
-                <label>
-                  <span>Endpoint</span>
-                  <input bind:value={profileDraftProviderEndpoint} placeholder={profileDraftProviderType === 'gemini' ? 'Optional Gemini endpoint' : 'https://api.openai.com/v1'} />
-                </label>
-              </div>
 
-              {#if profileDraftProviderType === 'gemini'}
-                <label class="checkbox-row profile-toggle">
-                  <input type="checkbox" bind:checked={profileDraftVertexEnabled} />
-                  <span>Vertex</span>
-                </label>
-                {#if profileDraftVertexEnabled}
-                  <div class="profile-field-grid">
-                    <label>
-                      <span>Project</span>
-                      <input bind:value={profileDraftVertexProjectId} placeholder="project-id" />
-                    </label>
-                    <label>
-                      <span>Location</span>
-                      <input bind:value={profileDraftVertexLocation} placeholder="us-central1" />
-                    </label>
+                <div class="provider-segment" aria-label="Provider type">
+                  <button class:active={profileDraftProviderType === 'openai-compatible'} type="button" on:click={() => changeProfileProviderType('openai-compatible')}>
+                    <strong>OpenAI-compatible</strong>
+                    <span>Custom endpoint</span>
+                  </button>
+                  <button class:active={profileDraftProviderType === 'gemini'} type="button" on:click={() => changeProfileProviderType('gemini')}>
+                    <strong>Gemini</strong>
+                    <span>AI Studio / Vertex</span>
+                  </button>
+                </div>
+
+                <div class="provider-config">
+                  <label>
+                    <span>Model</span>
+                    <input bind:value={profileDraftProviderModel} placeholder={profileDraftProviderType === 'gemini' ? 'gemini-2.5-pro' : 'gpt-4o-mini'} />
+                  </label>
+                  <label>
+                    <span>Endpoint</span>
+                    <input bind:value={profileDraftProviderEndpoint} placeholder={profileDraftProviderType === 'gemini' ? 'Optional Gemini endpoint' : 'https://api.openai.com/v1'} />
+                  </label>
+                </div>
+
+                {#if profileDraftProviderType === 'gemini'}
+                  <div class="vertex-strip">
+                    <button class:active={profileDraftVertexEnabled} type="button" on:click={() => (profileDraftVertexEnabled = !profileDraftVertexEnabled)}>
+                      Vertex
+                    </button>
+                    {#if profileDraftVertexEnabled}
+                      <label>
+                        <span>Project</span>
+                        <input bind:value={profileDraftVertexProjectId} placeholder="project-id" />
+                      </label>
+                      <label>
+                        <span>Location</span>
+                        <input bind:value={profileDraftVertexLocation} placeholder="us-central1" />
+                      </label>
+                    {/if}
                   </div>
                 {/if}
-              {/if}
+              </section>
 
-              <div class="sampler-grid">
-                <label>
-                  <span>Temperature</span>
-                  <input bind:value={profileDraftTemperature} inputmode="decimal" placeholder="1" />
-                </label>
-                <label>
-                  <span>Top P</span>
-                  <input bind:value={profileDraftTopP} inputmode="decimal" placeholder="1" />
-                </label>
-                <label>
-                  <span>Top K</span>
-                  <input bind:value={profileDraftTopK} inputmode="numeric" placeholder="0" />
-                </label>
-                <label>
-                  <span>Top A</span>
-                  <input bind:value={profileDraftTopA} inputmode="decimal" />
-                </label>
-                <label>
-                  <span>Min P</span>
-                  <input bind:value={profileDraftMinP} inputmode="decimal" />
-                </label>
-                <label>
-                  <span>Freq Penalty</span>
-                  <input bind:value={profileDraftFrequencyPenalty} inputmode="decimal" />
-                </label>
-                <label>
-                  <span>Presence</span>
-                  <input bind:value={profileDraftPresencePenalty} inputmode="decimal" />
-                </label>
-                <label>
-                  <span>Rep Penalty</span>
-                  <input bind:value={profileDraftRepetitionPenalty} inputmode="decimal" />
-                </label>
-                <label>
-                  <span>Max Tokens</span>
-                  <input bind:value={profileDraftMaxTokens} inputmode="numeric" />
-                </label>
-                <label>
-                  <span>Context</span>
-                  <input bind:value={profileDraftContextTokens} inputmode="numeric" />
-                </label>
-                <label>
-                  <span>Seed</span>
-                  <input bind:value={profileDraftSeed} inputmode="numeric" />
-                </label>
-                <label>
-                  <span>N</span>
-                  <input bind:value={profileDraftN} inputmode="numeric" />
-                </label>
-              </div>
+              <section class="request-panel" aria-label="Request parameters">
+                <div class="request-panel-header">
+                  <strong>Request Parameters</strong>
+                  <span>{profileDraftMaxTokens || '512'} out · {profileDraftContextTokens || '8192'} ctx</span>
+                </div>
 
-              <label class="profile-textarea-label">
-                <span>Stop strings</span>
-                <textarea bind:value={profileDraftStop} rows="3" placeholder="One stop string per line"></textarea>
-              </label>
+                <div class="sampler-control-list">
+                  <label class="sampler-control">
+                    <span class="sampler-control-head">
+                      <span>Temperature</span>
+                      <output>{profileDraftTemperature || '1'}</output>
+                    </span>
+                    <span class="sampler-control-body">
+                      <input class="sampler-range" type="range" min="0" max="2" step="0.01" value={profileDraftTemperature || '1'} on:input={(event) => (profileDraftTemperature = (event.currentTarget as HTMLInputElement).value)} />
+                      <input class="sampler-number" value={profileDraftTemperature} inputmode="decimal" placeholder="1" on:input={(event) => (profileDraftTemperature = (event.currentTarget as HTMLInputElement).value)} />
+                    </span>
+                  </label>
 
-              <div class="profile-toggle-strip">
-                <label>
+                  <label class="sampler-control">
+                    <span class="sampler-control-head">
+                      <span>Top P</span>
+                      <output>{profileDraftTopP || '1'}</output>
+                    </span>
+                    <span class="sampler-control-body">
+                      <input class="sampler-range" type="range" min="0" max="1" step="0.01" value={profileDraftTopP || '1'} on:input={(event) => (profileDraftTopP = (event.currentTarget as HTMLInputElement).value)} />
+                      <input class="sampler-number" value={profileDraftTopP} inputmode="decimal" placeholder="1" on:input={(event) => (profileDraftTopP = (event.currentTarget as HTMLInputElement).value)} />
+                    </span>
+                  </label>
+
+                  <label class="sampler-control">
+                    <span class="sampler-control-head">
+                      <span>Top K</span>
+                      <output>{profileDraftTopK || '0'}</output>
+                    </span>
+                    <span class="sampler-control-body">
+                      <input class="sampler-range" type="range" min="0" max="200" step="1" value={profileDraftTopK || '0'} on:input={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
+                      <input class="sampler-number" value={profileDraftTopK} inputmode="numeric" placeholder="0" on:input={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
+                    </span>
+                  </label>
+
+                  <label class="sampler-control">
+                    <span class="sampler-control-head">
+                      <span>Max Tokens</span>
+                      <output>{profileDraftMaxTokens || '512'}</output>
+                    </span>
+                    <span class="sampler-control-body">
+                      <input class="sampler-range" type="range" min="16" max="4096" step="16" value={profileDraftMaxTokens || '512'} on:input={(event) => (profileDraftMaxTokens = (event.currentTarget as HTMLInputElement).value)} />
+                      <input class="sampler-number" value={profileDraftMaxTokens} inputmode="numeric" placeholder="512" on:input={(event) => (profileDraftMaxTokens = (event.currentTarget as HTMLInputElement).value)} />
+                    </span>
+                  </label>
+
+                  <label class="sampler-control">
+                    <span class="sampler-control-head">
+                      <span>Context</span>
+                      <output>{profileDraftContextTokens || '8192'}</output>
+                    </span>
+                    <span class="sampler-control-body">
+                      <input class="sampler-range" type="range" min="1024" max="32768" step="512" value={profileDraftContextTokens || '8192'} on:input={(event) => (profileDraftContextTokens = (event.currentTarget as HTMLInputElement).value)} />
+                      <input class="sampler-number" value={profileDraftContextTokens} inputmode="numeric" placeholder="8192" on:input={(event) => (profileDraftContextTokens = (event.currentTarget as HTMLInputElement).value)} />
+                    </span>
+                  </label>
+                </div>
+
+                <details class="advanced-sampler">
+                  <summary>Advanced</summary>
+                  <div class="advanced-sampler-grid">
+                    <label>
+                      <span>Top A</span>
+                      <input bind:value={profileDraftTopA} inputmode="decimal" />
+                    </label>
+                    <label>
+                      <span>Min P</span>
+                      <input bind:value={profileDraftMinP} inputmode="decimal" />
+                    </label>
+                    <label>
+                      <span>Freq Penalty</span>
+                      <input bind:value={profileDraftFrequencyPenalty} inputmode="decimal" />
+                    </label>
+                    <label>
+                      <span>Presence</span>
+                      <input bind:value={profileDraftPresencePenalty} inputmode="decimal" />
+                    </label>
+                    <label>
+                      <span>Rep Penalty</span>
+                      <input bind:value={profileDraftRepetitionPenalty} inputmode="decimal" />
+                    </label>
+                    <label>
+                      <span>Seed</span>
+                      <input bind:value={profileDraftSeed} inputmode="numeric" />
+                    </label>
+                    <label>
+                      <span>N</span>
+                      <input bind:value={profileDraftN} inputmode="numeric" />
+                    </label>
+                  </div>
+                </details>
+
+                <label class="profile-textarea-label">
+                  <span>Stop strings</span>
+                  <textarea bind:value={profileDraftStop} rows="3" placeholder="One stop string per line"></textarea>
+                </label>
+              </section>
+
+              <div class="profile-mode-strip">
+                <div class="segmented-field">
                   <span>Mode</span>
-                  <select bind:value={profileDraftMode} aria-label="Prompt mode">
-                    <option value="chat">Chat</option>
-                    <option value="text">Text</option>
-                  </select>
-                </label>
-                <label>
+                  <div class="mini-segment" aria-label="Prompt mode">
+                    <button class:active={profileDraftMode === 'chat'} type="button" on:click={() => (profileDraftMode = 'chat')}>Chat</button>
+                    <button class:active={profileDraftMode === 'text'} type="button" on:click={() => (profileDraftMode = 'text')}>Text</button>
+                  </div>
+                </div>
+                <div class="segmented-field">
                   <span>Macros</span>
-                  <select bind:value={profileDraftMacroMode} aria-label="Macro mode">
-                    <option value="none">None</option>
-                    <option value="sillytavern">SillyTavern</option>
-                  </select>
-                </label>
-                <label class="checkbox-row profile-toggle">
-                  <input type="checkbox" bind:checked={profileDraftSquashSystemMessages} />
-                  <span>Squash system</span>
-                </label>
+                  <div class="mini-segment" aria-label="Macro mode">
+                    <button class:active={profileDraftMacroMode === 'none'} type="button" on:click={() => (profileDraftMacroMode = 'none')}>None</button>
+                    <button class:active={profileDraftMacroMode === 'sillytavern'} type="button" on:click={() => (profileDraftMacroMode = 'sillytavern')}>ST</button>
+                  </div>
+                </div>
+                <button class="toggle-pill" class:active={profileDraftSquashSystemMessages} type="button" on:click={() => (profileDraftSquashSystemMessages = !profileDraftSquashSystemMessages)}>
+                  Squash system
+                </button>
               </div>
             </form>
 
@@ -2374,12 +2426,172 @@
   .prompt-manager-header span,
   .prompt-slot-editor-header span,
   .profile-field-grid span,
-  .sampler-grid span,
+  .provider-editor span,
+  .request-panel span,
+  .advanced-sampler-grid span,
   .profile-textarea-label span,
-  .profile-toggle-strip span,
+  .profile-mode-strip span,
   .prompt-slot-row span {
     color: #66716a;
     font-size: 12px;
+  }
+
+  .provider-editor,
+  .request-panel {
+    display: grid;
+    gap: 12px;
+    border: 1px solid #e0e4df;
+    border-radius: 8px;
+    background: #fbfcfa;
+    padding: 12px;
+  }
+
+  .profile-name-field {
+    display: grid;
+    gap: 5px;
+  }
+
+  .provider-segment,
+  .mini-segment {
+    display: grid;
+    gap: 6px;
+    border: 1px solid #dfe3dc;
+    border-radius: 8px;
+    background: #f1f3ef;
+    padding: 4px;
+  }
+
+  .provider-segment {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .provider-segment button,
+  .mini-segment button,
+  .toggle-pill,
+  .vertex-strip > button {
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: #314039;
+  }
+
+  .provider-segment button {
+    display: grid;
+    gap: 3px;
+    padding: 10px;
+    text-align: left;
+  }
+
+  .provider-segment button.active,
+  .mini-segment button.active,
+  .toggle-pill.active,
+  .vertex-strip > button.active {
+    border-color: #a9c8b3;
+    background: #ffffff;
+    color: #174b32;
+    box-shadow: 0 1px 3px rgb(29 39 33 / 8%);
+  }
+
+  .provider-config,
+  .vertex-strip {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 10px;
+  }
+
+  .vertex-strip {
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+    align-items: end;
+  }
+
+  .provider-config label,
+  .vertex-strip label {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+  }
+
+  .vertex-strip > button {
+    min-height: 36px;
+    border-color: #d6d8d3;
+    background: #fff;
+    padding: 0 12px;
+  }
+
+  .request-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .request-panel-header span {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+
+  .sampler-control-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .sampler-control {
+    display: grid;
+    gap: 6px;
+  }
+
+  .sampler-control-head,
+  .sampler-control-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .sampler-control output {
+    min-width: 56px;
+    border: 1px solid #dfe3dc;
+    border-radius: 999px;
+    background: #fff;
+    color: #26302a;
+    padding: 3px 8px;
+    text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 12px;
+  }
+
+  .sampler-range {
+    height: 30px;
+    min-height: 30px !important;
+    padding: 0 !important;
+    accent-color: #1c6b43;
+  }
+
+  .sampler-number {
+    width: 76px;
+    min-height: 32px !important;
+    border-radius: 7px !important;
+    padding: 6px 8px !important;
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+
+  .advanced-sampler {
+    border-top: 1px solid #e7eae5;
+    padding-top: 8px;
+  }
+
+  .advanced-sampler summary {
+    cursor: pointer;
+    color: #314039;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .advanced-sampler-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    padding-top: 10px;
   }
 
   .profile-field-grid {
@@ -2393,9 +2605,9 @@
   }
 
   .profile-field-grid label,
-  .sampler-grid label,
   .profile-textarea-label,
-  .profile-toggle-strip label {
+  .advanced-sampler-grid label,
+  .segmented-field {
     display: grid;
     min-width: 0;
     gap: 5px;
@@ -2403,8 +2615,10 @@
 
   .profile-field-grid input,
   .profile-field-grid select,
-  .sampler-grid input,
-  .profile-toggle-strip select,
+  .profile-name-field input,
+  .provider-config input,
+  .vertex-strip input,
+  .advanced-sampler-grid input,
   .profile-textarea-label textarea {
     min-height: 36px;
     border-radius: 7px;
@@ -2412,17 +2626,26 @@
     font-size: 13px;
   }
 
-  .sampler-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .profile-toggle-strip {
+  .profile-mode-strip {
     display: grid;
     grid-template-columns: minmax(0, 150px) minmax(0, 150px) auto;
     align-items: end;
     gap: 10px;
+  }
+
+  .mini-segment {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mini-segment button,
+  .toggle-pill {
+    min-height: 36px;
+    padding: 0 10px;
+  }
+
+  .toggle-pill {
+    border-color: #d6d8d3;
+    background: #fff;
   }
 
   .profile-toggle {
@@ -2638,15 +2861,17 @@
     }
 
     .profile-field-grid,
-    .prompt-manager-grid {
+    .prompt-manager-grid,
+    .provider-config,
+    .vertex-strip {
       grid-template-columns: minmax(0, 1fr);
     }
 
-    .sampler-grid {
+    .advanced-sampler-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .profile-toggle-strip {
+    .profile-mode-strip {
       grid-template-columns: minmax(0, 1fr);
     }
 

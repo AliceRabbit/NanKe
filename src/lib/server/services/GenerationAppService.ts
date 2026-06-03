@@ -1,4 +1,5 @@
 import { GenerationPipeline, inspectPrompt } from '$lib/core';
+import { renderPromptTemplate } from '$lib/core/prompt/PromptCompiler';
 import { createMessage } from '$lib/schemas/message';
 import type { ProviderRequest } from '$lib/schemas/provider';
 import { createDefaultProviderRegistry, type ProviderRegistry } from '$lib/providers';
@@ -54,14 +55,30 @@ export class GenerationAppService {
     }
 
     const userMessage = createMessage({ conversationId, role: 'user', content: input.message });
-
-    const messages = [...(conversationId ? this.context.conversations.listMessages(conversationId) : []), userMessage];
+    const existingMessages = conversationId ? this.context.conversations.listMessages(conversationId) : [];
+    const openingMessage =
+      character?.firstMessage && existingMessages.length === 0
+        ? createMessage({
+            conversationId,
+            role: 'assistant',
+            content: renderPromptTemplate(character.firstMessage, {
+              character,
+              persona: persona?.description,
+              userName: persona?.name
+            })
+          })
+        : undefined;
+    const messages = [...existingMessages, ...(openingMessage ? [openingMessage] : []), userMessage];
     if (!input.dryRun) {
       if (!conversationId) throw new AppError('Could not create conversation.', 500, 'conversation_create_failed');
+      if (openingMessage) this.context.conversations.appendMessage(openingMessage);
       this.context.conversations.appendMessage(userMessage);
     }
 
-    const worldBooks = (conversation?.worldBookIds ?? []).map((id) => this.context.worldBooks.get(id)).filter((item) => item !== undefined);
+    const worldBooks = [
+      ...(character?.characterBook ? [character.characterBook] : []),
+      ...(conversation?.worldBookIds ?? []).map((id) => this.context.worldBooks.get(id)).filter((item) => item !== undefined)
+    ];
     const compiled = this.pipeline.compile({
       profile,
       character,

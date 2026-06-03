@@ -4,16 +4,20 @@ import { generationProfiles } from '../schema';
 import { getDatabase } from '../db';
 
 function ensureRequiredPromptSlots(profile: GenerationProfile): { profile: GenerationProfile; changed: boolean } {
-  if (profile.prompt.slots.some((slot) => slot.source === 'persona')) {
-    return { profile, changed: false };
-  }
-
-  const personaSlot = createDefaultGenerationProfile().prompt.slots.find((slot) => slot.source === 'persona');
-  if (!personaSlot) return { profile, changed: false };
+  const defaultSlots = createDefaultGenerationProfile().prompt.slots;
+  const requiredSlots = defaultSlots.filter((slot) => slot.source === 'character-system' || slot.source === 'persona');
+  let changed = false;
 
   const slots = [...profile.prompt.slots];
-  const scenarioIndex = slots.findIndex((slot) => slot.source === 'scenario');
-  slots.splice(scenarioIndex >= 0 ? scenarioIndex + 1 : slots.length, 0, personaSlot);
+  for (const requiredSlot of requiredSlots) {
+    if (slots.some((slot) => slot.source === requiredSlot.source)) continue;
+    const afterSource = requiredSlot.source === 'character-system' ? 'system' : 'scenario';
+    const insertionIndex = slots.findIndex((slot) => slot.source === afterSource);
+    slots.splice(insertionIndex >= 0 ? insertionIndex + 1 : slots.length, 0, requiredSlot);
+    changed = true;
+  }
+
+  if (!changed) return { profile, changed: false };
 
   return {
     profile: generationProfileSchema.parse({

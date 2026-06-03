@@ -20,4 +20,20 @@ export class AssetStore {
     fs.writeFileSync(filePath, bytes);
     return { id, path: filePath, originalName };
   }
+
+  get(id: string): StoredAsset | undefined {
+    if (!/^[a-zA-Z0-9-]+$/.test(id)) return undefined;
+
+    const directory = path.join(this.root, id.slice(0, 2));
+    if (!fs.existsSync(directory)) return undefined;
+
+    const fileName = fs.readdirSync(directory).find((item) => item.startsWith(`${id}-`));
+    if (!fileName) return undefined;
+
+    return {
+      id,
+      path: path.join(directory, fileName),
+      originalName: fileName.slice(id.length + 1)
+    };
+  }
 }

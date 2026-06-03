@@ -14,7 +14,7 @@ export type PromptCompilerInput = {
   userName?: string;
 };
 
-function renderTemplate(template: string, input: PromptCompilerInput): string {
+export function renderPromptTemplate(template: string, input: Pick<PromptCompilerInput, 'character' | 'persona' | 'userName'>): string {
   const charName = input.character?.name ?? 'Assistant';
   const values: Record<string, string> = {
     char: charName,
@@ -38,14 +38,15 @@ function worldContent(input: PromptCompilerInput, position: 'before' | 'after'):
 }
 
 function slotContent(slot: PromptSlot, input: PromptCompilerInput): string {
-  if (slot.source === 'custom' || slot.source === 'system') return renderTemplate(slot.content, input);
-  if (slot.source === 'character-description') return input.character?.description ?? '';
-  if (slot.source === 'character-personality') return input.character?.personality ?? '';
-  if (slot.source === 'scenario') return input.character?.scenario ?? '';
+  if (slot.source === 'custom' || slot.source === 'system') return renderPromptTemplate(slot.content, input);
+  if (slot.source === 'character-system') return renderPromptTemplate(input.character?.systemPrompt ?? '', input);
+  if (slot.source === 'character-description') return renderPromptTemplate(input.character?.description ?? '', input);
+  if (slot.source === 'character-personality') return renderPromptTemplate(input.character?.personality ?? '', input);
+  if (slot.source === 'scenario') return renderPromptTemplate(input.character?.scenario ?? '', input);
   if (slot.source === 'persona') return input.persona ?? '';
   if (slot.source === 'worldbook-before') return worldContent(input, 'before');
   if (slot.source === 'worldbook-after') return worldContent(input, 'after');
-  if (slot.source === 'examples') return input.character?.exampleMessages ?? '';
+  if (slot.source === 'examples') return renderPromptTemplate(input.character?.exampleMessages ?? '', input);
   if (slot.source === 'post-history') return input.character?.postHistoryInstructions ?? '';
   return '';
 }
@@ -80,6 +81,24 @@ export class PromptCompiler {
       if (!slot.enabled) continue;
       if (slot.source === 'history') {
         compiled.push(...input.messages);
+        continue;
+      }
+      if (slot.source === 'post-history') {
+        const postHistory = renderPromptTemplate(input.character?.postHistoryInstructions ?? '', input).trim();
+        if (postHistory) {
+          compiled.push(createMessage({ role: slot.role, content: postHistory, name: slot.label || undefined, createdAt: Date.now() }));
+        }
+        const depthPrompt = input.character?.depthPrompt;
+        if (depthPrompt?.prompt.trim()) {
+          compiled.push(
+            createMessage({
+              role: depthPrompt.role,
+              content: renderPromptTemplate(depthPrompt.prompt, input).trim(),
+              name: 'Depth Prompt',
+              createdAt: Date.now()
+            })
+          );
+        }
         continue;
       }
       const content = slotContent(slot, input).trim();

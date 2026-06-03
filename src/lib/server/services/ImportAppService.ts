@@ -9,11 +9,15 @@ import {
 import { createConversation } from '$lib/schemas/conversation';
 import type { createRequestContext } from '$lib/server/request-context';
 import { AppError } from '$lib/server/errors';
+import { AssetStore } from '$lib/storage/assets/AssetStore';
 
 export type ImportKind = 'character-card-json' | 'character-card-png' | 'worldbook' | 'preset' | 'chat-jsonl';
 
 export class ImportAppService {
-  constructor(private readonly context: ReturnType<typeof createRequestContext>) {}
+  constructor(
+    private readonly context: ReturnType<typeof createRequestContext>,
+    private readonly assets = new AssetStore()
+  ) {}
 
   import(kind: ImportKind, data: unknown, name?: string) {
     if (kind === 'character-card-json') {
@@ -25,9 +29,12 @@ export class ImportAppService {
 
     if (kind === 'character-card-png') {
       if (typeof data !== 'string') throw new AppError('PNG import expects base64 data.', 400, 'invalid_import_data');
-      const raw = readSillyTavernCardJsonFromPng(Buffer.from(data, 'base64'));
+      const base64 = data.includes(',') ? data.slice(data.indexOf(',') + 1) : data;
+      const pngBytes = Buffer.from(base64, 'base64');
+      const raw = readSillyTavernCardJsonFromPng(pngBytes);
       const { character, report } = importSillyTavernCharacterCard(raw);
-      const saved = this.context.characters.save(character);
+      const asset = this.assets.save(pngBytes, `${name ?? character.name}.png`);
+      const saved = this.context.characters.save({ ...character, avatarAssetId: asset.id });
       this.context.importReports.save(report);
       return { type: 'character', item: saved, report };
     }

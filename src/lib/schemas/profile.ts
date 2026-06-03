@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const promptSlotSourceSchema = z.enum([
   'system',
+  'character-system',
   'character-description',
   'character-personality',
   'scenario',
@@ -128,6 +129,7 @@ export function createDefaultGenerationProfile(input: Partial<GenerationProfile>
           enabled: true,
           content: "Write {{char}}'s next reply in a fictional chat between {{char}} and {{user}}."
         },
+        { id: 'character-system', source: 'character-system', role: 'system', label: 'Character System Prompt', enabled: true, content: '' },
         { id: 'world-before', source: 'worldbook-before', role: 'system', label: 'World Book Before', enabled: true, content: '' },
         { id: 'character-description', source: 'character-description', role: 'system', label: 'Character Description', enabled: true, content: '' },
         { id: 'character-personality', source: 'character-personality', role: 'system', label: 'Character Personality', enabled: true, content: '' },

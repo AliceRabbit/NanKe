@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import { worldBookSchema } from './worldbook';
+
+export const characterDepthPromptSchema = z.object({
+  prompt: z.string().default(''),
+  depth: z.number().default(4),
+  role: z.enum(['system', 'user', 'assistant']).default('system')
+});
 
 export const characterSchema = z.object({
   id: z.string(),
@@ -12,7 +19,16 @@ export const characterSchema = z.object({
   systemPrompt: z.string().default(''),
   postHistoryInstructions: z.string().default(''),
   alternateGreetings: z.array(z.string()).default([]),
+  groupOnlyGreetings: z.array(z.string()).default([]),
   tags: z.array(z.string()).default([]),
+  creator: z.string().default(''),
+  creatorComment: z.string().default(''),
+  characterVersion: z.string().default(''),
+  talkativeness: z.number().optional(),
+  favorite: z.boolean().default(false),
+  extensions: z.record(z.string(), z.unknown()).default({}),
+  characterBook: worldBookSchema.optional(),
+  depthPrompt: characterDepthPromptSchema.optional(),
   avatarAssetId: z.string().optional(),
   legacy: z
     .object({
@@ -41,7 +57,16 @@ export function createCharacter(input: Partial<Character> & Pick<Character, 'nam
     systemPrompt: input.systemPrompt ?? '',
     postHistoryInstructions: input.postHistoryInstructions ?? '',
     alternateGreetings: input.alternateGreetings ?? [],
+    groupOnlyGreetings: input.groupOnlyGreetings ?? [],
     tags: input.tags ?? [],
+    creator: input.creator ?? '',
+    creatorComment: input.creatorComment ?? '',
+    characterVersion: input.characterVersion ?? '',
+    talkativeness: input.talkativeness,
+    favorite: input.favorite ?? false,
+    extensions: input.extensions ?? {},
+    characterBook: input.characterBook,
+    depthPrompt: input.depthPrompt,
     avatarAssetId: input.avatarAssetId,
     legacy: input.legacy,
     createdAt: input.createdAt ?? now,

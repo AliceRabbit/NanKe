@@ -15,11 +15,21 @@
   } from '@lucide/svelte';
 
   type Profile = { id: string; name: string; provider: { type: string; model: string } };
-  type Character = { id: string; name: string };
-  type UserPersona = { id: string; name: string; description: string; isDefault: boolean; createdAt: number; updatedAt: number };
+  type Character = { id: string; name: string; firstMessage?: string; avatarAssetId?: string };
+  type UserPersona = {
+    id: string;
+    name: string;
+    description: string;
+    avatarAssetId?: string;
+    isDefault: boolean;
+    createdAt: number;
+    updatedAt: number;
+  };
   type WorldBook = { id: string; name: string; entries: unknown[] };
   type Conversation = { id: string; title: string; characterId?: string; personaId?: string; profileId?: string; messages?: ChatMessage[] };
-  type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string };
+  type ChatMessage = { role: 'user' | 'assistant' | 'system'; name?: string; content: string };
+  type ZoomedAvatar = { key: string; name: string; role: ChatMessage['role']; src: string; initials: string };
+  type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
 
@@ -37,9 +47,11 @@
   let messages: ChatMessage[] = [];
   let input = '';
   let status = 'Ready';
-  let importKind = 'preset';
+  let importKind: ImportKind = 'preset';
   let importName = '';
   let importText = '';
+  let importFileName = '';
+  let importFileBase64 = '';
   let inspector = '';
   let newCharacterName = '';
   let newCharacterDescription = '';
@@ -51,6 +63,8 @@
   let personaDraftDescription = '';
   let personaDraftDefault = false;
   let newWorldBookName = '';
+  let openingPreviewCharacterId = '';
+  let zoomedAvatar: ZoomedAvatar | null = null;
 
   $: activeProfile = profiles.find((profile) => profile.id === activeProfileId);
   $: activeCharacter = characters.find((character) => character.id === activeCharacterId);
@@ -79,6 +93,18 @@
     personaDraftDescription = activePersona?.description ?? '';
     personaDraftDefault = activePersona?.isDefault ?? false;
   }
+  $: if (!activeConversationId) {
+    const opening = activeCharacter?.firstMessage?.trim() ? renderCharacterTemplate(activeCharacter.firstMessage) : '';
+    const canReplacePreview = Boolean(openingPreviewCharacterId) && messages.length === 1 && messages[0]?.role === 'assistant';
+    const shouldShowOpening = Boolean(opening) && (messages.length === 0 || (canReplacePreview && (openingPreviewCharacterId !== activeCharacterId || messages[0].content !== opening)));
+    if (shouldShowOpening) {
+      messages = [{ role: 'assistant', name: activeCharacter?.name, content: opening }];
+      openingPreviewCharacterId = activeCharacterId;
+    } else if (!opening && canReplacePreview) {
+      messages = [];
+      openingPreviewCharacterId = '';
+    }
+  }
 
   onMount(() => {
     void refreshAll();
@@ -99,6 +125,7 @@
 
   function startNewConversation() {
     activeConversationId = '';
+    openingPreviewCharacterId = '';
     messages = [];
     activeView = 'chat';
     closeDrawer();
@@ -137,11 +164,15 @@
     });
     activeConversationId = conversation.id;
     conversations = [conversation, ...conversations];
+    if (activeCharacter?.firstMessage && messages.length === 0) {
+      messages = [{ role: 'assistant', name: activeCharacter.name, content: renderCharacterTemplate(activeCharacter.firstMessage) }];
+    }
     return activeConversationId;
   }
 
   async function loadConversation(id: string) {
     activeConversationId = id;
+    openingPreviewCharacterId = '';
     activeView = 'chat';
     const conversation = await fetchJson<Conversation>(`/api/conversations?id=${encodeURIComponent(id)}`);
     messages = conversation.messages ?? [];
@@ -157,7 +188,11 @@
     input = '';
     inspector = '';
     const conversationId = await ensureConversation();
-    messages = [...messages, { role: 'user', content }, { role: 'assistant', content: '' }];
+    messages = [
+      ...messages,
+      { role: 'user', name: activePersona?.name, content },
+      { role: 'assistant', name: activeCharacter?.name, content: '' }
+    ];
     status = 'Generating';
 
     const response = await fetch('/api/generate', {
@@ -184,7 +219,7 @@
       if (done) break;
       const chunk = decoder.decode(value, { stream: true });
       const next = [...messages];
-      next[next.length - 1] = { role: 'assistant', content: `${next[next.length - 1].content}${chunk}` };
+      next[next.length - 1] = { ...next[next.length - 1], role: 'assistant', content: `${next[next.length - 1].content}${chunk}` };
       messages = next;
     }
     status = 'Ready';
@@ -213,17 +248,93 @@
     activeDrawer = 'inspector';
   }
 
+  function renderCharacterTemplate(template: string): string {
+    const charName = activeCharacter?.name ?? 'Assistant';
+    const userName = activePersona?.name ?? 'User';
+    return template.replaceAll('{{char}}', charName).replaceAll('{{charIfNotGroup}}', charName).replaceAll('{{user}}', userName);
+  }
+
+  function messageSpeaker(message: ChatMessage): string {
+    if (message.name?.trim()) return message.name;
+    if (message.role === 'assistant') return activeCharacter?.name ?? 'Assistant';
+    if (message.role === 'user') return activePersona?.name ?? 'User';
+    return 'System';
+  }
+
+  function messageAvatarUrl(message: ChatMessage): string {
+    if (message.role === 'assistant' && activeCharacter?.avatarAssetId) return `/api/assets/${activeCharacter.avatarAssetId}`;
+    if (message.role === 'user' && activePersona?.avatarAssetId) return `/api/assets/${activePersona.avatarAssetId}`;
+    return '';
+  }
+
+  function messageInitials(message: ChatMessage): string {
+    const speaker = messageSpeaker(message).trim();
+    return Array.from(speaker)[0]?.toUpperCase() ?? '?';
+  }
+
+  function openZoomedAvatar(message: ChatMessage) {
+    const src = messageAvatarUrl(message);
+    const name = messageSpeaker(message);
+    const key = `${message.role}:${name}:${src}`;
+
+    if (zoomedAvatar?.key === key) {
+      zoomedAvatar = null;
+      return;
+    }
+
+    zoomedAvatar = {
+      key,
+      name,
+      role: message.role,
+      src,
+      initials: messageInitials(message)
+    };
+  }
+
+  async function readImportFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) {
+      importFileName = '';
+      importFileBase64 = '';
+      return;
+    }
+
+    importFileName = file.name;
+    importName ||= file.name.replace(/\.[^.]+$/, '');
+    importFileBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener('load', () => {
+        const value = String(reader.result ?? '');
+        resolve(value.includes(',') ? value.slice(value.indexOf(',') + 1) : value);
+      });
+      reader.addEventListener('error', () => reject(reader.error ?? new Error('Could not read file.')));
+      reader.readAsDataURL(file);
+    });
+    importText = '';
+  }
+
   async function runImport() {
     status = 'Importing';
-    const data = importKind === 'chat-jsonl' ? importText : JSON.parse(importText);
-    await fetchJson('/api/import', {
+    const data =
+      importKind === 'chat-jsonl'
+        ? importText
+        : importKind === 'character-card-png'
+          ? importFileBase64 || importText.trim()
+          : JSON.parse(importText);
+    const result = await fetchJson<{ type: string; item?: { id: string } }>('/api/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: importKind, name: importName || undefined, data })
     });
     importText = '';
+    importFileName = '';
+    importFileBase64 = '';
     importName = '';
     await refreshAll();
+    if (result.type === 'character' && result.item?.id) {
+      activeCharacterId = result.item.id;
+    }
   }
 
   async function createCharacter() {
@@ -445,9 +556,18 @@
           </div>
         {/if}
         {#each messages as message}
-          <article class="message {message.role}">
-            <strong>{message.role}</strong>
-            <p>{message.content}</p>
+          <article class="message-row {message.role}">
+            <button class="message-avatar" type="button" aria-label={`Open avatar for ${messageSpeaker(message)}`} on:click={() => openZoomedAvatar(message)}>
+              {#if messageAvatarUrl(message)}
+                <img src={messageAvatarUrl(message)} alt="" />
+              {:else}
+                <span>{messageInitials(message)}</span>
+              {/if}
+            </button>
+            <div class="message {message.role}">
+              <strong>{messageSpeaker(message)}</strong>
+              <p>{message.content}</p>
+            </div>
           </article>
         {/each}
       </div>
@@ -458,6 +578,24 @@
       <button class="primary" type="submit"><Send size={18} /><span>Send</span></button>
     </form>
   </section>
+
+  {#if zoomedAvatar}
+    <section class="avatar-viewer" aria-label="Avatar preview">
+      <header>
+        <strong>{zoomedAvatar.name}</strong>
+        <button class="tool-button" type="button" title="Close avatar preview" aria-label="Close avatar preview" on:click={() => (zoomedAvatar = null)}>
+          <X size={18} />
+        </button>
+      </header>
+      <div class="avatar-viewer-image" class:user={zoomedAvatar.role === 'user'}>
+        {#if zoomedAvatar.src}
+          <img src={zoomedAvatar.src} alt={`${zoomedAvatar.name} avatar`} />
+        {:else}
+          <span>{zoomedAvatar.initials}</span>
+        {/if}
+      </div>
+    </section>
+  {/if}
 
   {#if activeDrawer}
     <button class="scrim" type="button" aria-label="Close drawer" on:click={closeDrawer}></button>
@@ -577,11 +715,23 @@
           <select aria-label="Import kind" bind:value={importKind}>
             <option value="preset">Preset</option>
             <option value="character-card-json">Character JSON</option>
+            <option value="character-card-png">Character PNG</option>
             <option value="worldbook">World Book</option>
             <option value="chat-jsonl">Chat JSONL</option>
           </select>
           <input bind:value={importName} placeholder="Name" />
-          <textarea bind:value={importText} rows="10" placeholder="JSON or JSONL"></textarea>
+          {#if importKind === 'character-card-png'}
+            <label class="file-picker">
+              <Upload size={16} />
+              <span>{importFileName || 'Choose PNG character card'}</span>
+              <input type="file" accept="image/png,.png" on:change={readImportFile} />
+            </label>
+          {/if}
+          <textarea
+            bind:value={importText}
+            rows="10"
+            placeholder={importKind === 'character-card-png' ? 'Optional base64 PNG data' : 'JSON or JSONL'}
+          ></textarea>
           <button class="secondary full" type="button" on:click={runImport}><Download size={16} />Import</button>
         </div>
       {:else if activeDrawer === 'inspector'}
@@ -793,8 +943,68 @@
     overflow-wrap: anywhere;
   }
 
-  .message {
+  .message-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
     width: min(100%, 760px);
+    align-self: flex-start;
+  }
+
+  .message-row.user {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+  }
+
+  .message-row.system {
+    align-self: center;
+  }
+
+  .message-avatar {
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid #d9ddd7;
+    border-radius: 8px;
+    background: #f0f2ee;
+    color: inherit;
+    cursor: zoom-in;
+  }
+
+  .message-avatar:hover,
+  .message-avatar:focus-visible {
+    border-color: #92bfa4;
+    box-shadow: 0 0 0 3px rgb(146 191 164 / 22%);
+    outline: 0;
+  }
+
+  .message-avatar img,
+  .message-avatar span {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+  }
+
+  .message-avatar img {
+    object-fit: cover;
+  }
+
+  .message-avatar span {
+    background: #203229;
+    color: #fff;
+    font-weight: 800;
+  }
+
+  .message-row.user .message-avatar span {
+    background: #1c6b43;
+  }
+
+  .message {
+    min-width: 0;
+    flex: 1 1 auto;
     border: 1px solid #dfe1dc;
     border-radius: 8px;
     background: #fff;
@@ -803,13 +1013,12 @@
   }
 
   .message.user {
-    align-self: flex-end;
     border-color: #b6d2bf;
     background: #eaf5ee;
   }
 
   .message.assistant {
-    align-self: flex-start;
+    background: #fff;
   }
 
   .message strong {
@@ -817,7 +1026,7 @@
     margin-bottom: 6px;
     color: #68716b;
     font-size: 12px;
-    text-transform: uppercase;
+    text-transform: none;
   }
 
   .message p {
@@ -834,6 +1043,70 @@
     border-top: 1px solid #dfe1dc;
     padding: 14px 20px;
     background: #fff;
+  }
+
+  .avatar-viewer {
+    position: fixed;
+    top: 88px;
+    left: 84px;
+    z-index: 25;
+    display: grid;
+    width: min(360px, calc(100vw - 108px));
+    max-height: calc(100vh - 116px);
+    overflow: hidden;
+    border: 1px solid rgb(32 50 41 / 16%);
+    border-radius: 8px;
+    background: rgb(255 255 255 / 96%);
+    box-shadow: 0 18px 46px rgb(20 24 22 / 22%);
+  }
+
+  .avatar-viewer header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 48px;
+    border-bottom: 1px solid #e1e4df;
+    padding: 8px 10px 8px 14px;
+  }
+
+  .avatar-viewer header strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .avatar-viewer-image {
+    display: grid;
+    place-items: center;
+    min-height: 220px;
+    max-height: calc(100vh - 168px);
+    background: #eef1ed;
+  }
+
+  .avatar-viewer-image img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-height: calc(100vh - 168px);
+    object-fit: contain;
+  }
+
+  .avatar-viewer-image span {
+    display: grid;
+    place-items: center;
+    width: min(72vw, 260px);
+    aspect-ratio: 1;
+    border-radius: 8px;
+    background: #203229;
+    color: #fff;
+    font-size: 96px;
+    font-weight: 800;
+  }
+
+  .avatar-viewer-image.user span {
+    background: #1c6b43;
   }
 
   .primary,
@@ -934,6 +1207,35 @@
 
   .checkbox-row input {
     width: auto;
+  }
+
+  .file-picker {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 42px;
+    border: 1px dashed #a9b7ad;
+    border-radius: 8px;
+    background: #f8faf7;
+    color: #2f3a34;
+    padding: 10px 12px;
+    overflow: hidden;
+  }
+
+  .file-picker span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-picker input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
   }
 
   .item-list {

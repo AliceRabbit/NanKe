@@ -6,8 +6,12 @@ export const sillyTavernCharacterV1Schema = z.object({
   personality: z.string().default(''),
   scenario: z.string().default(''),
   first_mes: z.string().default(''),
-  mes_example: z.string().default('')
-});
+  mes_example: z.string().default(''),
+  creatorcomment: z.string().default(''),
+  tags: z.array(z.string()).default([]),
+  talkativeness: z.union([z.string(), z.number()]).optional(),
+  fav: z.boolean().optional()
+}).passthrough();
 
 export const sillyTavernCharacterV2Schema = z.object({
   spec: z.string().optional(),
@@ -23,12 +27,45 @@ export const sillyTavernCharacterV2Schema = z.object({
     system_prompt: z.string().default(''),
     post_history_instructions: z.string().default(''),
     alternate_greetings: z.array(z.string()).default([]),
+    group_only_greetings: z.array(z.string()).default([]),
     tags: z.array(z.string()).default([]),
     creator: z.string().default(''),
     character_version: z.string().default(''),
     extensions: z.record(z.string(), z.unknown()).default({})
+  }).passthrough()
+}).passthrough();
+
+export const sillyTavernCharacterBookEntrySchema = z
+  .object({
+    id: z.union([z.string(), z.number()]).optional(),
+    uid: z.union([z.string(), z.number()]).optional(),
+    keys: z.array(z.string()).optional(),
+    key: z.array(z.string()).optional(),
+    secondary_keys: z.array(z.string()).optional(),
+    keysecondary: z.array(z.string()).optional(),
+    comment: z.string().default(''),
+    content: z.string().default(''),
+    constant: z.boolean().default(false),
+    selective: z.boolean().default(false),
+    insertion_order: z.number().optional(),
+    order: z.number().optional(),
+    enabled: z.boolean().optional(),
+    disable: z.boolean().optional(),
+    position: z.union([z.string(), z.number()]).optional(),
+    use_regex: z.boolean().optional(),
+    depth: z.number().optional(),
+    role: z.union([z.string(), z.number(), z.null()]).optional(),
+    probability: z.number().optional(),
+    extensions: z.record(z.string(), z.unknown()).default({})
   })
-});
+  .passthrough();
+
+export const sillyTavernCharacterBookSchema = z
+  .object({
+    name: z.string().optional(),
+    entries: z.array(sillyTavernCharacterBookEntrySchema).default([])
+  })
+  .passthrough();
 
 export const sillyTavernWorldInfoEntrySchema = z.object({
   uid: z.union([z.string(), z.number()]).optional(),

@@ -1,6 +1,6 @@
 import type { GenerationProfile } from '$lib/schemas/profile';
 import type { GenerationChunk, ProviderRequest } from '$lib/schemas/provider';
-import { parseSseStream, resolveSecret, type ProviderAdapter, type ProviderFetch } from './ProviderAdapter';
+import { parseSseStream, type ProviderAdapter, type ProviderFetch } from './ProviderAdapter';
 
 type OpenAIChunk = {
   choices?: Array<{
@@ -73,10 +73,6 @@ function openAIHeaders(profile: GenerationProfile, apiKey?: string): HeadersInit
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-  const organization = profile.provider.organization?.trim();
-  const project = profile.provider.project?.trim();
-  if (organization) headers['X-OpenAI-Organization'] = organization;
-  if (project) headers['X-OpenAI-Project'] = project;
   return headers;
 }
 
@@ -99,7 +95,7 @@ export function createOpenAICompatibleAdapter(fetchImpl: ProviderFetch = fetch):
         throw new Error('Invalid profile for OpenAI-compatible adapter.');
       }
 
-      const apiKey = resolveSecret(profile.provider.apiKey, profile.provider.apiKeyEnv);
+      const apiKey = profile.provider.apiKey?.trim();
       const response = await fetchImpl(openAICompatibleUrl(profile), {
         method: 'POST',
         signal,

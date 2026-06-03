@@ -67,9 +67,6 @@ export const providerProfileSchema = z.discriminatedUnion('type', [
     model: z.string().min(1),
     endpoint: z.string().url().default('https://api.openai.com/v1'),
     apiKey: z.string().optional(),
-    apiKeyEnv: z.string().default('OPENAI_API_KEY'),
-    organization: z.string().optional(),
-    project: z.string().optional(),
     compatibility: z.enum(['strict-openai', 'extended']).default('strict-openai')
   }),
   z.object({
@@ -77,13 +74,11 @@ export const providerProfileSchema = z.discriminatedUnion('type', [
     model: z.string().min(1),
     endpoint: z.string().url().optional(),
     apiKey: z.string().optional(),
-    apiKeyEnv: z.string().default('GEMINI_API_KEY'),
     vertex: z
       .object({
         projectId: z.string().min(1),
         location: z.string().min(1),
-        accessToken: z.string().optional(),
-        accessTokenEnv: z.string().default('GOOGLE_VERTEX_ACCESS_TOKEN')
+        accessToken: z.string().optional()
       })
       .optional()
   })
@@ -144,7 +139,6 @@ export function createDefaultGenerationProfile(input: Partial<GenerationProfile>
       type: 'openai-compatible',
       model: 'gpt-4o-mini',
       endpoint: 'https://api.openai.com/v1',
-      apiKeyEnv: 'OPENAI_API_KEY',
       compatibility: 'strict-openai'
     },
     sampler: input.sampler ?? {

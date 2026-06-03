@@ -1,6 +1,6 @@
 import type { GenerationProfile } from '$lib/schemas/profile';
 import type { GenerationChunk, ProviderRequest } from '$lib/schemas/provider';
-import { parseSseStream, resolveSecret, type ProviderAdapter, type ProviderFetch } from './ProviderAdapter';
+import { parseSseStream, type ProviderAdapter, type ProviderFetch } from './ProviderAdapter';
 
 type GeminiChunk = {
   candidates?: Array<{
@@ -92,10 +92,8 @@ export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderA
         throw new Error('Invalid profile for Gemini adapter.');
       }
 
-      const apiKey = resolveSecret(profile.provider.apiKey, profile.provider.apiKeyEnv);
-      const vertexToken = profile.provider.vertex
-        ? resolveSecret(profile.provider.vertex.accessToken, profile.provider.vertex.accessTokenEnv)
-        : undefined;
+      const apiKey = profile.provider.apiKey?.trim();
+      const vertexToken = profile.provider.vertex ? profile.provider.vertex.accessToken?.trim() : undefined;
 
       const response = await fetchImpl(geminiUrl(profile), {
         method: 'POST',

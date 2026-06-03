@@ -272,13 +272,11 @@ function providerFromOpenAiPreset(preset: RecordValue): ProviderProfile {
     return {
       type: 'gemini',
       model: model ?? 'gemini-2.5-pro',
-      apiKeyEnv: 'GEMINI_API_KEY',
       ...(source === 'vertexai' && projectId && location
         ? {
             vertex: {
               projectId,
-              location,
-              accessTokenEnv: 'GOOGLE_VERTEX_ACCESS_TOKEN'
+              location
             }
           }
         : {})
@@ -291,7 +289,6 @@ function providerFromOpenAiPreset(preset: RecordValue): ProviderProfile {
     type: 'openai-compatible',
     model: stringValue(preset.openai_model) ?? stringValue(preset.custom_model) ?? 'gpt-4o-mini',
     endpoint: endpoint && URL.canParse(endpoint) ? endpoint : 'https://api.openai.com/v1',
-    apiKeyEnv: 'OPENAI_API_KEY',
     compatibility
   };
 }

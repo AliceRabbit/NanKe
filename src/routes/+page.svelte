@@ -76,9 +76,6 @@
           model: string;
           endpoint?: string;
           apiKey?: string;
-          apiKeyEnv?: string;
-          organization?: string;
-          project?: string;
           compatibility?: OpenAICompatibility;
         }
       | {
@@ -86,8 +83,7 @@
           model: string;
           endpoint?: string;
           apiKey?: string;
-          apiKeyEnv?: string;
-          vertex?: { projectId: string; location: string; accessToken?: string; accessTokenEnv?: string };
+          vertex?: { projectId: string; location: string; accessToken?: string };
         };
     sampler?: {
       temperature?: number;
@@ -200,15 +196,11 @@
   let profileDraftProviderModel = '';
   let profileDraftProviderEndpoint = '';
   let profileDraftApiKey = '';
-  let profileDraftApiKeyEnv = '';
-  let profileDraftOpenAIOrganization = '';
-  let profileDraftOpenAIProject = '';
   let profileDraftOpenAICompatibility: OpenAICompatibility = 'strict-openai';
   let profileDraftVertexEnabled = false;
   let profileDraftVertexProjectId = '';
   let profileDraftVertexLocation = '';
   let profileDraftVertexAccessToken = '';
-  let profileDraftVertexAccessTokenEnv = '';
   let profileDraftTemperature = '';
   let profileDraftTopP = '';
   let profileDraftTopK = '';
@@ -396,15 +388,11 @@
       profileDraftProviderModel = '';
       profileDraftProviderEndpoint = '';
       profileDraftApiKey = '';
-      profileDraftApiKeyEnv = '';
-      profileDraftOpenAIOrganization = '';
-      profileDraftOpenAIProject = '';
       profileDraftOpenAICompatibility = 'strict-openai';
       profileDraftVertexEnabled = false;
       profileDraftVertexProjectId = '';
       profileDraftVertexLocation = '';
       profileDraftVertexAccessToken = '';
-      profileDraftVertexAccessTokenEnv = '';
       profileDraftTemperature = '';
       profileDraftTopP = '';
       profileDraftTopK = '';
@@ -436,15 +424,11 @@
     profileDraftProviderModel = profile.provider.model;
     profileDraftProviderEndpoint = profile.provider.endpoint ?? '';
     profileDraftApiKey = profile.provider.apiKey ?? '';
-    profileDraftApiKeyEnv = profile.provider.apiKeyEnv ?? (profile.provider.type === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY');
-    profileDraftOpenAIOrganization = profile.provider.type === 'openai-compatible' ? (profile.provider.organization ?? '') : '';
-    profileDraftOpenAIProject = profile.provider.type === 'openai-compatible' ? (profile.provider.project ?? '') : '';
     profileDraftOpenAICompatibility = profile.provider.type === 'openai-compatible' ? (profile.provider.compatibility ?? 'strict-openai') : 'strict-openai';
     profileDraftVertexEnabled = profile.provider.type === 'gemini' && Boolean(profile.provider.vertex);
     profileDraftVertexProjectId = profile.provider.type === 'gemini' ? (profile.provider.vertex?.projectId ?? '') : '';
     profileDraftVertexLocation = profile.provider.type === 'gemini' ? (profile.provider.vertex?.location ?? '') : '';
     profileDraftVertexAccessToken = profile.provider.type === 'gemini' ? (profile.provider.vertex?.accessToken ?? '') : '';
-    profileDraftVertexAccessTokenEnv = profile.provider.type === 'gemini' ? (profile.provider.vertex?.accessTokenEnv ?? 'GOOGLE_VERTEX_ACCESS_TOKEN') : '';
     profileDraftTemperature = numberToDraft(sampler.temperature);
     profileDraftTopP = numberToDraft(sampler.topP);
     profileDraftTopK = numberToDraft(sampler.topK);
@@ -515,7 +499,6 @@
     const model = profileDraftProviderModel.trim() || base.provider.model;
     const endpoint = profileDraftProviderEndpoint.trim();
     const apiKey = profileDraftApiKey.trim();
-    const apiKeyEnv = profileDraftApiKeyEnv.trim();
 
     if (profileDraftProviderType === 'gemini') {
       const vertex =
@@ -523,8 +506,7 @@
           ? {
               projectId: profileDraftVertexProjectId.trim(),
               location: profileDraftVertexLocation.trim(),
-              ...(profileDraftVertexAccessToken.trim() ? { accessToken: profileDraftVertexAccessToken.trim() } : {}),
-              accessTokenEnv: profileDraftVertexAccessTokenEnv.trim() || 'GOOGLE_VERTEX_ACCESS_TOKEN'
+              ...(profileDraftVertexAccessToken.trim() ? { accessToken: profileDraftVertexAccessToken.trim() } : {})
             }
           : undefined;
       return {
@@ -532,7 +514,6 @@
         model: model || 'gemini-2.5-pro',
         ...(endpoint ? { endpoint } : {}),
         ...(apiKey ? { apiKey } : {}),
-        apiKeyEnv: apiKeyEnv || 'GEMINI_API_KEY',
         ...(vertex ? { vertex } : {})
       };
     }
@@ -542,9 +523,6 @@
       model: model || 'gpt-4o-mini',
       endpoint: endpoint || 'https://api.openai.com/v1',
       ...(apiKey ? { apiKey } : {}),
-      apiKeyEnv: apiKeyEnv || 'OPENAI_API_KEY',
-      ...(profileDraftOpenAIOrganization.trim() ? { organization: profileDraftOpenAIOrganization.trim() } : {}),
-      ...(profileDraftOpenAIProject.trim() ? { project: profileDraftOpenAIProject.trim() } : {}),
       compatibility: profileDraftOpenAICompatibility
     };
   }
@@ -555,18 +533,15 @@
     if (value === 'gemini') {
       profileDraftProviderEndpoint = '';
       profileDraftProviderModel ||= 'gemini-2.5-pro';
-      if (!profileDraftApiKeyEnv || profileDraftApiKeyEnv === 'OPENAI_API_KEY') profileDraftApiKeyEnv = 'GEMINI_API_KEY';
       return;
     }
 
     profileDraftProviderEndpoint = 'https://api.openai.com/v1';
     profileDraftProviderModel ||= 'gpt-4o-mini';
-    if (!profileDraftApiKeyEnv || profileDraftApiKeyEnv === 'GEMINI_API_KEY') profileDraftApiKeyEnv = 'OPENAI_API_KEY';
     profileDraftVertexEnabled = false;
     profileDraftVertexProjectId = '';
     profileDraftVertexLocation = '';
     profileDraftVertexAccessToken = '';
-    profileDraftVertexAccessTokenEnv = '';
   }
 
   function normalizedPromptSlot(slot: PromptSlot): PromptSlot {
@@ -1518,24 +1493,12 @@
                   <div class="credential-panel">
                     <div class="credential-panel-head">
                       <strong>Authentication</strong>
-                      <span>Bearer key, env fallback, optional OpenAI headers</span>
+                      <span>Bearer API key</span>
                     </div>
-                    <div class="credential-grid">
+                    <div class="credential-grid single">
                       <label>
                         <span>API Key</span>
                         <input bind:value={profileDraftApiKey} type="password" autocomplete="off" placeholder="sk-..." />
-                      </label>
-                      <label>
-                        <span>Env Var</span>
-                        <input bind:value={profileDraftApiKeyEnv} placeholder="OPENAI_API_KEY" />
-                      </label>
-                      <label>
-                        <span>Organization</span>
-                        <input bind:value={profileDraftOpenAIOrganization} placeholder="Optional org id" />
-                      </label>
-                      <label>
-                        <span>Project</span>
-                        <input bind:value={profileDraftOpenAIProject} placeholder="Optional project id" />
                       </label>
                     </div>
                     <div class="compatibility-strip" aria-label="OpenAI-compatible request mode">
@@ -1555,14 +1518,10 @@
                       <strong>Authentication</strong>
                       <span>AI Studio key is sent as x-goog-api-key</span>
                     </div>
-                    <div class="credential-grid two">
+                    <div class="credential-grid single">
                       <label>
                         <span>API Key</span>
                         <input bind:value={profileDraftApiKey} type="password" autocomplete="off" placeholder="AIza..." />
-                      </label>
-                      <label>
-                        <span>Env Var</span>
-                        <input bind:value={profileDraftApiKeyEnv} placeholder="GEMINI_API_KEY" />
                       </label>
                     </div>
                   </div>
@@ -1570,16 +1529,12 @@
                   <div class="credential-panel">
                     <div class="credential-panel-head">
                       <strong>Vertex OAuth</strong>
-                      <span>Google Cloud access token, env fallback</span>
+                      <span>Google Cloud access token</span>
                     </div>
-                    <div class="credential-grid two">
+                    <div class="credential-grid single">
                       <label>
                         <span>Access Token</span>
                         <input bind:value={profileDraftVertexAccessToken} type="password" autocomplete="off" placeholder="ya29..." />
-                      </label>
-                      <label>
-                        <span>Token Env</span>
-                        <input bind:value={profileDraftVertexAccessTokenEnv} placeholder="GOOGLE_VERTEX_ACCESS_TOKEN" />
                       </label>
                     </div>
                   </div>
@@ -2860,8 +2815,8 @@
     gap: 8px;
   }
 
-  .credential-grid.two {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .credential-grid.single {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .compatibility-strip {
@@ -3404,7 +3359,7 @@
     .provider-config,
     .vertex-strip,
     .credential-grid,
-    .credential-grid.two,
+    .credential-grid.single,
     .compatibility-strip {
       grid-template-columns: minmax(0, 1fr);
     }

@@ -4,6 +4,7 @@
     Bot,
     BookOpen,
     Download,
+    GripHorizontal,
     MessageSquare,
     RefreshCw,
     Search,
@@ -580,13 +581,13 @@
   </section>
 
   {#if zoomedAvatar}
-    <section class="avatar-viewer" aria-label="Avatar preview">
-      <header>
-        <strong>{zoomedAvatar.name}</strong>
-        <button class="tool-button" type="button" title="Close avatar preview" aria-label="Close avatar preview" on:click={() => (zoomedAvatar = null)}>
+    <section class="avatar-viewer" aria-label="Avatar preview" title={zoomedAvatar.name}>
+      <div class="avatar-viewer-controls">
+        <span aria-hidden="true"><GripHorizontal size={18} /></span>
+        <button type="button" title="Close avatar preview" aria-label="Close avatar preview" on:click={() => (zoomedAvatar = null)}>
           <X size={18} />
         </button>
-      </header>
+      </div>
       <div class="avatar-viewer-image" class:user={zoomedAvatar.role === 'user'}>
         {#if zoomedAvatar.src}
           <img src={zoomedAvatar.src} alt={`${zoomedAvatar.name} avatar`} />
@@ -1047,50 +1048,36 @@
 
   .avatar-viewer {
     position: fixed;
-    top: 88px;
-    left: 84px;
+    --rail-width: 64px;
+    --stage-width: calc(100vw - var(--rail-width));
+    --chat-width: min(880px, var(--stage-width));
+    --chat-left: calc(var(--rail-width) + (var(--stage-width) - var(--chat-width)) / 2);
+    --avatar-viewer-width: min(430px, calc(90vh * 0.666), calc(100vw - var(--rail-width) - 28px));
+    top: 78px;
+    left: max(calc(var(--rail-width) + 14px), calc(var(--chat-left) - var(--avatar-viewer-width) - 20px));
     z-index: 25;
-    display: grid;
-    width: min(360px, calc(100vw - 108px));
-    max-height: calc(100vh - 116px);
-    overflow: hidden;
-    border: 1px solid rgb(32 50 41 / 16%);
-    border-radius: 8px;
-    background: rgb(255 255 255 / 96%);
-    box-shadow: 0 18px 46px rgb(20 24 22 / 22%);
-  }
-
-  .avatar-viewer header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    min-height: 48px;
-    border-bottom: 1px solid #e1e4df;
-    padding: 8px 10px 8px 14px;
-  }
-
-  .avatar-viewer header strong {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: block;
+    width: var(--avatar-viewer-width);
+    max-height: calc(100vh - 96px);
+    background: transparent;
   }
 
   .avatar-viewer-image {
-    display: grid;
-    place-items: center;
-    min-height: 220px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    min-height: 0;
     max-height: calc(100vh - 168px);
-    background: #eef1ed;
+    background: transparent;
   }
 
   .avatar-viewer-image img {
     display: block;
     width: 100%;
-    height: 100%;
-    max-height: calc(100vh - 168px);
+    max-height: calc(100vh - 96px);
     object-fit: contain;
+    border-radius: 10px;
+    box-shadow: 0 18px 46px rgb(20 24 22 / 22%);
   }
 
   .avatar-viewer-image span {
@@ -1100,6 +1087,7 @@
     aspect-ratio: 1;
     border-radius: 8px;
     background: #203229;
+    box-shadow: 0 18px 46px rgb(20 24 22 / 22%);
     color: #fff;
     font-size: 96px;
     font-weight: 800;
@@ -1107,6 +1095,49 @@
 
   .avatar-viewer-image.user span {
     background: #1c6b43;
+  }
+
+  .avatar-viewer-controls {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    left: 8px;
+    z-index: 2;
+    display: flex;
+    justify-content: space-between;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease;
+  }
+
+  .avatar-viewer:hover .avatar-viewer-controls,
+  .avatar-viewer:focus-within .avatar-viewer-controls {
+    opacity: 1;
+  }
+
+  .avatar-viewer-controls span,
+  .avatar-viewer-controls button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgb(255 255 255 / 28%);
+    border-radius: 8px;
+    background: rgb(31 36 33 / 72%);
+    color: #fff;
+    pointer-events: auto;
+    backdrop-filter: blur(8px);
+  }
+
+  .avatar-viewer-controls button {
+    cursor: pointer;
+  }
+
+  .avatar-viewer-controls button:hover,
+  .avatar-viewer-controls button:focus-visible {
+    background: rgb(28 107 67 / 88%);
+    outline: 0;
   }
 
   .primary,
@@ -1342,6 +1373,18 @@
 
     .drawer.right {
       width: calc(100vw - 56px);
+    }
+
+    .avatar-viewer {
+      --rail-width: 56px;
+      --avatar-viewer-width: min(320px, calc(100vw - 76px));
+      top: 72px;
+      left: 66px;
+      max-height: calc(100vh - 92px);
+    }
+
+    .avatar-viewer-image img {
+      max-height: calc(100vh - 92px);
     }
   }
 </style>

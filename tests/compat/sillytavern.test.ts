@@ -126,6 +126,7 @@ describe('SillyTavern compat importers', () => {
     expect(profile.prompt.squashSystemMessages).toBe(true);
     expect(profile.sampler.contextTokens).toBe(2_000_000);
     expect(profile.sampler.maxTokens).toBe(30_000);
+    expect(profile.request.stream).toBe(true);
     expect(profile.sampler.frequencyPenalty).toBe(0);
     expect(profile.sampler.repetitionPenalty).toBe(1);
     expect(profile.prompt.slots).toHaveLength(203);
@@ -136,6 +137,9 @@ describe('SillyTavern compat importers', () => {
     expect(profile.prompt.slots.find((slot) => slot.id === 'chatHistory')?.source).toBe('history');
     expect(report.preservedAsExtras).toContain('31 prompts not present in active prompt_order');
     expect(report.preservedAsExtras).toContain('extensions.regex_scripts');
+    expect(report.mapped).toContain('extensions.regex_scripts');
+    expect(profile.regex.scripts.length).toBeGreaterThan(20);
+    expect(profile.regex.scripts.some((script) => script.scriptName.includes('清理思维链'))).toBe(true);
 
     const metadata = profile.metadata.sillyTavern as {
       promptManager: { promptCount: number; orderedPromptCount: number; enabledPromptCount: number };

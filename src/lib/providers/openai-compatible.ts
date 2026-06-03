@@ -5,6 +5,7 @@ import { parseSseStream, type ProviderAdapter, type ProviderFetch } from './Prov
 type OpenAIChunk = {
   choices?: Array<{
     delta?: { content?: string };
+    message?: { content?: unknown };
     text?: string;
   }>;
 };
@@ -23,11 +24,26 @@ export function openAICompatibleUrl(profile: GenerationProfile): string {
   return `${endpoint}/chat/completions`;
 }
 
+function openAIContentText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && 'text' in part) return String((part as { text?: unknown }).text ?? '');
+        return '';
+      })
+      .join('');
+  }
+  return '';
+}
+
 export function buildOpenAICompatibleRequest(request: ProviderRequest, profile: GenerationProfile) {
   if (profile.provider.type !== 'openai-compatible') {
     throw new Error('Invalid profile for OpenAI-compatible request.');
   }
 
+  const stream = request.stream ?? profile.request.stream;
   const stop = request.stop.length ? request.stop : profile.sampler.stop;
   const maxTokens = request.maxTokens ?? profile.sampler.maxTokens;
   const messages = request.messages.map((message) => ({
@@ -38,7 +54,7 @@ export function buildOpenAICompatibleRequest(request: ProviderRequest, profile: 
   const common = {
     model: profile.provider.model,
     messages,
-    stream: true,
+    stream,
     temperature: request.temperature ?? profile.sampler.temperature,
     top_p: request.topP ?? profile.sampler.topP,
     frequency_penalty: request.frequencyPenalty ?? profile.sampler.frequencyPenalty,
@@ -62,7 +78,7 @@ export function buildOpenAICompatibleRequest(request: ProviderRequest, profile: 
   return withDefinedValues({
     ...common,
     max_completion_tokens: maxTokens,
-    stream_options: { include_usage: true }
+    ...(stream ? { stream_options: { include_usage: true } } : {})
   });
 }
 
@@ -96,6 +112,7 @@ export function createOpenAICompatibleAdapter(fetchImpl: ProviderFetch = fetch):
       }
 
       const apiKey = profile.provider.apiKey?.trim();
+      const streaming = request.stream ?? profile.request.stream;
       const response = await fetchImpl(openAICompatibleUrl(profile), {
         method: 'POST',
         signal,
@@ -105,6 +122,14 @@ export function createOpenAICompatibleAdapter(fetchImpl: ProviderFetch = fetch):
 
       if (!response.ok) {
         yield { type: 'error', text: await readProviderError(response), raw: { status: response.status } };
+        return;
+      }
+
+      if (!streaming) {
+        const payload = (await response.json()) as OpenAIChunk;
+        const text = openAIContentText(payload.choices?.[0]?.message?.content) || payload.choices?.[0]?.text || '';
+        if (text) yield { type: 'text', text, raw: payload };
+        yield { type: 'done', text: '' };
         return;
       }
 

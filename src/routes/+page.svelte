@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { applyRegexScripts, hasRegexScriptForPlacement, REGEX_PLACEMENT } from '$lib/core/regex';
+  import type { RegexPlacement, RegexScript } from '$lib/schemas/regex';
   import {
     ArrowDown,
     ArrowUp,
@@ -101,11 +103,18 @@
       n?: number;
       stop?: string[];
     };
+    request?: {
+      stream?: boolean;
+    };
     prompt?: {
       mode?: PromptMode;
       macroMode?: MacroMode;
       squashSystemMessages?: boolean;
       slots?: PromptSlot[];
+    };
+    regex?: {
+      enabled?: boolean;
+      scripts?: RegexScript[];
     };
     metadata?: Record<string, unknown> & {
       sillyTavern?: {
@@ -122,7 +131,14 @@
     createdAt: number;
     updatedAt: number;
   };
-  type Character = { id: string; name: string; firstMessage?: string; avatarAssetId?: string };
+  type Character = {
+    id: string;
+    name: string;
+    firstMessage?: string;
+    avatarAssetId?: string;
+    worldBookIds?: string[];
+    characterBook?: { id: string; name: string; entries: unknown[] };
+  };
   type UserPersona = {
     id: string;
     name: string;
@@ -132,7 +148,7 @@
     createdAt: number;
     updatedAt: number;
   };
-  type WorldBook = { id: string; name: string; entries: unknown[] };
+  type WorldBook = { id: string; name: string; entries: unknown[]; metadata?: { source?: string; characterId?: string; characterName?: string } };
   type Conversation = { id: string; title: string; characterId?: string; personaId?: string; profileId?: string; messages?: ChatMessage[] };
   type ChatMessage = { role: 'user' | 'assistant' | 'system'; name?: string; content: string };
   type ZoomedAvatar = { key: string; name: string; role: ChatMessage['role']; src: string; initials: string };
@@ -217,9 +233,12 @@
   let profileDraftSeed = '';
   let profileDraftN = '';
   let profileDraftStop = '';
+  let profileDraftStream = true;
   let profileDraftMode: PromptMode = 'chat';
   let profileDraftMacroMode: MacroMode = 'none';
   let profileDraftSquashSystemMessages = false;
+  let profileDraftRegexEnabled = true;
+  let profileDraftRegexScripts: RegexScript[] = [];
   let profileDraftSlots: PromptSlot[] = [];
   let promptSlotQuery = '';
   let activePromptSlotId = '';
@@ -234,6 +253,7 @@
   $: activePromptSlot = profileDraftSlots.find((slot) => slot.id === activePromptSlotId);
   $: promptEditorSlot = profileDraftSlots.find((slot) => slot.id === promptEditorSlotId);
   $: activeCharacter = characters.find((character) => character.id === activeCharacterId);
+  $: activeCharacterWorldBooks = boundWorldBooksForCharacter(activeCharacter);
   $: activePersona = personas.find((persona) => persona.id === activePersonaId);
   $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
   $: drawerTitle =
@@ -352,9 +372,35 @@
       sampler.temperature !== undefined ? `temp ${sampler.temperature}` : '',
       sampler.topP !== undefined ? `top-p ${sampler.topP}` : '',
       sampler.maxTokens !== undefined ? `${sampler.maxTokens} out` : '',
-      sampler.contextTokens !== undefined ? `${sampler.contextTokens} ctx` : ''
+      sampler.contextTokens !== undefined ? `${sampler.contextTokens} ctx` : '',
+      profile.request?.stream === false ? 'non-stream' : 'stream'
     ].filter(Boolean);
     return parts.join(' · ') || 'No sampler details';
+  }
+
+  function boundWorldBooksForCharacter(character?: Character) {
+    if (!character) return [];
+    const ids = new Set(character.worldBookIds ?? []);
+    if (character.characterBook?.id) ids.add(character.characterBook.id);
+    return worldBooks.filter((worldBook) => ids.has(worldBook.id) || worldBook.metadata?.characterId === character.id);
+  }
+
+  function worldBookLine(worldBook: WorldBook) {
+    if (worldBook.metadata?.source === 'character-card') {
+      return `${worldBook.entries.length} entries · bound to ${worldBook.metadata.characterName ?? 'character'}`;
+    }
+    return `${worldBook.entries.length} entries`;
+  }
+
+  function regexScriptSurface(script: RegexScript) {
+    const surfaces = [
+      script.placement.includes(1) ? 'input' : '',
+      script.placement.includes(2) ? 'output' : '',
+      script.placement.includes(5) ? 'world' : '',
+      script.placement.includes(6) ? 'reasoning' : ''
+    ].filter(Boolean);
+    const scope = script.promptOnly ? 'prompt' : script.markdownOnly ? 'display' : 'normal';
+    return `${scope}${surfaces.length ? ` · ${surfaces.join('/')}` : ''}`;
   }
 
   function filterProfiles(items: Profile[], query: string) {
@@ -411,9 +457,12 @@
       profileDraftSeed = '';
       profileDraftN = '';
       profileDraftStop = '';
+      profileDraftStream = true;
       profileDraftMode = 'chat';
       profileDraftMacroMode = 'none';
       profileDraftSquashSystemMessages = false;
+      profileDraftRegexEnabled = true;
+      profileDraftRegexScripts = [];
       profileDraftSlots = [];
       activePromptSlotId = '';
       promptSlotQuery = '';
@@ -449,9 +498,12 @@
     profileDraftSeed = numberToDraft(sampler.seed);
     profileDraftN = numberToDraft(sampler.n);
     profileDraftStop = (sampler.stop ?? []).join('\n');
+    profileDraftStream = profile.request?.stream !== false;
     profileDraftMode = profile.prompt?.mode ?? 'chat';
     profileDraftMacroMode = profile.prompt?.macroMode ?? 'none';
     profileDraftSquashSystemMessages = profile.prompt?.squashSystemMessages ?? false;
+    profileDraftRegexEnabled = profile.regex?.enabled !== false;
+    profileDraftRegexScripts = structuredClone(profile.regex?.scripts ?? []);
     profileDraftSlots = clonePromptSlots(profile.prompt?.slots);
     activePromptSlotId = profileDraftSlots[0]?.id ?? '';
     promptSlotQuery = '';
@@ -585,12 +637,20 @@
       name: profileDraftName.trim(),
       provider: profileDraftProvider(base),
       sampler: profileDraftSampler(),
+      request: {
+        ...(base.request ?? {}),
+        stream: profileDraftStream
+      },
       prompt: {
         ...(base.prompt ?? {}),
         mode: profileDraftMode,
         macroMode: profileDraftMacroMode,
         squashSystemMessages: profileDraftSquashSystemMessages,
         slots: profileDraftSlots.map(normalizedPromptSlot)
+      },
+      regex: {
+        enabled: profileDraftRegexEnabled,
+        scripts: structuredClone(profileDraftRegexScripts)
       }
     };
   }
@@ -957,6 +1017,60 @@
     return Array.from(speaker)[0]?.toUpperCase() ?? '?';
   }
 
+  function messageRegexPlacement(message: ChatMessage) {
+    if (message.role === 'assistant') return REGEX_PLACEMENT.AI_OUTPUT;
+    if (message.role === 'user') return REGEX_PLACEMENT.USER_INPUT;
+    return undefined;
+  }
+
+  function messageRegexMacros() {
+    const charName = activeCharacter?.name ?? 'Assistant';
+    return {
+      char: charName,
+      charIfNotGroup: charName,
+      user: activePersona?.name ?? 'User'
+    };
+  }
+
+  function activeDisplayRegexScripts() {
+    if (activeProfile?.regex?.enabled === false) return [];
+    return activeProfile?.regex?.scripts ?? [];
+  }
+
+  function messageUsesDisplayRegex(message: ChatMessage, index: number) {
+    const placement = messageRegexPlacement(message);
+    if (placement === undefined) return false;
+    const options = {
+      placement,
+      isMarkdown: true,
+      depth: messages.length - index,
+      macros: messageRegexMacros()
+    };
+    return (
+      hasRegexScriptForPlacement(activeDisplayRegexScripts(), options) ||
+      hasRegexScriptForPlacement(activeDisplayRegexScripts(), {
+        ...options,
+        placement: REGEX_PLACEMENT.MD_DISPLAY
+      })
+    );
+  }
+
+  function messageDisplayContent(message: ChatMessage, index: number) {
+    const placement = messageRegexPlacement(message);
+    if (placement === undefined) return message.content;
+    const options = {
+      placement,
+      isMarkdown: true,
+      depth: messages.length - index,
+      macros: messageRegexMacros()
+    };
+    const roleDisplay = applyRegexScripts(message.content, activeDisplayRegexScripts(), options);
+    return applyRegexScripts(roleDisplay, activeDisplayRegexScripts(), {
+      ...options,
+      placement: REGEX_PLACEMENT.MD_DISPLAY
+    });
+  }
+
   function openZoomedAvatar(message: ChatMessage) {
     const src = messageAvatarUrl(message);
     const name = messageSpeaker(message);
@@ -1239,7 +1353,7 @@
             </p>
           </div>
         {/if}
-        {#each messages as message}
+        {#each messages as message, index}
           <article class="message-row {message.role}">
             <button class="message-avatar" type="button" aria-label={`Open avatar for ${messageSpeaker(message)}`} on:click={() => openZoomedAvatar(message)}>
               {#if messageAvatarUrl(message)}
@@ -1250,7 +1364,11 @@
             </button>
             <div class="message {message.role}">
               <strong>{messageSpeaker(message)}</strong>
-              <p>{message.content}</p>
+              {#if messageUsesDisplayRegex(message, index)}
+                <div class="message-content rich">{@html messageDisplayContent(message, index)}</div>
+              {:else}
+                <p class="message-content">{message.content}</p>
+              {/if}
             </div>
           </article>
         {/each}
@@ -1317,6 +1435,27 @@
           <button class="primary full" type="submit"><Bot size={16} />Create</button>
         </form>
 
+        {#if activeCharacter}
+          <section class="bound-worldbooks">
+            <div>
+              <strong>{activeCharacter.name}</strong>
+              <span>{activeCharacterWorldBooks.length} bound world book{activeCharacterWorldBooks.length === 1 ? '' : 's'}</span>
+            </div>
+            {#if activeCharacterWorldBooks.length}
+              <div class="bound-worldbook-list">
+                {#each activeCharacterWorldBooks as worldBook}
+                  <article>
+                    <strong>{worldBook.name}</strong>
+                    <span>{worldBook.entries.length} entries</span>
+                  </article>
+                {/each}
+              </div>
+            {:else}
+              <span class="drawer-empty compact">No character-bound world book</span>
+            {/if}
+          </section>
+        {/if}
+
         <div class="item-list">
           {#each characters as character}
             <button
@@ -1326,7 +1465,7 @@
               on:click={() => (activeCharacterId = character.id)}
             >
               <strong>{character.name}</strong>
-              <span>{character.id}</span>
+              <span>{((character.worldBookIds?.length ?? 0) || (character.characterBook ? 1 : 0)) ? 'has character book' : character.id}</span>
             </button>
           {/each}
         </div>
@@ -1376,7 +1515,7 @@
           {#each worldBooks as worldBook}
             <article class="drawer-card">
               <strong>{worldBook.name}</strong>
-              <span>{worldBook.entries.length} entries</span>
+              <span>{worldBookLine(worldBook)}</span>
             </article>
           {/each}
         </div>
@@ -1427,6 +1566,10 @@
                   {/if}
                   {#if activeProfile.prompt?.squashSystemMessages}
                     <span>squash system</span>
+                  {/if}
+                  <span>{activeProfile.request?.stream === false ? 'non-stream' : 'stream'}</span>
+                  {#if activeProfile.regex?.scripts?.length}
+                    <span>{activeProfile.regex.scripts.length} regex</span>
                   {/if}
                 </div>
                 <div class="profile-sampler">{profileSamplerLine(activeProfile)}</div>
@@ -1572,7 +1715,18 @@
               <section class="request-panel" aria-label="Request parameters">
                 <div class="request-panel-header">
                   <strong>Request Parameters</strong>
-                  <span>{profileDraftMaxTokens || '512'} out · {profileDraftContextTokens || '8192'} ctx</span>
+                  <span>{profileDraftMaxTokens || '512'} out · {profileDraftContextTokens || '8192'} ctx · {profileDraftStream ? 'stream' : 'single'}</span>
+                </div>
+
+                <div class="request-flow-strip" aria-label="Response mode">
+                  <button class:active={profileDraftStream} type="button" on:click={() => (profileDraftStream = true)}>
+                    <strong>Streaming</strong>
+                    <span>Incremental tokens</span>
+                  </button>
+                  <button class:active={!profileDraftStream} type="button" on:click={() => (profileDraftStream = false)}>
+                    <strong>Single response</strong>
+                    <span>One complete reply</span>
+                  </button>
                 </div>
 
                 <div class="sampler-control-list">
@@ -1707,6 +1861,43 @@
                   Squash system
                 </button>
               </div>
+
+              <section class="regex-panel" aria-label="Regex scripts">
+                <div class="regex-panel-header">
+                  <div>
+                    <strong>Regex Scripts</strong>
+                    <span>{profileDraftRegexScripts.filter((script) => !script.disabled).length}/{profileDraftRegexScripts.length} active · profile-bound</span>
+                  </div>
+                  <button class="toggle-pill" class:active={profileDraftRegexEnabled} type="button" on:click={() => (profileDraftRegexEnabled = !profileDraftRegexEnabled)}>
+                    {profileDraftRegexEnabled ? 'Enabled' : 'Disabled'}
+                  </button>
+                </div>
+                {#if profileDraftRegexScripts.length}
+                  <div class="regex-script-list">
+                    {#each profileDraftRegexScripts as script}
+                      <article class="regex-script-row" class:disabled={script.disabled}>
+                        <div>
+                          <strong>{script.scriptName}</strong>
+                          <span>{regexScriptSurface(script)}</span>
+                        </div>
+                        <button
+                          class="mini-toggle"
+                          class:active={!script.disabled}
+                          type="button"
+                          on:click={() => {
+                            script.disabled = !script.disabled;
+                            profileDraftRegexScripts = [...profileDraftRegexScripts];
+                          }}
+                        >
+                          {script.disabled ? 'Off' : 'On'}
+                        </button>
+                      </article>
+                    {/each}
+                  </div>
+                {:else}
+                  <span class="drawer-empty compact">No regex scripts in this profile</span>
+                {/if}
+              </section>
             </form>
 
             <section class="prompt-manager-panel" aria-label="Prompt Manager">
@@ -2292,10 +2483,22 @@
     text-transform: none;
   }
 
-  .message p {
+  .message-content {
     margin: 0;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+  }
+
+  .message-content.rich :global(*) {
+    max-width: 100%;
+  }
+
+  .message-content.rich :global(p) {
+    margin: 0 0 0.7em;
+  }
+
+  .message-content.rich :global(p:last-child) {
+    margin-bottom: 0;
   }
 
   .composer {
@@ -2547,6 +2750,39 @@
     padding: 0 16px 16px;
   }
 
+  .bound-worldbooks {
+    display: grid;
+    gap: 10px;
+    border-top: 1px solid #eef0ec;
+    border-bottom: 1px solid #eef0ec;
+    background: #fbfcfa;
+    padding: 12px 16px;
+  }
+
+  .bound-worldbooks > div:first-child,
+  .bound-worldbook-list article {
+    display: grid;
+    gap: 3px;
+  }
+
+  .bound-worldbooks span,
+  .bound-worldbook-list span {
+    color: #66716a;
+    font-size: 12px;
+  }
+
+  .bound-worldbook-list {
+    display: grid;
+    gap: 6px;
+  }
+
+  .bound-worldbook-list article {
+    border: 1px solid #e0e4df;
+    border-radius: 7px;
+    background: #fff;
+    padding: 8px 10px;
+  }
+
   .drawer-item,
   .drawer-card {
     display: grid;
@@ -2570,6 +2806,14 @@
     color: #6c756f;
     font-size: 12px;
     overflow-wrap: anywhere;
+  }
+
+  .drawer-empty.compact {
+    border: 1px dashed #d9ddd6;
+    border-radius: 7px;
+    background: #fff;
+    padding: 9px 10px;
+    text-align: center;
   }
 
   .profile-panel {
@@ -2729,7 +2973,8 @@
   }
 
   .provider-editor,
-  .request-panel {
+  .request-panel,
+  .regex-panel {
     display: grid;
     gap: 12px;
     border: 1px solid #e0e4df;
@@ -2860,6 +3105,34 @@
     padding: 4px;
   }
 
+  .request-flow-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    border: 1px solid #dfe3dc;
+    border-radius: 8px;
+    background: #f1f3ef;
+    padding: 4px;
+  }
+
+  .request-flow-strip button {
+    display: grid;
+    gap: 2px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: #314039;
+    padding: 8px 10px;
+    text-align: left;
+  }
+
+  .request-flow-strip button.active {
+    border-color: #a9c8b3;
+    background: #fff;
+    color: #174b32;
+    box-shadow: 0 1px 3px rgb(29 39 33 / 8%);
+  }
+
   .compatibility-strip button {
     display: grid;
     gap: 2px;
@@ -2971,6 +3244,63 @@
     grid-template-columns: minmax(0, 150px) minmax(0, 150px) auto;
     align-items: end;
     gap: 10px;
+  }
+
+  .regex-panel-header,
+  .regex-script-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .regex-panel-header div,
+  .regex-script-row div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .regex-panel-header span,
+  .regex-script-row span {
+    color: #66716a;
+    font-size: 12px;
+  }
+
+  .regex-script-list {
+    display: grid;
+    gap: 6px;
+    max-height: 260px;
+    overflow: auto;
+  }
+
+  .regex-script-row {
+    border: 1px solid #e0e4df;
+    border-radius: 7px;
+    background: #fff;
+    padding: 8px 10px;
+  }
+
+  .regex-script-row.disabled {
+    opacity: 0.62;
+  }
+
+  .mini-toggle {
+    min-width: 44px;
+    min-height: 30px;
+    border: 1px solid #d6d8d3;
+    border-radius: 999px;
+    background: #fff;
+    color: #66716a;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .mini-toggle.active {
+    border-color: #a9c8b3;
+    background: #edf6f0;
+    color: #174b32;
   }
 
   .mini-segment {

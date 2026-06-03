@@ -4,6 +4,7 @@ import {
   sillyTavernOpenAiPresetSchema
 } from '$lib/schemas/legacy-sillytavern';
 import { createDefaultGenerationProfile, type GenerationProfile, type PromptSlot, type ProviderProfile, type SamplerProfile } from '$lib/schemas/profile';
+import { regexScriptSchema, type RegexPlacement, type RegexScript } from '$lib/schemas/regex';
 import { createCompatReport } from './report';
 
 type PresetKind = 'openai' | 'context' | 'instruct' | 'unknown';
@@ -105,6 +106,20 @@ function booleanValue(value: unknown): boolean | undefined {
 
 function arrayOfRecords(value: unknown): RecordValue[] {
   return Array.isArray(value) ? value.filter((item): item is RecordValue => !!item && typeof item === 'object' && !Array.isArray(item)) : [];
+}
+
+function arrayOfStrings(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function regexPlacementValue(value: unknown): RegexPlacement | undefined {
+  const number = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : Number.NaN;
+  return number === 0 || number === 1 || number === 2 || number === 3 || number === 5 || number === 6 ? number : undefined;
+}
+
+function regexSubstitutionValue(value: unknown): 0 | 1 | 2 {
+  const number = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : Number.NaN;
+  return number === 1 || number === 2 ? number : 0;
 }
 
 function normalizeRole(value: unknown): PromptSlot['role'] {
@@ -318,6 +333,32 @@ function samplerFromOpenAiPreset(preset: RecordValue): SamplerProfile {
   };
 }
 
+export function importSillyTavernRegexScripts(value: unknown): RegexScript[] {
+  return arrayOfRecords(value).map((script, index) => {
+    const placements = Array.isArray(script.placement) ? script.placement : [script.placement];
+    return regexScriptSchema.parse({
+      id: stringValue(script.id) ?? `st-regex-${index + 1}`,
+      scriptName: stringValue(script.scriptName) ?? stringValue(script.name) ?? `ST Regex ${index + 1}`,
+      findRegex: stringValue(script.findRegex) ?? '',
+      replaceString: typeof script.replaceString === 'string' ? script.replaceString : '',
+      trimStrings: arrayOfStrings(script.trimStrings),
+      placement: placements.map(regexPlacementValue).filter((item) => item !== undefined),
+      disabled: booleanValue(script.disabled) ?? false,
+      markdownOnly: booleanValue(script.markdownOnly) ?? false,
+      promptOnly: booleanValue(script.promptOnly) ?? false,
+      runOnEdit: booleanValue(script.runOnEdit) ?? false,
+      substituteRegex: regexSubstitutionValue(script.substituteRegex),
+      minDepth: intValue(script.minDepth) ?? null,
+      maxDepth: intValue(script.maxDepth) ?? null,
+      legacy: { source: 'sillytavern', raw: script, originalIndex: index }
+    });
+  });
+}
+
+function regexScriptsFromOpenAiPreset(preset: RecordValue): RegexScript[] {
+  return importSillyTavernRegexScripts(asRecord(preset.extensions).regex_scripts);
+}
+
 function openAiMetadata(preset: RecordValue, slots: PromptSlot[]) {
   const orderedSlots = slots.filter((slot) => slot.legacy?.ordered !== false);
   const enabledSlots = orderedSlots.filter((slot) => slot.enabled);
@@ -367,6 +408,7 @@ function reportOpenAiPreset(preset: RecordValue, report: ReturnType<typeof creat
     'extensions'
   ];
   report.mapped.push(...mappedKeys.filter((key) => key === 'model' || key in preset));
+  if (arrayOfRecords(asRecord(preset.extensions).regex_scripts).length) report.mapped.push('extensions.regex_scripts');
 
   for (const key of Object.keys(preset)) {
     if (!OPENAI_PRESET_KEYS.has(key)) report.preservedAsExtras.push(`raw.${key}`);
@@ -401,16 +443,19 @@ export function importSillyTavernPreset(
     const parsed = sillyTavernOpenAiPresetSchema.parse(raw);
     const preset = asRecord(parsed);
     const slots = slotsFromOpenAiPreset(preset, report);
+    const regexScripts = regexScriptsFromOpenAiPreset(preset);
     const profile = createDefaultGenerationProfile({
       name: stringValue(preset.name) ?? fallbackName ?? 'Imported ST OpenAI Preset',
       provider: providerFromOpenAiPreset(preset, report),
       sampler: samplerFromOpenAiPreset(preset),
+      request: { stream: booleanValue(preset.stream_openai) ?? true },
       prompt: {
         mode: 'chat',
         slots,
         macroMode: 'sillytavern',
         squashSystemMessages: booleanValue(preset.squash_system_messages) ?? false
       },
+      regex: { enabled: true, scripts: regexScripts },
       metadata: openAiMetadata(preset, slots),
       legacy: { source: 'sillytavern', raw, report }
     });

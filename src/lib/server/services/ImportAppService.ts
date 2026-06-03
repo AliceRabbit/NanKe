@@ -7,6 +7,8 @@ import {
   readSillyTavernCardJsonFromPng
 } from '$lib/compat/sillytavern';
 import { createConversation } from '$lib/schemas/conversation';
+import type { Character } from '$lib/schemas/character';
+import type { WorldBook } from '$lib/schemas/worldbook';
 import type { createRequestContext } from '$lib/server/request-context';
 import { AppError } from '$lib/server/errors';
 import { AssetStore } from '$lib/storage/assets/AssetStore';
@@ -19,10 +21,38 @@ export class ImportAppService {
     private readonly assets = new AssetStore()
   ) {}
 
+  private saveCharacterWithBoundWorldBooks(character: Character): Character {
+    const worldBookIds = new Set(character.worldBookIds ?? []);
+    let embeddedBook = character.characterBook;
+
+    if (embeddedBook) {
+      const sourceBook = embeddedBook;
+      const worldBook: WorldBook = {
+        ...sourceBook,
+        metadata: {
+          ...sourceBook.metadata,
+          source: 'character-card',
+          characterId: character.id,
+          characterName: character.name
+        },
+        entries: sourceBook.entries.map((entry) => ({ ...entry, worldBookId: sourceBook.id }))
+      };
+      const savedBook = this.context.worldBooks.save(worldBook);
+      embeddedBook = savedBook;
+      worldBookIds.add(savedBook.id);
+    }
+
+    return this.context.characters.save({
+      ...character,
+      worldBookIds: [...worldBookIds],
+      characterBook: embeddedBook
+    });
+  }
+
   import(kind: ImportKind, data: unknown, name?: string) {
     if (kind === 'character-card-json') {
       const { character, report } = importSillyTavernCharacterCard(data);
-      const saved = this.context.characters.save(character);
+      const saved = this.saveCharacterWithBoundWorldBooks(character);
       this.context.importReports.save(report);
       return { type: 'character', item: saved, report };
     }
@@ -34,7 +64,7 @@ export class ImportAppService {
       const raw = readSillyTavernCardJsonFromPng(pngBytes);
       const { character, report } = importSillyTavernCharacterCard(raw);
       const asset = this.assets.save(pngBytes, `${name ?? character.name}.png`);
-      const saved = this.context.characters.save({ ...character, avatarAssetId: asset.id });
+      const saved = this.saveCharacterWithBoundWorldBooks({ ...character, avatarAssetId: asset.id });
       this.context.importReports.save(report);
       return { type: 'character', item: saved, report };
     }

@@ -14,7 +14,8 @@ export const providerRequestSchema = z.object({
   presencePenalty: z.number().optional(),
   repetitionPenalty: z.number().optional(),
   seed: z.number().int().optional(),
-  n: z.number().int().positive().optional()
+  n: z.number().int().positive().optional(),
+  stream: z.boolean().optional()
 });
 
 export type ProviderRequest = z.infer<typeof providerRequestSchema>;

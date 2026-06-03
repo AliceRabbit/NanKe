@@ -28,6 +28,19 @@ describe('provider request mapping', () => {
     expect(openAICompatibleUrl(profile)).toBe('http://localhost:1234/v1/chat/completions');
   });
 
+  it('can build non-streaming OpenAI-compatible request bodies', () => {
+    const profile = createDefaultGenerationProfile({
+      provider: { type: 'openai-compatible', model: 'test-model', endpoint: 'http://localhost:1234/v1', compatibility: 'strict-openai' },
+      request: { stream: false },
+      sampler: { maxTokens: 128 }
+    });
+
+    const body = buildOpenAICompatibleRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile) as Record<string, unknown>;
+
+    expect(body.stream).toBe(false);
+    expect(body).not.toHaveProperty('stream_options');
+  });
+
   it('keeps extended sampler fields for custom OpenAI-compatible endpoints', () => {
     const profile = createDefaultGenerationProfile({
       provider: { type: 'openai-compatible', model: 'test-model', endpoint: 'http://localhost:1234/v1/chat/completions', compatibility: 'extended' },
@@ -68,6 +81,7 @@ describe('provider request mapping', () => {
     expect(contents[1].role).toBe('user');
     expect(generationConfig.maxOutputTokens).toBe(512);
     expect(geminiUrl(profile)).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse');
+    expect(geminiUrl(profile, false)).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent');
   });
 
   it('treats legacy Vertex profiles without mode as OAuth profiles', () => {
@@ -112,6 +126,31 @@ describe('provider request mapping', () => {
     expect(calls[0].headers.Authorization).toBe('Bearer direct-openai-key');
     expect(calls[0].headers['OpenAI-Organization']).toBeUndefined();
     expect(calls[0].headers['OpenAI-Project']).toBeUndefined();
+  });
+
+  it('normalizes non-streaming OpenAI and Gemini responses through adapters', async () => {
+    const openAIProfile = createDefaultGenerationProfile({
+      provider: { type: 'openai-compatible', model: 'test-model', endpoint: 'https://api.openai.com/v1', compatibility: 'strict-openai' },
+      request: { stream: false }
+    });
+    const openAIFetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: 'openai ok' } }] }));
+    const openAIChunks = [];
+    for await (const chunk of createOpenAICompatibleAdapter(openAIFetch).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, openAIProfile)) {
+      openAIChunks.push(chunk);
+    }
+
+    const geminiProfile = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'gemini-2.5-pro' },
+      request: { stream: false }
+    });
+    const geminiFetch = async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'gemini ok' }] } }] }));
+    const geminiChunks = [];
+    for await (const chunk of createGeminiAdapter(geminiFetch).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, geminiProfile)) {
+      geminiChunks.push(chunk);
+    }
+
+    expect(openAIChunks[0]).toEqual(expect.objectContaining({ type: 'text', text: 'openai ok' }));
+    expect(geminiChunks[0]).toEqual(expect.objectContaining({ type: 'text', text: 'gemini ok' }));
   });
 
   it('uses x-goog-api-key for Gemini AI Studio, key query for Vertex Express, and bearer auth for Vertex OAuth', async () => {

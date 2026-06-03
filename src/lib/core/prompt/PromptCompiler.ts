@@ -2,6 +2,7 @@ import type { Character } from '$lib/schemas/character';
 import { createMessage, type NankeMessage } from '$lib/schemas/message';
 import type { GenerationProfile, PromptSlot } from '$lib/schemas/profile';
 import type { ActivatedWorldEntry } from '$lib/core/worldbook/WorldBookActivation';
+import { applyRegexScripts, REGEX_PLACEMENT } from '$lib/core/regex';
 import { trimMessagesToBudget } from './TokenBudgeter';
 import type { CompiledPrompt, PromptWarning } from './PromptGraph';
 
@@ -69,6 +70,19 @@ function renderSillyTavernTemplate(template: string, state: MacroState): string 
   return template.replace(/\{\{([\s\S]*?)\}\}/g, (_, expression: string) => renderSillyTavernMacro(expression, state));
 }
 
+function regexScripts(input: PromptCompilerInput) {
+  return input.profile.regex.enabled === false ? [] : input.profile.regex.scripts;
+}
+
+function regexMacros(input: Pick<PromptCompilerInput, 'character' | 'userName'>): Record<string, string | undefined> {
+  const charName = input.character?.name ?? 'Assistant';
+  return {
+    char: charName,
+    charIfNotGroup: charName,
+    user: input.userName ?? 'User'
+  };
+}
+
 export function renderPromptTemplate(
   template: string,
   input: Pick<PromptCompilerInput, 'character' | 'persona' | 'userName'> & Partial<Pick<PromptCompilerInput, 'messages'>>,
@@ -93,7 +107,17 @@ export function renderPromptTemplate(
 function worldContent(input: PromptCompilerInput, position: 'before' | 'after', slot?: PromptSlot, macroState?: MacroState): string {
   const content = (input.activatedWorldEntries ?? [])
     .filter((entry) => entry.entry.position === position)
-    .map((entry) => entry.entry.content)
+    .map((entry) => {
+      const plain = applyRegexScripts(entry.entry.content, regexScripts(input), {
+        placement: REGEX_PLACEMENT.WORLD_INFO,
+        macros: regexMacros(input)
+      });
+      return applyRegexScripts(plain, regexScripts(input), {
+        placement: REGEX_PLACEMENT.WORLD_INFO,
+        isPrompt: true,
+        macros: regexMacros(input)
+      });
+    })
     .filter(Boolean)
     .join('\n\n');
   return renderPromptTemplate(formatRuntimeValue(slot?.content, content), input, macroState);

@@ -26,6 +26,14 @@ export const worldBookSchema = z.object({
   id: z.string(),
   name: z.string().min(1),
   entries: z.array(worldBookEntrySchema).default([]),
+  metadata: z
+    .object({
+      source: z.enum(['native', 'sillytavern-import', 'character-card']).default('native'),
+      characterId: z.string().optional(),
+      characterName: z.string().optional()
+    })
+    .catchall(z.unknown())
+    .default({ source: 'native' }),
   legacy: z
     .object({
       source: z.literal('sillytavern'),
@@ -45,6 +53,7 @@ export function createWorldBook(input: Partial<WorldBook> & Pick<WorldBook, 'nam
     id: input.id ?? crypto.randomUUID(),
     name: input.name,
     entries: input.entries ?? [],
+    metadata: input.metadata ?? { source: 'native' },
     legacy: input.legacy,
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now

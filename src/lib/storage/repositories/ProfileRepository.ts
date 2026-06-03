@@ -1,5 +1,6 @@
 import { asc, eq } from 'drizzle-orm';
 import { createDefaultGenerationProfile, generationProfileSchema, type GenerationProfile } from '$lib/schemas/profile';
+import { importSillyTavernRegexScripts } from '$lib/compat/sillytavern/presets';
 import { generationProfiles } from '../schema';
 import { getDatabase } from '../db';
 
@@ -31,6 +32,29 @@ function ensureRequiredPromptSlots(profile: GenerationProfile): { profile: Gener
   };
 }
 
+function ensureLegacyRegexScripts(profile: GenerationProfile): { profile: GenerationProfile; changed: boolean } {
+  if (profile.regex.scripts.length) return { profile, changed: false };
+  const extensions = (profile.metadata.sillyTavern as { extensions?: { regex_scripts?: unknown } } | undefined)?.extensions;
+  const scripts = importSillyTavernRegexScripts(extensions?.regex_scripts);
+  if (!scripts.length) return { profile, changed: false };
+  return {
+    profile: generationProfileSchema.parse({
+      ...profile,
+      regex: {
+        enabled: true,
+        scripts
+      }
+    }),
+    changed: true
+  };
+}
+
+function normalizeProfile(profile: GenerationProfile): { profile: GenerationProfile; changed: boolean } {
+  const withSlots = ensureRequiredPromptSlots(profile);
+  const withRegex = ensureLegacyRegexScripts(withSlots.profile);
+  return { profile: withRegex.profile, changed: withSlots.changed || withRegex.changed };
+}
+
 export class ProfileRepository {
   constructor(private readonly db = getDatabase()) {}
 
@@ -40,13 +64,16 @@ export class ProfileRepository {
       .from(generationProfiles)
       .orderBy(asc(generationProfiles.name))
       .all()
-      .map((row) => ensureRequiredPromptSlots(generationProfileSchema.parse(row.data)).profile);
+      .map((row) => {
+        const normalized = normalizeProfile(generationProfileSchema.parse(row.data));
+        return normalized.changed ? this.save(normalized.profile) : normalized.profile;
+      });
   }
 
   get(id: string): GenerationProfile | undefined {
     const row = this.db.select().from(generationProfiles).where(eq(generationProfiles.id, id)).get();
     if (!row) return undefined;
-    const normalized = ensureRequiredPromptSlots(generationProfileSchema.parse(row.data));
+    const normalized = normalizeProfile(generationProfileSchema.parse(row.data));
     return normalized.changed ? this.save(normalized.profile) : normalized.profile;
   }
 
@@ -78,7 +105,7 @@ export class ProfileRepository {
   ensureDefault(): GenerationProfile {
     const row = this.db.select().from(generationProfiles).orderBy(asc(generationProfiles.name)).get();
     if (row) {
-      const normalized = ensureRequiredPromptSlots(generationProfileSchema.parse(row.data));
+      const normalized = normalizeProfile(generationProfileSchema.parse(row.data));
       return normalized.changed ? this.save(normalized.profile) : normalized.profile;
     }
     return this.save(createDefaultGenerationProfile());

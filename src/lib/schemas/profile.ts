@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { regexProfileSchema } from './regex';
 
 export const promptSlotSourceSchema = z.enum([
   'system',
@@ -122,11 +123,20 @@ export const samplerProfileSchema = z.object({
 
 export type SamplerProfile = z.infer<typeof samplerProfileSchema>;
 
+export const requestProfileSchema = z
+  .object({
+    stream: z.boolean().default(true)
+  })
+  .default(() => ({ stream: true }));
+
+export type RequestProfile = z.infer<typeof requestProfileSchema>;
+
 export const generationProfileSchema = z.object({
   id: z.string(),
   name: z.string().min(1),
   provider: providerProfileSchema,
   sampler: samplerProfileSchema.default({}),
+  request: requestProfileSchema,
   prompt: z.object({
     mode: z.enum(['chat', 'text']).default('chat'),
     slots: z.array(promptSlotSchema),
@@ -134,6 +144,7 @@ export const generationProfileSchema = z.object({
     macroMode: z.enum(['none', 'sillytavern']).default('none'),
     squashSystemMessages: z.boolean().default(false)
   }),
+  regex: regexProfileSchema,
   metadata: z.record(z.string(), z.unknown()).default({}),
   legacy: z
     .object({
@@ -165,6 +176,7 @@ export function createDefaultGenerationProfile(input: Partial<GenerationProfile>
       maxTokens: 512,
       contextTokens: 8192
     },
+    request: input.request ?? { stream: true },
     prompt: input.prompt ?? {
       mode: 'chat',
       macroMode: 'none',
@@ -190,6 +202,7 @@ export function createDefaultGenerationProfile(input: Partial<GenerationProfile>
         { id: 'post-history', source: 'post-history', role: 'system', label: 'Post-History Instructions', enabled: true, content: '' }
       ]
     },
+    regex: input.regex ?? { enabled: true, scripts: [] },
     metadata: input.metadata ?? {},
     legacy: input.legacy,
     createdAt: input.createdAt ?? now,

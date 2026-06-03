@@ -63,9 +63,10 @@ function withQuery(url: string, params: Record<string, string | undefined>): str
   return parsed.toString();
 }
 
-export function geminiUrl(profile: GenerationProfile): string {
+export function geminiUrl(profile: GenerationProfile, stream = true): string {
   if (profile.provider.type !== 'gemini') throw new Error('Invalid profile for Gemini adapter.');
   if (profile.provider.endpoint) return profile.provider.endpoint;
+  const method = stream ? 'streamGenerateContent' : 'generateContent';
   if (profile.provider.vertex) {
     const mode = profile.provider.vertex.mode ?? 'express';
     const location = profile.provider.vertex.location ?? 'us-central1';
@@ -75,15 +76,20 @@ export function geminiUrl(profile: GenerationProfile): string {
       const projectPath = profile.provider.vertex.projectId
         ? `/projects/${encodeURIComponent(profile.provider.vertex.projectId)}/locations/${encodeURIComponent(location)}`
         : '';
-      return withQuery(`${vertexBaseUrl(location)}${projectPath}/publishers/google/models/${model}:streamGenerateContent`, {
+      return withQuery(`${vertexBaseUrl(location)}${projectPath}/publishers/google/models/${model}:${method}`, {
         key: profile.provider.vertex.apiKey?.trim(),
-        alt: 'sse'
+        alt: stream ? 'sse' : undefined
       });
     }
 
-    return `${vertexBaseUrl(location)}/projects/${encodeURIComponent(profile.provider.vertex.projectId ?? '')}/locations/${encodeURIComponent(location)}/publishers/google/models/${model}:streamGenerateContent?alt=sse`;
+    return withQuery(
+      `${vertexBaseUrl(location)}/projects/${encodeURIComponent(profile.provider.vertex.projectId ?? '')}/locations/${encodeURIComponent(location)}/publishers/google/models/${model}:${method}`,
+      { alt: stream ? 'sse' : undefined }
+    );
   }
-  return `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(profile.provider.model)}:streamGenerateContent?alt=sse`;
+  return withQuery(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(profile.provider.model)}:${method}`, {
+    alt: stream ? 'sse' : undefined
+  });
 }
 
 function geminiHeaders(profile: GenerationProfile, apiKey?: string, vertexToken?: string): HeadersInit {
@@ -120,8 +126,9 @@ export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderA
 
       const apiKey = profile.provider.apiKey?.trim();
       const vertexToken = profile.provider.vertex?.accessToken?.trim();
+      const streaming = request.stream ?? profile.request.stream;
 
-      const response = await fetchImpl(geminiUrl(profile), {
+      const response = await fetchImpl(geminiUrl(profile, streaming), {
         method: 'POST',
         signal,
         headers: geminiHeaders(profile, apiKey, vertexToken),
@@ -130,6 +137,14 @@ export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderA
 
       if (!response.ok) {
         yield { type: 'error', text: await readProviderError(response), raw: { status: response.status } };
+        return;
+      }
+
+      if (!streaming) {
+        const payload = (await response.json()) as GeminiChunk;
+        const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
+        if (text) yield { type: 'text', text, raw: payload };
+        yield { type: 'done', text: '' };
         return;
       }
 

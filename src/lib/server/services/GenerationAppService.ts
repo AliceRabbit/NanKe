@@ -99,7 +99,14 @@ export class GenerationAppService {
       maxTokens: profile.sampler.maxTokens,
       temperature: profile.sampler.temperature,
       topP: profile.sampler.topP,
-      topK: profile.sampler.topK
+      topK: profile.sampler.topK,
+      topA: profile.sampler.topA,
+      minP: profile.sampler.minP,
+      frequencyPenalty: profile.sampler.frequencyPenalty,
+      presencePenalty: profile.sampler.presencePenalty,
+      repetitionPenalty: profile.sampler.repetitionPenalty,
+      seed: profile.sampler.seed,
+      n: profile.sampler.n
     };
 
     const adapter = this.providers.resolve(profile);

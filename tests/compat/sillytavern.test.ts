@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createDefaultGenerationProfile } from '$lib/schemas/profile';
 import { createMessage } from '$lib/schemas/message';
+import { createCharacter } from '$lib/schemas/character';
 import { PromptCompiler } from '$lib/core/prompt/PromptCompiler';
 import { WorldBookEngine } from '$lib/core/worldbook/WorldBookEngine';
 import {
@@ -15,6 +16,8 @@ import {
 
 const workspaceTestCardPath = path.resolve(process.cwd(), '..', '测试用', '测试用角色卡.png');
 const workspaceCardTest = fs.existsSync(workspaceTestCardPath) ? it : it.skip;
+const workspaceTestPresetPath = path.resolve(process.cwd(), '..', '测试用', '测试用预设.json');
+const workspacePresetTest = fs.existsSync(workspaceTestPresetPath) ? it : it.skip;
 
 describe('SillyTavern compat importers', () => {
   it('imports world info entries into NanKe world books', () => {
@@ -52,7 +55,7 @@ describe('SillyTavern compat importers', () => {
     expect(kind).toBe('openai');
     expect(profile.provider.type).toBe('openai-compatible');
     expect(profile.sampler.temperature).toBe(0.8);
-    expect(report.preservedAsExtras).toContain('prompt_order');
+    expect(report.mapped).toContain('prompts');
   });
 
   it('imports chat jsonl messages', () => {
@@ -111,5 +114,59 @@ describe('SillyTavern compat importers', () => {
     });
     expect(compiled.messages.some((message) => message.content.includes('尤尼'))).toBe(true);
     expect(compiled.messages.some((message) => message.name === 'Depth Prompt' && message.content.includes('联合国全球协调部队'))).toBe(true);
+  });
+
+  workspacePresetTest('imports the workspace SillyTavern OpenAI preset with prompt manager semantics', () => {
+    const raw = JSON.parse(fs.readFileSync(workspaceTestPresetPath, 'utf8'));
+    const { profile, kind, report } = importSillyTavernPreset(raw, '测试用预设');
+
+    expect(kind).toBe('openai');
+    expect(profile.name).toBe('测试用预设');
+    expect(profile.prompt.macroMode).toBe('sillytavern');
+    expect(profile.prompt.squashSystemMessages).toBe(true);
+    expect(profile.sampler.contextTokens).toBe(2_000_000);
+    expect(profile.sampler.maxTokens).toBe(30_000);
+    expect(profile.sampler.frequencyPenalty).toBe(0);
+    expect(profile.sampler.repetitionPenalty).toBe(1);
+    expect(profile.prompt.slots).toHaveLength(203);
+    expect(profile.prompt.slots.filter((slot) => slot.enabled)).toHaveLength(52);
+    expect(profile.prompt.slots.filter((slot) => slot.legacy?.ordered === false)).toHaveLength(31);
+    expect(profile.prompt.slots.find((slot) => slot.id === 'personaDescription')?.source).toBe('persona');
+    expect(profile.prompt.slots.find((slot) => slot.id === 'worldInfoBefore')?.source).toBe('worldbook-before');
+    expect(profile.prompt.slots.find((slot) => slot.id === 'chatHistory')?.source).toBe('history');
+    expect(report.preservedAsExtras).toContain('31 prompts not present in active prompt_order');
+    expect(report.preservedAsExtras).toContain('extensions.regex_scripts');
+
+    const metadata = profile.metadata.sillyTavern as {
+      promptManager: { promptCount: number; orderedPromptCount: number; enabledPromptCount: number };
+      extensions?: { regex_scripts?: unknown[] };
+    };
+    expect(metadata.promptManager.promptCount).toBe(203);
+    expect(metadata.promptManager.orderedPromptCount).toBe(172);
+    expect(metadata.promptManager.enabledPromptCount).toBe(52);
+    expect(metadata.extensions?.regex_scripts?.length).toBeGreaterThan(0);
+
+    const compiled = new PromptCompiler().compile({
+      profile,
+      character: createCharacter({
+        name: '联合国全球协调部队',
+        description: '测试角色描述。',
+        personality: '测试性格。',
+        scenario: '测试场景。',
+        exampleMessages: 'Master: 你好\n联合国全球协调部队: 你好。'
+      }),
+      persona: 'Master 是测试用户。',
+      userName: 'Master',
+      messages: [createMessage({ role: 'user', content: '开始测试' })]
+    });
+    const joined = compiled.messages.map((message) => message.content).join('\n\n');
+    expect(joined).toContain('<Master_input>');
+    expect(joined).toContain('开始测试');
+    expect(joined).not.toContain('{{setvar::');
+    expect(joined).not.toContain('{{getvar::');
+    expect(joined).not.toContain('{{lastUserMessage}}');
+    expect(joined).not.toContain('{{//');
+    expect(compiled.messages.some((message) => message.name?.includes('主提示'))).toBe(false);
+    expect(compiled.warnings.some((warning) => warning.code === 'unsupported-sillytavern-macros')).toBe(false);
   });
 });

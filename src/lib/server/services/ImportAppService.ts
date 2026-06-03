@@ -47,7 +47,7 @@ export class ImportAppService {
     }
 
     if (kind === 'preset') {
-      const { profile, report, kind: presetKind } = importSillyTavernPreset(data);
+      const { profile, report, kind: presetKind } = importSillyTavernPreset(data, name);
       const saved = this.context.profiles.save(profile);
       this.context.importReports.save(report);
       return { type: 'profile', presetKind, item: saved, report };

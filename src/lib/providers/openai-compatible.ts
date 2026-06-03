@@ -20,7 +20,15 @@ export function buildOpenAICompatibleRequest(request: ProviderRequest, profile: 
     stream: true,
     temperature: request.temperature ?? profile.sampler.temperature,
     top_p: request.topP ?? profile.sampler.topP,
+    top_k: request.topK ?? profile.sampler.topK,
+    top_a: request.topA ?? profile.sampler.topA,
+    min_p: request.minP ?? profile.sampler.minP,
+    frequency_penalty: request.frequencyPenalty ?? profile.sampler.frequencyPenalty,
+    presence_penalty: request.presencePenalty ?? profile.sampler.presencePenalty,
+    repetition_penalty: request.repetitionPenalty ?? profile.sampler.repetitionPenalty,
     max_tokens: request.maxTokens ?? profile.sampler.maxTokens,
+    seed: request.seed ?? profile.sampler.seed,
+    n: request.n ?? profile.sampler.n,
     stop: request.stop.length ? request.stop : profile.sampler.stop
   };
 }

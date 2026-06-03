@@ -21,7 +21,28 @@ export const promptSlotSchema = z.object({
   role: z.enum(['system', 'user', 'assistant']).default('system'),
   enabled: z.boolean().default(true),
   content: z.string().default(''),
-  label: z.string().default('')
+  label: z.string().default(''),
+  injection: z
+    .object({
+      position: z.enum(['relative', 'absolute']).default('relative'),
+      depth: z.number().int().min(0).default(4),
+      order: z.number().default(100),
+      triggers: z.array(z.string()).default([])
+    })
+    .optional(),
+  legacy: z
+    .object({
+      source: z.literal('sillytavern'),
+      identifier: z.string(),
+      marker: z.boolean().default(false),
+      systemPrompt: z.boolean().default(false),
+      forbidOverrides: z.boolean().default(false),
+      ordered: z.boolean().default(true),
+      enabledInPromptOrder: z.boolean().optional(),
+      enabledInPrompt: z.boolean().optional(),
+      originalIndex: z.number().int().min(0).optional()
+    })
+    .optional()
 });
 
 export type PromptSlot = z.infer<typeof promptSlotSchema>;
@@ -71,8 +92,15 @@ export const samplerProfileSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   topP: z.number().min(0).max(1).optional(),
   topK: z.number().min(0).optional(),
+  topA: z.number().min(0).optional(),
+  minP: z.number().min(0).max(1).optional(),
+  frequencyPenalty: z.number().min(-2).max(2).optional(),
+  presencePenalty: z.number().min(-2).max(2).optional(),
+  repetitionPenalty: z.number().min(0).optional(),
   maxTokens: z.number().positive().optional(),
   contextTokens: z.number().positive().optional(),
+  seed: z.number().int().optional(),
+  n: z.number().int().positive().optional(),
   stop: z.array(z.string()).optional()
 });
 
@@ -86,8 +114,11 @@ export const generationProfileSchema = z.object({
   prompt: z.object({
     mode: z.enum(['chat', 'text']).default('chat'),
     slots: z.array(promptSlotSchema),
-    instruct: instructionTemplateSchema.optional()
+    instruct: instructionTemplateSchema.optional(),
+    macroMode: z.enum(['none', 'sillytavern']).default('none'),
+    squashSystemMessages: z.boolean().default(false)
   }),
+  metadata: z.record(z.string(), z.unknown()).default({}),
   legacy: z
     .object({
       source: z.literal('sillytavern'),
@@ -120,6 +151,8 @@ export function createDefaultGenerationProfile(input: Partial<GenerationProfile>
     },
     prompt: input.prompt ?? {
       mode: 'chat',
+      macroMode: 'none',
+      squashSystemMessages: false,
       slots: [
         {
           id: 'main',
@@ -141,6 +174,7 @@ export function createDefaultGenerationProfile(input: Partial<GenerationProfile>
         { id: 'post-history', source: 'post-history', role: 'system', label: 'Post-History Instructions', enabled: true, content: '' }
       ]
     },
+    metadata: input.metadata ?? {},
     legacy: input.legacy,
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now

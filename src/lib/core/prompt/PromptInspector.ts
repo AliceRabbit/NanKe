@@ -4,6 +4,8 @@ export type PromptInspectorModel = {
   messages: Array<{
     role: string;
     name?: string;
+    label?: string;
+    source?: string;
     preview: string;
     chars: number;
   }>;
@@ -21,6 +23,8 @@ export function inspectPrompt(prompt: CompiledPrompt): PromptInspectorModel {
     messages: prompt.messages.map((message) => ({
       role: message.role,
       name: message.name,
+      label: typeof message.metadata.promptSlotLabel === 'string' ? message.metadata.promptSlotLabel : undefined,
+      source: typeof message.metadata.promptSlotSource === 'string' ? message.metadata.promptSlotSource : undefined,
       preview: message.content.length > 180 ? `${message.content.slice(0, 177)}...` : message.content,
       chars: message.content.length
     })),

@@ -303,16 +303,23 @@
 
     importFileName = file.name;
     importName ||= file.name.replace(/\.[^.]+$/, '');
-    importFileBase64 = await new Promise<string>((resolve, reject) => {
+    const result = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.addEventListener('load', () => {
         const value = String(reader.result ?? '');
-        resolve(value.includes(',') ? value.slice(value.indexOf(',') + 1) : value);
+        resolve(value);
       });
       reader.addEventListener('error', () => reject(reader.error ?? new Error('Could not read file.')));
-      reader.readAsDataURL(file);
+      if (importKind === 'character-card-png') reader.readAsDataURL(file);
+      else reader.readAsText(file);
     });
-    importText = '';
+    if (importKind === 'character-card-png') {
+      importFileBase64 = result.includes(',') ? result.slice(result.indexOf(',') + 1) : result;
+      importText = '';
+    } else {
+      importText = result;
+      importFileBase64 = '';
+    }
   }
 
   async function runImport() {
@@ -335,6 +342,8 @@
     await refreshAll();
     if (result.type === 'character' && result.item?.id) {
       activeCharacterId = result.item.id;
+    } else if (result.type === 'profile' && result.item?.id) {
+      activeProfileId = result.item.id;
     }
   }
 
@@ -721,13 +730,15 @@
             <option value="chat-jsonl">Chat JSONL</option>
           </select>
           <input bind:value={importName} placeholder="Name" />
-          {#if importKind === 'character-card-png'}
-            <label class="file-picker">
-              <Upload size={16} />
-              <span>{importFileName || 'Choose PNG character card'}</span>
-              <input type="file" accept="image/png,.png" on:change={readImportFile} />
-            </label>
-          {/if}
+          <label class="file-picker">
+            <Upload size={16} />
+            <span>{importFileName || (importKind === 'character-card-png' ? 'Choose PNG character card' : 'Choose import file')}</span>
+            <input
+              type="file"
+              accept={importKind === 'character-card-png' ? 'image/png,.png' : importKind === 'chat-jsonl' ? '.jsonl,.ndjson,.txt' : '.json,application/json,.txt'}
+              on:change={readImportFile}
+            />
+          </label>
           <textarea
             bind:value={importText}
             rows="10"

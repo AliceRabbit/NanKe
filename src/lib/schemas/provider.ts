@@ -7,7 +7,14 @@ export const providerRequestSchema = z.object({
   maxTokens: z.number().positive().optional(),
   temperature: z.number().optional(),
   topP: z.number().optional(),
-  topK: z.number().optional()
+  topK: z.number().optional(),
+  topA: z.number().optional(),
+  minP: z.number().optional(),
+  frequencyPenalty: z.number().optional(),
+  presencePenalty: z.number().optional(),
+  repetitionPenalty: z.number().optional(),
+  seed: z.number().int().optional(),
+  n: z.number().int().positive().optional()
 });
 
 export type ProviderRequest = z.infer<typeof providerRequestSchema>;

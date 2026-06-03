@@ -74,13 +74,31 @@ export const providerProfileSchema = z.discriminatedUnion('type', [
     model: z.string().min(1),
     endpoint: z.string().url().optional(),
     apiKey: z.string().optional(),
-    vertex: z
-      .object({
-        projectId: z.string().min(1),
-        location: z.string().min(1),
-        accessToken: z.string().optional()
-      })
-      .optional()
+    vertex: z.preprocess(
+      (value) => {
+        if (value && typeof value === 'object' && !Array.isArray(value) && !('mode' in value)) {
+          return { ...(value as Record<string, unknown>), mode: 'oauth' };
+        }
+        return value;
+      },
+      z
+        .object({
+          mode: z.enum(['express', 'oauth']).default('express'),
+          projectId: z.string().optional(),
+          location: z.string().default('us-central1'),
+          apiKey: z.string().optional(),
+          accessToken: z.string().optional()
+        })
+        .superRefine((vertex, context) => {
+          if (vertex.mode === 'oauth' && !vertex.projectId?.trim()) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: 'Project ID is required for Vertex OAuth mode.',
+              path: ['projectId']
+            });
+          }
+        })
+    ).optional()
   })
 ]);
 

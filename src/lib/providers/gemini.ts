@@ -51,12 +51,37 @@ export function buildGeminiRequest(request: ProviderRequest, profile: Generation
   });
 }
 
+function vertexBaseUrl(location: string): string {
+  return location === 'global' ? 'https://aiplatform.googleapis.com/v1' : `https://${location}-aiplatform.googleapis.com/v1`;
+}
+
+function withQuery(url: string, params: Record<string, string | undefined>): string {
+  const parsed = new URL(url);
+  for (const [key, value] of Object.entries(params)) {
+    if (value) parsed.searchParams.set(key, value);
+  }
+  return parsed.toString();
+}
+
 export function geminiUrl(profile: GenerationProfile): string {
   if (profile.provider.type !== 'gemini') throw new Error('Invalid profile for Gemini adapter.');
   if (profile.provider.endpoint) return profile.provider.endpoint;
   if (profile.provider.vertex) {
-    const { projectId, location } = profile.provider.vertex;
-    return `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${encodeURIComponent(profile.provider.model)}:streamGenerateContent?alt=sse`;
+    const mode = profile.provider.vertex.mode ?? 'express';
+    const location = profile.provider.vertex.location ?? 'us-central1';
+    const model = encodeURIComponent(profile.provider.model);
+
+    if (mode === 'express') {
+      const projectPath = profile.provider.vertex.projectId
+        ? `/projects/${encodeURIComponent(profile.provider.vertex.projectId)}/locations/${encodeURIComponent(location)}`
+        : '';
+      return withQuery(`${vertexBaseUrl(location)}${projectPath}/publishers/google/models/${model}:streamGenerateContent`, {
+        key: profile.provider.vertex.apiKey?.trim(),
+        alt: 'sse'
+      });
+    }
+
+    return `${vertexBaseUrl(location)}/projects/${encodeURIComponent(profile.provider.vertex.projectId ?? '')}/locations/${encodeURIComponent(location)}/publishers/google/models/${model}:streamGenerateContent?alt=sse`;
   }
   return `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(profile.provider.model)}:streamGenerateContent?alt=sse`;
 }
@@ -65,7 +90,8 @@ function geminiHeaders(profile: GenerationProfile, apiKey?: string, vertexToken?
   if (profile.provider.type !== 'gemini') throw new Error('Invalid profile for Gemini adapter.');
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (profile.provider.vertex) {
-    if (vertexToken) headers.Authorization = `Bearer ${vertexToken}`;
+    const mode = profile.provider.vertex.mode ?? 'express';
+    if (mode === 'oauth' && vertexToken) headers.Authorization = `Bearer ${vertexToken}`;
     return headers;
   }
 
@@ -93,7 +119,7 @@ export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderA
       }
 
       const apiKey = profile.provider.apiKey?.trim();
-      const vertexToken = profile.provider.vertex ? profile.provider.vertex.accessToken?.trim() : undefined;
+      const vertexToken = profile.provider.vertex?.accessToken?.trim();
 
       const response = await fetchImpl(geminiUrl(profile), {
         method: 'POST',

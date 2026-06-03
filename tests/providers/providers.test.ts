@@ -70,6 +70,21 @@ describe('provider request mapping', () => {
     expect(geminiUrl(profile)).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse');
   });
 
+  it('treats legacy Vertex profiles without mode as OAuth profiles', () => {
+    const profile = createDefaultGenerationProfile({
+      provider: {
+        type: 'gemini',
+        model: 'gemini-2.5-pro',
+        vertex: { projectId: 'legacy-project', location: 'global', accessToken: 'legacy-token' } as never
+      }
+    });
+
+    expect(profile.provider.type).toBe('gemini');
+    if (profile.provider.type !== 'gemini') throw new Error('Expected Gemini profile');
+    expect(profile.provider.vertex?.mode).toBe('oauth');
+    expect(geminiUrl(profile)).toBe('https://aiplatform.googleapis.com/v1/projects/legacy-project/locations/global/publishers/google/models/gemini-2.5-pro:streamGenerateContent?alt=sse');
+  });
+
   it('sends provider authentication headers through adapters', async () => {
     const calls: Array<{ url: string; headers: Record<string, string> }> = [];
     const okStream = 'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n';
@@ -99,7 +114,7 @@ describe('provider request mapping', () => {
     expect(calls[0].headers['OpenAI-Project']).toBeUndefined();
   });
 
-  it('uses x-goog-api-key for Gemini AI Studio and bearer auth for Vertex', async () => {
+  it('uses x-goog-api-key for Gemini AI Studio, key query for Vertex Express, and bearer auth for Vertex OAuth', async () => {
     const calls: Array<{ url: string; headers: Record<string, string> }> = [];
     const geminiStream = 'data: {"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}\n\n';
     const fetchImpl = async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -114,21 +129,36 @@ describe('provider request mapping', () => {
       // drain stream
     }
 
-    const vertexProfile = createDefaultGenerationProfile({
+    const vertexExpressProfile = createDefaultGenerationProfile({
       provider: {
         type: 'gemini',
         model: 'gemini-2.5-pro',
-        vertex: { projectId: 'project-id', location: 'us-central1', accessToken: 'vertex-token' }
+        vertex: { mode: 'express', location: 'global', apiKey: 'vertex-express-key' }
       }
     });
-    for await (const _chunk of createGeminiAdapter(fetchImpl).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, vertexProfile)) {
+    for await (const _chunk of createGeminiAdapter(fetchImpl).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, vertexExpressProfile)) {
+      // drain stream
+    }
+
+    const vertexOAuthProfile = createDefaultGenerationProfile({
+      provider: {
+        type: 'gemini',
+        model: 'gemini-2.5-pro',
+        vertex: { mode: 'oauth', projectId: 'project-id', location: 'us-central1', accessToken: 'vertex-token' }
+      }
+    });
+    for await (const _chunk of createGeminiAdapter(fetchImpl).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, vertexOAuthProfile)) {
       // drain stream
     }
 
     expect(calls[0].headers['x-goog-api-key']).toBe('gemini-key');
     expect(calls[0].headers.Authorization).toBeUndefined();
-    expect(calls[1].headers.Authorization).toBe('Bearer vertex-token');
+    expect(calls[1].url).toContain('https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-pro:streamGenerateContent');
+    expect(calls[1].url).toContain('key=vertex-express-key');
     expect(calls[1].headers['x-goog-api-key']).toBeUndefined();
-    expect(calls[1].url).toContain('/projects/project-id/locations/us-central1/publishers/google/models/gemini-2.5-pro:streamGenerateContent');
+    expect(calls[1].headers.Authorization).toBeUndefined();
+    expect(calls[2].headers.Authorization).toBe('Bearer vertex-token');
+    expect(calls[2].headers['x-goog-api-key']).toBeUndefined();
+    expect(calls[2].url).toContain('/projects/project-id/locations/us-central1/publishers/google/models/gemini-2.5-pro:streamGenerateContent');
   });
 });

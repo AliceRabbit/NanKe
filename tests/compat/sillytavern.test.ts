@@ -169,4 +169,26 @@ describe('SillyTavern compat importers', () => {
     expect(compiled.messages.some((message) => message.name?.includes('主提示'))).toBe(false);
     expect(compiled.warnings.some((warning) => warning.code === 'unsupported-sillytavern-macros')).toBe(false);
   });
+
+  it('imports SillyTavern Vertex AI presets as Vertex Express by default', () => {
+    const { profile, kind } = importSillyTavernPreset({
+      name: 'Vertex Express Preset',
+      chat_completion_source: 'vertexai',
+      vertexai_model: 'gemini-2.5-pro',
+      vertexai_auth_mode: 'express',
+      vertexai_region: 'global',
+      vertexai_express_project_id: 'optional-project',
+      prompts: [],
+      prompt_order: []
+    });
+
+    expect(kind).toBe('openai');
+    expect(profile.provider.type).toBe('gemini');
+    if (profile.provider.type !== 'gemini') throw new Error('Expected Gemini profile');
+    expect(profile.provider.vertex).toEqual({
+      mode: 'express',
+      projectId: 'optional-project',
+      location: 'global'
+    });
+  });
 });

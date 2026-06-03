@@ -26,6 +26,7 @@
 
   type ProviderType = 'openai-compatible' | 'gemini';
   type OpenAICompatibility = 'strict-openai' | 'extended';
+  type VertexMode = 'express' | 'oauth';
   type PromptRole = 'system' | 'user' | 'assistant';
   type PromptMode = 'chat' | 'text';
   type MacroMode = 'none' | 'sillytavern';
@@ -83,7 +84,7 @@
           model: string;
           endpoint?: string;
           apiKey?: string;
-          vertex?: { projectId: string; location: string; accessToken?: string };
+          vertex?: { mode?: VertexMode; projectId?: string; location?: string; apiKey?: string; accessToken?: string };
         };
     sampler?: {
       temperature?: number;
@@ -198,8 +199,10 @@
   let profileDraftApiKey = '';
   let profileDraftOpenAICompatibility: OpenAICompatibility = 'strict-openai';
   let profileDraftVertexEnabled = false;
+  let profileDraftVertexMode: VertexMode = 'express';
   let profileDraftVertexProjectId = '';
   let profileDraftVertexLocation = '';
+  let profileDraftVertexApiKey = '';
   let profileDraftVertexAccessToken = '';
   let profileDraftTemperature = '';
   let profileDraftTopP = '';
@@ -390,8 +393,10 @@
       profileDraftApiKey = '';
       profileDraftOpenAICompatibility = 'strict-openai';
       profileDraftVertexEnabled = false;
+      profileDraftVertexMode = 'express';
       profileDraftVertexProjectId = '';
       profileDraftVertexLocation = '';
+      profileDraftVertexApiKey = '';
       profileDraftVertexAccessToken = '';
       profileDraftTemperature = '';
       profileDraftTopP = '';
@@ -426,8 +431,10 @@
     profileDraftApiKey = profile.provider.apiKey ?? '';
     profileDraftOpenAICompatibility = profile.provider.type === 'openai-compatible' ? (profile.provider.compatibility ?? 'strict-openai') : 'strict-openai';
     profileDraftVertexEnabled = profile.provider.type === 'gemini' && Boolean(profile.provider.vertex);
+    profileDraftVertexMode = profile.provider.type === 'gemini' ? (profile.provider.vertex?.mode ?? 'express') : 'express';
     profileDraftVertexProjectId = profile.provider.type === 'gemini' ? (profile.provider.vertex?.projectId ?? '') : '';
-    profileDraftVertexLocation = profile.provider.type === 'gemini' ? (profile.provider.vertex?.location ?? '') : '';
+    profileDraftVertexLocation = profile.provider.type === 'gemini' ? (profile.provider.vertex?.location ?? 'us-central1') : 'us-central1';
+    profileDraftVertexApiKey = profile.provider.type === 'gemini' ? (profile.provider.vertex?.apiKey ?? '') : '';
     profileDraftVertexAccessToken = profile.provider.type === 'gemini' ? (profile.provider.vertex?.accessToken ?? '') : '';
     profileDraftTemperature = numberToDraft(sampler.temperature);
     profileDraftTopP = numberToDraft(sampler.topP);
@@ -501,12 +508,15 @@
     const apiKey = profileDraftApiKey.trim();
 
     if (profileDraftProviderType === 'gemini') {
+      const vertexLocation = profileDraftVertexLocation.trim() || 'us-central1';
       const vertex =
-        profileDraftVertexEnabled && profileDraftVertexProjectId.trim() && profileDraftVertexLocation.trim()
+        profileDraftVertexEnabled
           ? {
-              projectId: profileDraftVertexProjectId.trim(),
-              location: profileDraftVertexLocation.trim(),
-              ...(profileDraftVertexAccessToken.trim() ? { accessToken: profileDraftVertexAccessToken.trim() } : {})
+              mode: profileDraftVertexMode,
+              location: vertexLocation,
+              ...(profileDraftVertexProjectId.trim() ? { projectId: profileDraftVertexProjectId.trim() } : {}),
+              ...(profileDraftVertexMode === 'express' && profileDraftVertexApiKey.trim() ? { apiKey: profileDraftVertexApiKey.trim() } : {}),
+              ...(profileDraftVertexMode === 'oauth' && profileDraftVertexAccessToken.trim() ? { accessToken: profileDraftVertexAccessToken.trim() } : {})
             }
           : undefined;
       return {
@@ -533,14 +543,17 @@
     if (value === 'gemini') {
       profileDraftProviderEndpoint = '';
       profileDraftProviderModel ||= 'gemini-2.5-pro';
+      profileDraftVertexLocation ||= 'us-central1';
       return;
     }
 
     profileDraftProviderEndpoint = 'https://api.openai.com/v1';
     profileDraftProviderModel ||= 'gpt-4o-mini';
     profileDraftVertexEnabled = false;
+    profileDraftVertexMode = 'express';
     profileDraftVertexProjectId = '';
     profileDraftVertexLocation = '';
+    profileDraftVertexApiKey = '';
     profileDraftVertexAccessToken = '';
   }
 
@@ -1477,16 +1490,24 @@
                       Vertex
                     </button>
                     {#if profileDraftVertexEnabled}
+                      <div class="mini-segment vertex-mode-selector" aria-label="Vertex mode">
+                        <button class:active={profileDraftVertexMode === 'express'} type="button" on:click={() => (profileDraftVertexMode = 'express')}>Express</button>
+                        <button class:active={profileDraftVertexMode === 'oauth'} type="button" on:click={() => (profileDraftVertexMode = 'oauth')}>OAuth</button>
+                      </div>
+                    {/if}
+                  </div>
+                  {#if profileDraftVertexEnabled}
+                    <div class="provider-config">
                       <label>
-                        <span>Project</span>
+                        <span>{profileDraftVertexMode === 'oauth' ? 'Project' : 'Project (optional)'}</span>
                         <input bind:value={profileDraftVertexProjectId} placeholder="project-id" />
                       </label>
                       <label>
                         <span>Location</span>
                         <input bind:value={profileDraftVertexLocation} placeholder="us-central1" />
                       </label>
-                    {/if}
-                  </div>
+                    </div>
+                  {/if}
                 {/if}
 
                 {#if profileDraftProviderType === 'openai-compatible'}
@@ -1528,14 +1549,21 @@
                 {:else}
                   <div class="credential-panel">
                     <div class="credential-panel-head">
-                      <strong>Vertex OAuth</strong>
-                      <span>Google Cloud access token</span>
+                      <strong>{profileDraftVertexMode === 'express' ? 'Vertex Express' : 'Vertex OAuth'}</strong>
+                      <span>{profileDraftVertexMode === 'express' ? 'Express API key' : 'Google Cloud access token'}</span>
                     </div>
                     <div class="credential-grid single">
-                      <label>
-                        <span>Access Token</span>
-                        <input bind:value={profileDraftVertexAccessToken} type="password" autocomplete="off" placeholder="ya29..." />
-                      </label>
+                      {#if profileDraftVertexMode === 'express'}
+                        <label>
+                          <span>API Key</span>
+                          <input bind:value={profileDraftVertexApiKey} type="password" autocomplete="off" placeholder="AIza..." />
+                        </label>
+                      {:else}
+                        <label>
+                          <span>Access Token</span>
+                          <input bind:value={profileDraftVertexAccessToken} type="password" autocomplete="off" placeholder="ya29..." />
+                        </label>
+                      {/if}
                     </div>
                   </div>
                 {/if}
@@ -2764,12 +2792,11 @@
   }
 
   .vertex-strip {
-    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
-    align-items: end;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
   }
 
   .provider-config label,
-  .vertex-strip label,
   .credential-grid label {
     display: grid;
     min-width: 0;
@@ -2781,6 +2808,10 @@
     border-color: #d6d8d3;
     background: #fff;
     padding: 0 12px;
+  }
+
+  .vertex-mode-selector {
+    max-width: 260px;
   }
 
   .request-panel-header {
@@ -2926,7 +2957,6 @@
 
   .profile-name-field input,
   .provider-config input,
-  .vertex-strip input,
   .credential-grid input,
   .advanced-sampler-grid input,
   .profile-textarea-label textarea {

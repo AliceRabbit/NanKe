@@ -68,6 +68,7 @@ const OPENAI_PRESET_KEYS = new Set([
   'custom_url',
   'google_model',
   'vertexai_model',
+  'vertexai_auth_mode',
   'vertexai_region',
   'vertexai_express_project_id'
 ]);
@@ -261,21 +262,26 @@ function slotsFromOpenAiPreset(preset: RecordValue, report: ReturnType<typeof cr
   return slots;
 }
 
-function providerFromOpenAiPreset(preset: RecordValue): ProviderProfile {
+function providerFromOpenAiPreset(preset: RecordValue, report?: ReturnType<typeof createCompatReport>): ProviderProfile {
   const source = stringValue(preset.chat_completion_source);
   const geminiSource = source === 'makersuite' || source === 'google' || source === 'google_ai_studio' || source === 'vertexai';
 
   if (geminiSource) {
     const model = source === 'vertexai' ? stringValue(preset.vertexai_model) ?? stringValue(preset.google_model) : stringValue(preset.google_model);
     const projectId = stringValue(preset.vertexai_express_project_id);
-    const location = stringValue(preset.vertexai_region);
+    const location = stringValue(preset.vertexai_region) ?? 'us-central1';
+    const vertexAuthMode = stringValue(preset.vertexai_auth_mode) === 'full' ? 'oauth' : 'express';
+    if (source === 'vertexai' && vertexAuthMode === 'oauth' && !projectId) {
+      report?.warnings.push('Vertex AI full/service-account mode was present, but the preset does not contain service-account credentials or project id; imported as Vertex Express with raw fields preserved.');
+    }
     return {
       type: 'gemini',
       model: model ?? 'gemini-2.5-pro',
-      ...(source === 'vertexai' && projectId && location
+      ...(source === 'vertexai'
         ? {
             vertex: {
-              projectId,
+              mode: vertexAuthMode === 'oauth' && projectId ? 'oauth' : 'express',
+              ...(projectId ? { projectId } : {}),
               location
             }
           }
@@ -355,6 +361,9 @@ function reportOpenAiPreset(preset: RecordValue, report: ReturnType<typeof creat
     'stream_openai',
     'chat_completion_source',
     'model',
+    'vertexai_auth_mode',
+    'vertexai_region',
+    'vertexai_express_project_id',
     'extensions'
   ];
   report.mapped.push(...mappedKeys.filter((key) => key === 'model' || key in preset));
@@ -394,7 +403,7 @@ export function importSillyTavernPreset(
     const slots = slotsFromOpenAiPreset(preset, report);
     const profile = createDefaultGenerationProfile({
       name: stringValue(preset.name) ?? fallbackName ?? 'Imported ST OpenAI Preset',
-      provider: providerFromOpenAiPreset(preset),
+      provider: providerFromOpenAiPreset(preset, report),
       sampler: samplerFromOpenAiPreset(preset),
       prompt: {
         mode: 'chat',

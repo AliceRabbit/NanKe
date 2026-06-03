@@ -286,11 +286,13 @@ function providerFromOpenAiPreset(preset: RecordValue): ProviderProfile {
   }
 
   const endpoint = stringValue(preset.custom_url);
+  const compatibility = endpoint || (source && source !== 'openai') ? 'extended' : 'strict-openai';
   return {
     type: 'openai-compatible',
     model: stringValue(preset.openai_model) ?? stringValue(preset.custom_model) ?? 'gpt-4o-mini',
     endpoint: endpoint && URL.canParse(endpoint) ? endpoint : 'https://api.openai.com/v1',
-    apiKeyEnv: 'OPENAI_API_KEY'
+    apiKeyEnv: 'OPENAI_API_KEY',
+    compatibility
   };
 }
 

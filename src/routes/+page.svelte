@@ -25,6 +25,7 @@
   } from '@lucide/svelte';
 
   type ProviderType = 'openai-compatible' | 'gemini';
+  type OpenAICompatibility = 'strict-openai' | 'extended';
   type PromptRole = 'system' | 'user' | 'assistant';
   type PromptMode = 'chat' | 'text';
   type MacroMode = 'none' | 'sillytavern';
@@ -70,7 +71,16 @@
     id: string;
     name: string;
     provider:
-      | { type: 'openai-compatible'; model: string; endpoint?: string; apiKey?: string; apiKeyEnv?: string }
+      | {
+          type: 'openai-compatible';
+          model: string;
+          endpoint?: string;
+          apiKey?: string;
+          apiKeyEnv?: string;
+          organization?: string;
+          project?: string;
+          compatibility?: OpenAICompatibility;
+        }
       | {
           type: 'gemini';
           model: string;
@@ -189,9 +199,16 @@
   let profileDraftProviderType: ProviderType = 'openai-compatible';
   let profileDraftProviderModel = '';
   let profileDraftProviderEndpoint = '';
+  let profileDraftApiKey = '';
+  let profileDraftApiKeyEnv = '';
+  let profileDraftOpenAIOrganization = '';
+  let profileDraftOpenAIProject = '';
+  let profileDraftOpenAICompatibility: OpenAICompatibility = 'strict-openai';
   let profileDraftVertexEnabled = false;
   let profileDraftVertexProjectId = '';
   let profileDraftVertexLocation = '';
+  let profileDraftVertexAccessToken = '';
+  let profileDraftVertexAccessTokenEnv = '';
   let profileDraftTemperature = '';
   let profileDraftTopP = '';
   let profileDraftTopK = '';
@@ -378,9 +395,16 @@
       profileDraftProviderType = 'openai-compatible';
       profileDraftProviderModel = '';
       profileDraftProviderEndpoint = '';
+      profileDraftApiKey = '';
+      profileDraftApiKeyEnv = '';
+      profileDraftOpenAIOrganization = '';
+      profileDraftOpenAIProject = '';
+      profileDraftOpenAICompatibility = 'strict-openai';
       profileDraftVertexEnabled = false;
       profileDraftVertexProjectId = '';
       profileDraftVertexLocation = '';
+      profileDraftVertexAccessToken = '';
+      profileDraftVertexAccessTokenEnv = '';
       profileDraftTemperature = '';
       profileDraftTopP = '';
       profileDraftTopK = '';
@@ -411,9 +435,16 @@
     profileDraftProviderType = profile.provider.type;
     profileDraftProviderModel = profile.provider.model;
     profileDraftProviderEndpoint = profile.provider.endpoint ?? '';
+    profileDraftApiKey = profile.provider.apiKey ?? '';
+    profileDraftApiKeyEnv = profile.provider.apiKeyEnv ?? (profile.provider.type === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY');
+    profileDraftOpenAIOrganization = profile.provider.type === 'openai-compatible' ? (profile.provider.organization ?? '') : '';
+    profileDraftOpenAIProject = profile.provider.type === 'openai-compatible' ? (profile.provider.project ?? '') : '';
+    profileDraftOpenAICompatibility = profile.provider.type === 'openai-compatible' ? (profile.provider.compatibility ?? 'strict-openai') : 'strict-openai';
     profileDraftVertexEnabled = profile.provider.type === 'gemini' && Boolean(profile.provider.vertex);
     profileDraftVertexProjectId = profile.provider.type === 'gemini' ? (profile.provider.vertex?.projectId ?? '') : '';
     profileDraftVertexLocation = profile.provider.type === 'gemini' ? (profile.provider.vertex?.location ?? '') : '';
+    profileDraftVertexAccessToken = profile.provider.type === 'gemini' ? (profile.provider.vertex?.accessToken ?? '') : '';
+    profileDraftVertexAccessTokenEnv = profile.provider.type === 'gemini' ? (profile.provider.vertex?.accessTokenEnv ?? 'GOOGLE_VERTEX_ACCESS_TOKEN') : '';
     profileDraftTemperature = numberToDraft(sampler.temperature);
     profileDraftTopP = numberToDraft(sampler.topP);
     profileDraftTopK = numberToDraft(sampler.topK);
@@ -483,35 +514,38 @@
   function profileDraftProvider(base: Profile): Profile['provider'] {
     const model = profileDraftProviderModel.trim() || base.provider.model;
     const endpoint = profileDraftProviderEndpoint.trim();
+    const apiKey = profileDraftApiKey.trim();
+    const apiKeyEnv = profileDraftApiKeyEnv.trim();
 
     if (profileDraftProviderType === 'gemini') {
-      const current = base.provider.type === 'gemini' ? base.provider : undefined;
       const vertex =
         profileDraftVertexEnabled && profileDraftVertexProjectId.trim() && profileDraftVertexLocation.trim()
           ? {
               projectId: profileDraftVertexProjectId.trim(),
               location: profileDraftVertexLocation.trim(),
-              accessToken: current?.vertex?.accessToken,
-              accessTokenEnv: current?.vertex?.accessTokenEnv ?? 'GOOGLE_VERTEX_ACCESS_TOKEN'
+              ...(profileDraftVertexAccessToken.trim() ? { accessToken: profileDraftVertexAccessToken.trim() } : {}),
+              accessTokenEnv: profileDraftVertexAccessTokenEnv.trim() || 'GOOGLE_VERTEX_ACCESS_TOKEN'
             }
           : undefined;
       return {
         type: 'gemini',
         model: model || 'gemini-2.5-pro',
         ...(endpoint ? { endpoint } : {}),
-        apiKey: current?.apiKey,
-        apiKeyEnv: current?.apiKeyEnv ?? 'GEMINI_API_KEY',
+        ...(apiKey ? { apiKey } : {}),
+        apiKeyEnv: apiKeyEnv || 'GEMINI_API_KEY',
         ...(vertex ? { vertex } : {})
       };
     }
 
-    const current = base.provider.type === 'openai-compatible' ? base.provider : undefined;
     return {
       type: 'openai-compatible',
       model: model || 'gpt-4o-mini',
-      endpoint: endpoint || current?.endpoint || 'https://api.openai.com/v1',
-      apiKey: current?.apiKey,
-      apiKeyEnv: current?.apiKeyEnv ?? 'OPENAI_API_KEY'
+      endpoint: endpoint || 'https://api.openai.com/v1',
+      ...(apiKey ? { apiKey } : {}),
+      apiKeyEnv: apiKeyEnv || 'OPENAI_API_KEY',
+      ...(profileDraftOpenAIOrganization.trim() ? { organization: profileDraftOpenAIOrganization.trim() } : {}),
+      ...(profileDraftOpenAIProject.trim() ? { project: profileDraftOpenAIProject.trim() } : {}),
+      compatibility: profileDraftOpenAICompatibility
     };
   }
 
@@ -521,14 +555,18 @@
     if (value === 'gemini') {
       profileDraftProviderEndpoint = '';
       profileDraftProviderModel ||= 'gemini-2.5-pro';
+      if (!profileDraftApiKeyEnv || profileDraftApiKeyEnv === 'OPENAI_API_KEY') profileDraftApiKeyEnv = 'GEMINI_API_KEY';
       return;
     }
 
     profileDraftProviderEndpoint = 'https://api.openai.com/v1';
     profileDraftProviderModel ||= 'gpt-4o-mini';
+    if (!profileDraftApiKeyEnv || profileDraftApiKeyEnv === 'GEMINI_API_KEY') profileDraftApiKeyEnv = 'OPENAI_API_KEY';
     profileDraftVertexEnabled = false;
     profileDraftVertexProjectId = '';
     profileDraftVertexLocation = '';
+    profileDraftVertexAccessToken = '';
+    profileDraftVertexAccessTokenEnv = '';
   }
 
   function normalizedPromptSlot(slot: PromptSlot): PromptSlot {
@@ -1451,7 +1489,10 @@
                   </label>
                   <label>
                     <span>Endpoint</span>
-                    <input bind:value={profileDraftProviderEndpoint} placeholder={profileDraftProviderType === 'gemini' ? 'Optional Gemini endpoint' : 'https://api.openai.com/v1'} />
+                    <input
+                      bind:value={profileDraftProviderEndpoint}
+                      placeholder={profileDraftProviderType === 'gemini' ? 'Optional full streamGenerateContent URL' : 'https://api.openai.com/v1'}
+                    />
                   </label>
                 </div>
 
@@ -1470,6 +1511,77 @@
                         <input bind:value={profileDraftVertexLocation} placeholder="us-central1" />
                       </label>
                     {/if}
+                  </div>
+                {/if}
+
+                {#if profileDraftProviderType === 'openai-compatible'}
+                  <div class="credential-panel">
+                    <div class="credential-panel-head">
+                      <strong>Authentication</strong>
+                      <span>Bearer key, env fallback, optional OpenAI headers</span>
+                    </div>
+                    <div class="credential-grid">
+                      <label>
+                        <span>API Key</span>
+                        <input bind:value={profileDraftApiKey} type="password" autocomplete="off" placeholder="sk-..." />
+                      </label>
+                      <label>
+                        <span>Env Var</span>
+                        <input bind:value={profileDraftApiKeyEnv} placeholder="OPENAI_API_KEY" />
+                      </label>
+                      <label>
+                        <span>Organization</span>
+                        <input bind:value={profileDraftOpenAIOrganization} placeholder="Optional org id" />
+                      </label>
+                      <label>
+                        <span>Project</span>
+                        <input bind:value={profileDraftOpenAIProject} placeholder="Optional project id" />
+                      </label>
+                    </div>
+                    <div class="compatibility-strip" aria-label="OpenAI-compatible request mode">
+                      <button class:active={profileDraftOpenAICompatibility === 'strict-openai'} type="button" on:click={() => (profileDraftOpenAICompatibility = 'strict-openai')}>
+                        <strong>OpenAI strict</strong>
+                        <span>official fields</span>
+                      </button>
+                      <button class:active={profileDraftOpenAICompatibility === 'extended'} type="button" on:click={() => (profileDraftOpenAICompatibility = 'extended')}>
+                        <strong>Extended</strong>
+                        <span>top_k, min_p, max_tokens</span>
+                      </button>
+                    </div>
+                  </div>
+                {:else if !profileDraftVertexEnabled}
+                  <div class="credential-panel">
+                    <div class="credential-panel-head">
+                      <strong>Authentication</strong>
+                      <span>AI Studio key is sent as x-goog-api-key</span>
+                    </div>
+                    <div class="credential-grid two">
+                      <label>
+                        <span>API Key</span>
+                        <input bind:value={profileDraftApiKey} type="password" autocomplete="off" placeholder="AIza..." />
+                      </label>
+                      <label>
+                        <span>Env Var</span>
+                        <input bind:value={profileDraftApiKeyEnv} placeholder="GEMINI_API_KEY" />
+                      </label>
+                    </div>
+                  </div>
+                {:else}
+                  <div class="credential-panel">
+                    <div class="credential-panel-head">
+                      <strong>Vertex OAuth</strong>
+                      <span>Google Cloud access token, env fallback</span>
+                    </div>
+                    <div class="credential-grid two">
+                      <label>
+                        <span>Access Token</span>
+                        <input bind:value={profileDraftVertexAccessToken} type="password" autocomplete="off" placeholder="ya29..." />
+                      </label>
+                      <label>
+                        <span>Token Env</span>
+                        <input bind:value={profileDraftVertexAccessTokenEnv} placeholder="GOOGLE_VERTEX_ACCESS_TOKEN" />
+                      </label>
+                    </div>
                   </div>
                 {/if}
               </section>
@@ -2623,6 +2735,7 @@
   .prompt-manager-header span,
   .prompt-editor-titlebar span,
   .provider-editor span,
+  .credential-panel span,
   .request-panel span,
   .advanced-sampler-grid span,
   .profile-textarea-label span,
@@ -2701,7 +2814,8 @@
   }
 
   .provider-config label,
-  .vertex-strip label {
+  .vertex-strip label,
+  .credential-grid label {
     display: grid;
     min-width: 0;
     gap: 5px;
@@ -2719,6 +2833,63 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+  }
+
+  .credential-panel {
+    display: grid;
+    gap: 10px;
+    border-top: 1px solid #e7eae5;
+    padding-top: 10px;
+  }
+
+  .credential-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .credential-panel-head strong {
+    color: #26302a;
+    font-size: 13px;
+  }
+
+  .credential-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .credential-grid.two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .compatibility-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    border: 1px solid #dfe3dc;
+    border-radius: 8px;
+    background: #f1f3ef;
+    padding: 4px;
+  }
+
+  .compatibility-strip button {
+    display: grid;
+    gap: 2px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: #314039;
+    padding: 8px 10px;
+    text-align: left;
+  }
+
+  .compatibility-strip button.active {
+    border-color: #a9c8b3;
+    background: #fff;
+    color: #174b32;
+    box-shadow: 0 1px 3px rgb(29 39 33 / 8%);
   }
 
   .request-panel-header span {
@@ -2801,6 +2972,7 @@
   .profile-name-field input,
   .provider-config input,
   .vertex-strip input,
+  .credential-grid input,
   .advanced-sampler-grid input,
   .profile-textarea-label textarea {
     min-height: 36px;
@@ -3230,7 +3402,10 @@
     }
 
     .provider-config,
-    .vertex-strip {
+    .vertex-strip,
+    .credential-grid,
+    .credential-grid.two,
+    .compatibility-strip {
       grid-template-columns: minmax(0, 1fr);
     }
 

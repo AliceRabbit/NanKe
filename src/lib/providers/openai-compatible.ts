@@ -9,28 +9,86 @@ type OpenAIChunk = {
   }>;
 };
 
+function withDefinedValues<T extends Record<string, unknown>>(value: T): Partial<T> {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== '')) as Partial<T>;
+}
+
+export function openAICompatibleUrl(profile: GenerationProfile): string {
+  if (profile.provider.type !== 'openai-compatible') {
+    throw new Error('Invalid profile for OpenAI-compatible adapter.');
+  }
+
+  const endpoint = (profile.provider.endpoint || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  if (endpoint.endsWith('/chat/completions')) return endpoint;
+  return `${endpoint}/chat/completions`;
+}
+
 export function buildOpenAICompatibleRequest(request: ProviderRequest, profile: GenerationProfile) {
-  return {
+  if (profile.provider.type !== 'openai-compatible') {
+    throw new Error('Invalid profile for OpenAI-compatible request.');
+  }
+
+  const stop = request.stop.length ? request.stop : profile.sampler.stop;
+  const maxTokens = request.maxTokens ?? profile.sampler.maxTokens;
+  const messages = request.messages.map((message) => ({
+    role: message.role === 'tool' ? 'user' : message.role,
+    content: message.content,
+    ...(message.name ? { name: message.name } : {})
+  }));
+  const common = {
     model: profile.provider.model,
-    messages: request.messages.map((message) => ({
-      role: message.role === 'tool' ? 'user' : message.role,
-      content: message.content,
-      ...(message.name ? { name: message.name } : {})
-    })),
+    messages,
     stream: true,
     temperature: request.temperature ?? profile.sampler.temperature,
     top_p: request.topP ?? profile.sampler.topP,
-    top_k: request.topK ?? profile.sampler.topK,
-    top_a: request.topA ?? profile.sampler.topA,
-    min_p: request.minP ?? profile.sampler.minP,
     frequency_penalty: request.frequencyPenalty ?? profile.sampler.frequencyPenalty,
     presence_penalty: request.presencePenalty ?? profile.sampler.presencePenalty,
-    repetition_penalty: request.repetitionPenalty ?? profile.sampler.repetitionPenalty,
-    max_tokens: request.maxTokens ?? profile.sampler.maxTokens,
     seed: request.seed ?? profile.sampler.seed,
     n: request.n ?? profile.sampler.n,
-    stop: request.stop.length ? request.stop : profile.sampler.stop
+    stop
   };
+
+  if (profile.provider.compatibility === 'extended') {
+    return withDefinedValues({
+      ...common,
+      top_k: request.topK ?? profile.sampler.topK,
+      top_a: request.topA ?? profile.sampler.topA,
+      min_p: request.minP ?? profile.sampler.minP,
+      repetition_penalty: request.repetitionPenalty ?? profile.sampler.repetitionPenalty,
+      max_tokens: maxTokens
+    });
+  }
+
+  return withDefinedValues({
+    ...common,
+    max_completion_tokens: maxTokens,
+    stream_options: { include_usage: true }
+  });
+}
+
+function openAIHeaders(profile: GenerationProfile, apiKey?: string): HeadersInit {
+  if (profile.provider.type !== 'openai-compatible') {
+    throw new Error('Invalid profile for OpenAI-compatible adapter.');
+  }
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const organization = profile.provider.organization?.trim();
+  const project = profile.provider.project?.trim();
+  if (organization) headers['X-OpenAI-Organization'] = organization;
+  if (project) headers['X-OpenAI-Project'] = project;
+  return headers;
+}
+
+async function readProviderError(response: Response): Promise<string> {
+  const text = await response.text();
+  if (!text) return `${response.status} ${response.statusText}`;
+  try {
+    const parsed = JSON.parse(text) as { error?: { message?: string }; message?: string };
+    return parsed.error?.message ?? parsed.message ?? text;
+  } catch {
+    return text;
+  }
 }
 
 export function createOpenAICompatibleAdapter(fetchImpl: ProviderFetch = fetch): ProviderAdapter {
@@ -42,19 +100,15 @@ export function createOpenAICompatibleAdapter(fetchImpl: ProviderFetch = fetch):
       }
 
       const apiKey = resolveSecret(profile.provider.apiKey, profile.provider.apiKeyEnv);
-      const endpoint = profile.provider.endpoint.replace(/\/$/, '');
-      const response = await fetchImpl(`${endpoint}/chat/completions`, {
+      const response = await fetchImpl(openAICompatibleUrl(profile), {
         method: 'POST',
         signal,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
-        },
+        headers: openAIHeaders(profile, apiKey),
         body: JSON.stringify(buildOpenAICompatibleRequest(request, profile))
       });
 
       if (!response.ok) {
-        yield { type: 'error', text: await response.text(), raw: { status: response.status } };
+        yield { type: 'error', text: await readProviderError(response), raw: { status: response.status } };
         return;
       }
 

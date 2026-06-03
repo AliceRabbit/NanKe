@@ -11,9 +11,11 @@ export interface ProviderAdapter {
 export type ProviderFetch = typeof fetch;
 
 export function resolveSecret(value: string | undefined, envName: string | undefined): string | undefined {
-  if (value) return value;
-  if (!envName) return undefined;
-  return process.env[envName];
+  const direct = value?.trim();
+  if (direct) return direct;
+  const name = envName?.trim();
+  if (!name) return undefined;
+  return process.env[name]?.trim();
 }
 
 export async function* parseSseStream(response: Response): AsyncIterable<unknown> {

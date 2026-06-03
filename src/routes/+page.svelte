@@ -3,36 +3,99 @@
   import {
     Bot,
     BookOpen,
+    Copy,
     Download,
     GripHorizontal,
     MessageSquare,
+    Plus,
     RefreshCw,
     Search,
     Send,
+    Save,
     Settings2,
+    Trash2,
     Upload,
     UserRound,
     X
   } from '@lucide/svelte';
 
+  type ProviderType = 'openai-compatible' | 'gemini';
+  type PromptRole = 'system' | 'user' | 'assistant';
+  type PromptMode = 'chat' | 'text';
+  type MacroMode = 'none' | 'sillytavern';
+  type PromptSlotSource =
+    | 'system'
+    | 'character-system'
+    | 'character-description'
+    | 'character-personality'
+    | 'scenario'
+    | 'persona'
+    | 'worldbook-before'
+    | 'worldbook-after'
+    | 'examples'
+    | 'history'
+    | 'post-history'
+    | 'custom';
+  type PromptSlot = {
+    id: string;
+    source: PromptSlotSource;
+    role: PromptRole;
+    enabled?: boolean;
+    content?: string;
+    label?: string;
+    injection?: {
+      position?: 'relative' | 'absolute';
+      depth?: number;
+      order?: number;
+      triggers?: string[];
+    };
+    legacy?: {
+      source?: string;
+      identifier?: string;
+      marker?: boolean;
+      systemPrompt?: boolean;
+      forbidOverrides?: boolean;
+      ordered?: boolean;
+      enabledInPromptOrder?: boolean;
+      enabledInPrompt?: boolean;
+      originalIndex?: number;
+    };
+  };
   type Profile = {
     id: string;
     name: string;
-    provider: { type: string; model: string; endpoint?: string };
+    provider:
+      | { type: 'openai-compatible'; model: string; endpoint?: string; apiKey?: string; apiKeyEnv?: string }
+      | {
+          type: 'gemini';
+          model: string;
+          endpoint?: string;
+          apiKey?: string;
+          apiKeyEnv?: string;
+          vertex?: { projectId: string; location: string; accessToken?: string; accessTokenEnv?: string };
+        };
     sampler?: {
       temperature?: number;
       topP?: number;
       topK?: number;
+      topA?: number;
+      minP?: number;
+      frequencyPenalty?: number;
+      presencePenalty?: number;
+      repetitionPenalty?: number;
       maxTokens?: number;
       contextTokens?: number;
+      seed?: number;
+      n?: number;
+      stop?: string[];
     };
     prompt?: {
-      mode?: 'chat' | 'text';
-      macroMode?: 'none' | 'sillytavern';
+      mode?: PromptMode;
+      macroMode?: MacroMode;
       squashSystemMessages?: boolean;
-      slots?: Array<{ enabled?: boolean; source?: string; legacy?: { source?: string; ordered?: boolean } }>;
+      slots?: PromptSlot[];
     };
-    metadata?: {
+    metadata?: Record<string, unknown> & {
       sillyTavern?: {
         kind?: string;
         promptManager?: {
@@ -43,6 +106,9 @@
         };
       };
     };
+    legacy?: { source: 'sillytavern'; raw: unknown; report: unknown };
+    createdAt: number;
+    updatedAt: number;
   };
   type Character = { id: string; name: string; firstMessage?: string; avatarAssetId?: string };
   type UserPersona = {
@@ -61,6 +127,22 @@
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
+
+  const promptSources: PromptSlotSource[] = [
+    'system',
+    'character-system',
+    'character-description',
+    'character-personality',
+    'scenario',
+    'persona',
+    'worldbook-before',
+    'worldbook-after',
+    'examples',
+    'history',
+    'post-history',
+    'custom'
+  ];
+  const promptRoles: PromptRole[] = ['system', 'user', 'assistant'];
 
   let profiles: Profile[] = [];
   let characters: Character[] = [];
@@ -95,10 +177,40 @@
   let openingPreviewCharacterId = '';
   let zoomedAvatar: ZoomedAvatar | null = null;
   let profileQuery = '';
+  let profileDraftId = '';
+  let profileDraftName = '';
+  let profileDraftProviderType: ProviderType = 'openai-compatible';
+  let profileDraftProviderModel = '';
+  let profileDraftProviderEndpoint = '';
+  let profileDraftVertexEnabled = false;
+  let profileDraftVertexProjectId = '';
+  let profileDraftVertexLocation = '';
+  let profileDraftTemperature = '';
+  let profileDraftTopP = '';
+  let profileDraftTopK = '';
+  let profileDraftTopA = '';
+  let profileDraftMinP = '';
+  let profileDraftFrequencyPenalty = '';
+  let profileDraftPresencePenalty = '';
+  let profileDraftRepetitionPenalty = '';
+  let profileDraftMaxTokens = '';
+  let profileDraftContextTokens = '';
+  let profileDraftSeed = '';
+  let profileDraftN = '';
+  let profileDraftStop = '';
+  let profileDraftMode: PromptMode = 'chat';
+  let profileDraftMacroMode: MacroMode = 'none';
+  let profileDraftSquashSystemMessages = false;
+  let profileDraftSlots: PromptSlot[] = [];
+  let promptSlotQuery = '';
+  let activePromptSlotId = '';
 
   $: activeProfile = profiles.find((profile) => profile.id === activeProfileId);
   $: activeProfileStats = profileStats(activeProfile);
   $: filteredProfiles = filterProfiles(profiles, profileQuery);
+  $: draftPromptStats = promptSlotStats(profileDraftSlots);
+  $: filteredPromptSlots = filterPromptSlots(profileDraftSlots, promptSlotQuery);
+  $: activePromptSlot = profileDraftSlots.find((slot) => slot.id === activePromptSlotId);
   $: activeCharacter = characters.find((character) => character.id === activeCharacterId);
   $: activePersona = personas.find((persona) => persona.id === activePersonaId);
   $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
@@ -119,6 +231,12 @@
                   ? 'Inspector'
                   : '';
   $: drawerIsRight = activeDrawer === 'import' || activeDrawer === 'inspector';
+  $: if (activeProfileId !== profileDraftId) {
+    loadProfileDraft(activeProfile);
+  }
+  $: if (profileDraftSlots.length && !profileDraftSlots.some((slot) => slot.id === activePromptSlotId)) {
+    activePromptSlotId = profileDraftSlots[0].id;
+  }
   $: if (activePersonaId !== personaDraftId) {
     personaDraftId = activePersonaId;
     personaDraftName = activePersona?.name ?? '';
@@ -217,6 +335,348 @@
     const text = query.trim().toLowerCase();
     if (!text) return items;
     return items.filter((profile) => [profile.name, profile.provider.type, profile.provider.model, profileOrigin(profile)].join(' ').toLowerCase().includes(text));
+  }
+
+  function numberToDraft(value: number | undefined) {
+    return value === undefined ? '' : String(value);
+  }
+
+  function optionalNumber(value: string) {
+    const text = value.trim();
+    if (!text) return undefined;
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  function optionalInteger(value: string) {
+    const parsed = optionalNumber(value);
+    return parsed === undefined ? undefined : Math.trunc(parsed);
+  }
+
+  function clonePromptSlots(slots: PromptSlot[] | undefined): PromptSlot[] {
+    return structuredClone(slots ?? []);
+  }
+
+  function loadProfileDraft(profile?: Profile) {
+    if (!profile) {
+      profileDraftId = '';
+      profileDraftName = '';
+      profileDraftProviderType = 'openai-compatible';
+      profileDraftProviderModel = '';
+      profileDraftProviderEndpoint = '';
+      profileDraftVertexEnabled = false;
+      profileDraftVertexProjectId = '';
+      profileDraftVertexLocation = '';
+      profileDraftTemperature = '';
+      profileDraftTopP = '';
+      profileDraftTopK = '';
+      profileDraftTopA = '';
+      profileDraftMinP = '';
+      profileDraftFrequencyPenalty = '';
+      profileDraftPresencePenalty = '';
+      profileDraftRepetitionPenalty = '';
+      profileDraftMaxTokens = '';
+      profileDraftContextTokens = '';
+      profileDraftSeed = '';
+      profileDraftN = '';
+      profileDraftStop = '';
+      profileDraftMode = 'chat';
+      profileDraftMacroMode = 'none';
+      profileDraftSquashSystemMessages = false;
+      profileDraftSlots = [];
+      activePromptSlotId = '';
+      promptSlotQuery = '';
+      return;
+    }
+
+    const sampler = profile.sampler ?? {};
+    profileDraftId = profile.id;
+    profileDraftName = profile.name;
+    profileDraftProviderType = profile.provider.type;
+    profileDraftProviderModel = profile.provider.model;
+    profileDraftProviderEndpoint = profile.provider.endpoint ?? '';
+    profileDraftVertexEnabled = profile.provider.type === 'gemini' && Boolean(profile.provider.vertex);
+    profileDraftVertexProjectId = profile.provider.type === 'gemini' ? (profile.provider.vertex?.projectId ?? '') : '';
+    profileDraftVertexLocation = profile.provider.type === 'gemini' ? (profile.provider.vertex?.location ?? '') : '';
+    profileDraftTemperature = numberToDraft(sampler.temperature);
+    profileDraftTopP = numberToDraft(sampler.topP);
+    profileDraftTopK = numberToDraft(sampler.topK);
+    profileDraftTopA = numberToDraft(sampler.topA);
+    profileDraftMinP = numberToDraft(sampler.minP);
+    profileDraftFrequencyPenalty = numberToDraft(sampler.frequencyPenalty);
+    profileDraftPresencePenalty = numberToDraft(sampler.presencePenalty);
+    profileDraftRepetitionPenalty = numberToDraft(sampler.repetitionPenalty);
+    profileDraftMaxTokens = numberToDraft(sampler.maxTokens);
+    profileDraftContextTokens = numberToDraft(sampler.contextTokens);
+    profileDraftSeed = numberToDraft(sampler.seed);
+    profileDraftN = numberToDraft(sampler.n);
+    profileDraftStop = (sampler.stop ?? []).join('\n');
+    profileDraftMode = profile.prompt?.mode ?? 'chat';
+    profileDraftMacroMode = profile.prompt?.macroMode ?? 'none';
+    profileDraftSquashSystemMessages = profile.prompt?.squashSystemMessages ?? false;
+    profileDraftSlots = clonePromptSlots(profile.prompt?.slots);
+    activePromptSlotId = profileDraftSlots[0]?.id ?? '';
+    promptSlotQuery = '';
+  }
+
+  function promptSlotStats(slots: PromptSlot[]) {
+    const total = slots.length;
+    const enabled = slots.filter((slot) => slot.enabled !== false).length;
+    const ordered = slots.filter((slot) => slot.legacy?.ordered !== false).length;
+    const injected = slots.filter((slot) => slot.injection?.position === 'absolute').length;
+    return { total, enabled, ordered, injected };
+  }
+
+  function filterPromptSlots(slots: PromptSlot[], query: string) {
+    const text = query.trim().toLowerCase();
+    if (!text) return slots;
+    return slots.filter((slot) => [slot.label, slot.id, slot.source, slot.role, slot.content].join(' ').toLowerCase().includes(text));
+  }
+
+  function profileDraftSampler(): Profile['sampler'] {
+    const sampler: NonNullable<Profile['sampler']> = {};
+    const numbers: Array<[keyof NonNullable<Profile['sampler']>, number | undefined]> = [
+      ['temperature', optionalNumber(profileDraftTemperature)],
+      ['topP', optionalNumber(profileDraftTopP)],
+      ['topK', optionalNumber(profileDraftTopK)],
+      ['topA', optionalNumber(profileDraftTopA)],
+      ['minP', optionalNumber(profileDraftMinP)],
+      ['frequencyPenalty', optionalNumber(profileDraftFrequencyPenalty)],
+      ['presencePenalty', optionalNumber(profileDraftPresencePenalty)],
+      ['repetitionPenalty', optionalNumber(profileDraftRepetitionPenalty)],
+      ['maxTokens', optionalNumber(profileDraftMaxTokens)],
+      ['contextTokens', optionalNumber(profileDraftContextTokens)],
+      ['seed', optionalInteger(profileDraftSeed)],
+      ['n', optionalInteger(profileDraftN)]
+    ];
+
+    for (const [key, value] of numbers) {
+      if (value !== undefined) sampler[key] = value as never;
+    }
+
+    const stop = profileDraftStop
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (stop.length) sampler.stop = stop;
+    return sampler;
+  }
+
+  function profileDraftProvider(base: Profile): Profile['provider'] {
+    const model = profileDraftProviderModel.trim() || base.provider.model;
+    const endpoint = profileDraftProviderEndpoint.trim();
+
+    if (profileDraftProviderType === 'gemini') {
+      const current = base.provider.type === 'gemini' ? base.provider : undefined;
+      const vertex =
+        profileDraftVertexEnabled && profileDraftVertexProjectId.trim() && profileDraftVertexLocation.trim()
+          ? {
+              projectId: profileDraftVertexProjectId.trim(),
+              location: profileDraftVertexLocation.trim(),
+              accessToken: current?.vertex?.accessToken,
+              accessTokenEnv: current?.vertex?.accessTokenEnv ?? 'GOOGLE_VERTEX_ACCESS_TOKEN'
+            }
+          : undefined;
+      return {
+        type: 'gemini',
+        model: model || 'gemini-2.5-pro',
+        ...(endpoint ? { endpoint } : {}),
+        apiKey: current?.apiKey,
+        apiKeyEnv: current?.apiKeyEnv ?? 'GEMINI_API_KEY',
+        ...(vertex ? { vertex } : {})
+      };
+    }
+
+    const current = base.provider.type === 'openai-compatible' ? base.provider : undefined;
+    return {
+      type: 'openai-compatible',
+      model: model || 'gpt-4o-mini',
+      endpoint: endpoint || current?.endpoint || 'https://api.openai.com/v1',
+      apiKey: current?.apiKey,
+      apiKeyEnv: current?.apiKeyEnv ?? 'OPENAI_API_KEY'
+    };
+  }
+
+  function changeProfileProviderType(value: ProviderType) {
+    if (value === profileDraftProviderType) return;
+    profileDraftProviderType = value;
+    if (value === 'gemini') {
+      profileDraftProviderEndpoint = '';
+      profileDraftProviderModel ||= 'gemini-2.5-pro';
+      return;
+    }
+
+    profileDraftProviderEndpoint = 'https://api.openai.com/v1';
+    profileDraftProviderModel ||= 'gpt-4o-mini';
+    profileDraftVertexEnabled = false;
+    profileDraftVertexProjectId = '';
+    profileDraftVertexLocation = '';
+  }
+
+  function normalizedPromptSlot(slot: PromptSlot): PromptSlot {
+    const injection = slot.injection
+      ? {
+          position: slot.injection.position ?? 'relative',
+          depth: Math.max(0, Math.trunc(slot.injection.depth ?? 4)),
+          order: slot.injection.order ?? 100,
+          triggers: slot.injection.triggers ?? []
+        }
+      : undefined;
+
+    return {
+      ...slot,
+      id: slot.id || crypto.randomUUID(),
+      source: slot.source ?? 'custom',
+      role: slot.role ?? 'system',
+      enabled: slot.enabled !== false,
+      label: slot.label?.trim() || slot.id || 'Prompt',
+      content: slot.content ?? '',
+      ...(injection ? { injection } : {})
+    };
+  }
+
+  function buildProfileFromDraft(base: Profile): Profile {
+    return {
+      ...base,
+      name: profileDraftName.trim(),
+      provider: profileDraftProvider(base),
+      sampler: profileDraftSampler(),
+      prompt: {
+        ...(base.prompt ?? {}),
+        mode: profileDraftMode,
+        macroMode: profileDraftMacroMode,
+        squashSystemMessages: profileDraftSquashSystemMessages,
+        slots: profileDraftSlots.map(normalizedPromptSlot)
+      }
+    };
+  }
+
+  async function saveProfilePayload(profile: Profile) {
+    return fetchJson<Profile>('/api/profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile)
+    });
+  }
+
+  async function saveActiveProfile() {
+    if (!activeProfile) return;
+    if (!profileDraftName.trim()) {
+      status = 'Profile name required';
+      return;
+    }
+
+    status = 'Saving';
+    try {
+      const saved = await saveProfilePayload(buildProfileFromDraft(activeProfile));
+      profiles = profiles.map((profile) => (profile.id === saved.id ? saved : profile));
+      activeProfileId = saved.id;
+      loadProfileDraft(saved);
+      status = 'Ready';
+    } catch (error) {
+      console.error(error);
+      status = 'Profile save failed';
+    }
+  }
+
+  async function duplicateActiveProfile() {
+    if (!activeProfile) return;
+    if (!profileDraftName.trim()) {
+      status = 'Profile name required';
+      return;
+    }
+
+    const now = Date.now();
+    const copy = buildProfileFromDraft(activeProfile);
+    const duplicate: Profile = {
+      ...copy,
+      id: crypto.randomUUID(),
+      name: `${copy.name} Copy`,
+      createdAt: now,
+      updatedAt: now,
+      metadata: structuredClone(copy.metadata ?? {}),
+      legacy: copy.legacy ? structuredClone(copy.legacy) : undefined
+    };
+
+    status = 'Saving';
+    try {
+      const saved = await saveProfilePayload(duplicate);
+      profiles = [...profiles, saved].sort((a, b) => a.name.localeCompare(b.name));
+      activeProfileId = saved.id;
+      loadProfileDraft(saved);
+      status = 'Ready';
+    } catch (error) {
+      console.error(error);
+      status = 'Profile copy failed';
+    }
+  }
+
+  function slotMeta(slot: PromptSlot) {
+    const parts: string[] = [slot.source, slot.role];
+    if (slot.legacy?.source === 'sillytavern') parts.push('ST');
+    if (slot.legacy?.marker) parts.push('marker');
+    if (slot.injection?.position === 'absolute') parts.push(`@${slot.injection.depth ?? 4}`);
+    if (slot.enabled === false) parts.push('off');
+    return parts.join(' · ');
+  }
+
+  function canRemovePromptSlot(slot: PromptSlot) {
+    return slot.source === 'custom' && profileDraftSlots.length > 1;
+  }
+
+  function addDraftPromptSlot() {
+    const slot: PromptSlot = {
+      id: `custom-${crypto.randomUUID()}`,
+      source: 'custom',
+      role: 'system',
+      enabled: true,
+      label: 'Custom Prompt',
+      content: '',
+      injection: { position: 'relative', depth: 4, order: 100, triggers: [] }
+    };
+    profileDraftSlots = [...profileDraftSlots, slot];
+    activePromptSlotId = slot.id;
+    promptSlotQuery = '';
+  }
+
+  function duplicateDraftPromptSlot(slot: PromptSlot | undefined = activePromptSlot) {
+    if (!slot) return;
+    const copy: PromptSlot = {
+      ...structuredClone(slot),
+      id: `custom-${crypto.randomUUID()}`,
+      source: 'custom',
+      label: `${slot.label || slot.id} Copy`,
+      legacy: undefined
+    };
+    const index = profileDraftSlots.findIndex((item) => item.id === slot.id);
+    profileDraftSlots = [...profileDraftSlots.slice(0, index + 1), copy, ...profileDraftSlots.slice(index + 1)];
+    activePromptSlotId = copy.id;
+  }
+
+  function removeDraftPromptSlot(slot: PromptSlot | undefined = activePromptSlot) {
+    if (!slot || !canRemovePromptSlot(slot)) return;
+    profileDraftSlots = profileDraftSlots.filter((item) => item.id !== slot.id);
+    activePromptSlotId = profileDraftSlots[0]?.id ?? '';
+  }
+
+  function updateDraftSlot(id: string, patch: Partial<PromptSlot>) {
+    profileDraftSlots = profileDraftSlots.map((slot) => (slot.id === id ? { ...slot, ...patch } : slot));
+  }
+
+  function updateDraftSlotInjection(id: string, patch: NonNullable<PromptSlot['injection']> | undefined) {
+    profileDraftSlots = profileDraftSlots.map((slot) => {
+      if (slot.id !== id) return slot;
+      if (!patch) return { ...slot, injection: undefined };
+      return {
+        ...slot,
+        injection: {
+          position: patch.position ?? slot.injection?.position ?? 'relative',
+          depth: patch.depth ?? slot.injection?.depth ?? 4,
+          order: patch.order ?? slot.injection?.order ?? 100,
+          triggers: patch.triggers ?? slot.injection?.triggers ?? []
+        }
+      };
+    });
   }
 
   function exportActiveProfile() {
@@ -688,7 +1148,7 @@
 
   {#if activeDrawer}
     <button class="scrim" type="button" aria-label="Close drawer" on:click={closeDrawer}></button>
-    <aside class="drawer" class:right={drawerIsRight} aria-label={drawerTitle}>
+    <aside class="drawer" class:right={drawerIsRight} class:profiles={activeDrawer === 'profiles'} aria-label={drawerTitle}>
       <header class="drawer-header">
         <h2>{drawerTitle}</h2>
         <button class="tool-button" type="button" title="Close" aria-label="Close" on:click={closeDrawer}>
@@ -786,75 +1246,381 @@
           {/each}
         </div>
       {:else if activeDrawer === 'profiles'}
-        <div class="profile-panel">
-          <div class="preset-toolbar" aria-label="Preset tools">
-            <select aria-label="Selected profile" bind:value={activeProfileId}>
-              {#each profiles as profile}
-                <option value={profile.id}>{profile.name}</option>
-              {/each}
-            </select>
-            <div class="preset-actions">
-              <button class="tool-button" type="button" on:click={openPresetImport} title="Import preset" aria-label="Import preset">
-                <Upload size={16} />
-              </button>
-              <button class="tool-button" type="button" on:click={exportActiveProfile} title="Export profile" aria-label="Export profile" disabled={!activeProfile}>
-                <Download size={16} />
-              </button>
-              <button class="tool-button" type="button" on:click={inspectCurrentPrompt} title="Prompt Inspector" aria-label="Prompt Inspector" disabled={!activeProfile}>
-                <Search size={16} />
-              </button>
+        <div class="profile-workspace">
+          <div class="profile-panel">
+            <div class="preset-toolbar" aria-label="Preset tools">
+              <select aria-label="Selected profile" bind:value={activeProfileId}>
+                {#each profiles as profile}
+                  <option value={profile.id}>{profile.name}</option>
+                {/each}
+              </select>
+              <div class="preset-actions">
+                <button class="tool-button" type="button" on:click={openPresetImport} title="Import preset" aria-label="Import preset">
+                  <Upload size={16} />
+                </button>
+                <button class="tool-button" type="button" on:click={saveActiveProfile} title="Update current profile" aria-label="Update current profile" disabled={!activeProfile}>
+                  <Save size={16} />
+                </button>
+                <button class="tool-button" type="button" on:click={duplicateActiveProfile} title="Save profile as" aria-label="Save profile as" disabled={!activeProfile}>
+                  <Copy size={16} />
+                </button>
+                <button class="tool-button" type="button" on:click={exportActiveProfile} title="Export profile" aria-label="Export profile" disabled={!activeProfile}>
+                  <Download size={16} />
+                </button>
+                <button class="tool-button" type="button" on:click={inspectCurrentPrompt} title="Prompt Inspector" aria-label="Prompt Inspector" disabled={!activeProfile}>
+                  <Search size={16} />
+                </button>
+              </div>
             </div>
+
+            {#if activeProfile}
+              <section class="profile-summary" aria-label="Active profile summary">
+                <div class="profile-summary-heading">
+                  <div>
+                    <strong>{activeProfile.name}</strong>
+                    <span>{profileOrigin(activeProfile)}</span>
+                  </div>
+                  <span class="provider-pill">{activeProfile.provider.type}</span>
+                </div>
+                <div class="profile-model">{activeProfile.provider.model}</div>
+                <div class="profile-chips" aria-label="Prompt statistics">
+                  <span>{activeProfileStats.enabled} enabled</span>
+                  <span>{activeProfileStats.ordered} ordered</span>
+                  <span>{activeProfileStats.total} total</span>
+                  {#if activeProfile.prompt?.macroMode === 'sillytavern'}
+                    <span>ST macros</span>
+                  {/if}
+                  {#if activeProfile.prompt?.squashSystemMessages}
+                    <span>squash system</span>
+                  {/if}
+                </div>
+                <div class="profile-sampler">{profileSamplerLine(activeProfile)}</div>
+              </section>
+            {/if}
+
+            <input class="profile-search" bind:value={profileQuery} placeholder="Search profiles" aria-label="Search profiles" />
           </div>
 
           {#if activeProfile}
-            <section class="profile-summary" aria-label="Active profile summary">
-              <div class="profile-summary-heading">
+            <form class="profile-editor" on:submit|preventDefault={saveActiveProfile}>
+              <div class="profile-editor-header">
                 <div>
-                  <strong>{activeProfile.name}</strong>
-                  <span>{profileOrigin(activeProfile)}</span>
+                  <strong>Preset Editor</strong>
+                  <span>{draftPromptStats.enabled}/{draftPromptStats.total} prompts · {draftPromptStats.injected} injections</span>
                 </div>
-                <span class="provider-pill">{activeProfile.provider.type}</span>
+                <div class="preset-actions">
+                  <button class="tool-button" type="submit" title="Save changes" aria-label="Save changes">
+                    <Save size={16} />
+                  </button>
+                  <button class="tool-button" type="button" on:click={duplicateActiveProfile} title="Save as copy" aria-label="Save as copy">
+                    <Copy size={16} />
+                  </button>
+                </div>
               </div>
-              <div class="profile-model">{activeProfile.provider.model}</div>
-              <div class="profile-chips" aria-label="Prompt statistics">
-                <span>{activeProfileStats.enabled} enabled</span>
-                <span>{activeProfileStats.ordered} ordered</span>
-                <span>{activeProfileStats.total} total</span>
-                {#if activeProfile.prompt?.macroMode === 'sillytavern'}
-                  <span>ST macros</span>
+
+              <div class="profile-field-grid">
+                <label>
+                  <span>Name</span>
+                  <input bind:value={profileDraftName} placeholder="Preset name" />
+                </label>
+                <label>
+                  <span>Provider</span>
+                  <select value={profileDraftProviderType} aria-label="Provider type" on:change={(event) => changeProfileProviderType((event.currentTarget as HTMLSelectElement).value as ProviderType)}>
+                    <option value="openai-compatible">OpenAI-compatible</option>
+                    <option value="gemini">Gemini / Vertex</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Model</span>
+                  <input bind:value={profileDraftProviderModel} placeholder="Model" />
+                </label>
+                <label>
+                  <span>Endpoint</span>
+                  <input bind:value={profileDraftProviderEndpoint} placeholder={profileDraftProviderType === 'gemini' ? 'Optional Gemini endpoint' : 'https://api.openai.com/v1'} />
+                </label>
+              </div>
+
+              {#if profileDraftProviderType === 'gemini'}
+                <label class="checkbox-row profile-toggle">
+                  <input type="checkbox" bind:checked={profileDraftVertexEnabled} />
+                  <span>Vertex</span>
+                </label>
+                {#if profileDraftVertexEnabled}
+                  <div class="profile-field-grid">
+                    <label>
+                      <span>Project</span>
+                      <input bind:value={profileDraftVertexProjectId} placeholder="project-id" />
+                    </label>
+                    <label>
+                      <span>Location</span>
+                      <input bind:value={profileDraftVertexLocation} placeholder="us-central1" />
+                    </label>
+                  </div>
                 {/if}
-                {#if activeProfile.prompt?.squashSystemMessages}
-                  <span>squash system</span>
+              {/if}
+
+              <div class="sampler-grid">
+                <label>
+                  <span>Temperature</span>
+                  <input bind:value={profileDraftTemperature} inputmode="decimal" placeholder="1" />
+                </label>
+                <label>
+                  <span>Top P</span>
+                  <input bind:value={profileDraftTopP} inputmode="decimal" placeholder="1" />
+                </label>
+                <label>
+                  <span>Top K</span>
+                  <input bind:value={profileDraftTopK} inputmode="numeric" placeholder="0" />
+                </label>
+                <label>
+                  <span>Top A</span>
+                  <input bind:value={profileDraftTopA} inputmode="decimal" />
+                </label>
+                <label>
+                  <span>Min P</span>
+                  <input bind:value={profileDraftMinP} inputmode="decimal" />
+                </label>
+                <label>
+                  <span>Freq Penalty</span>
+                  <input bind:value={profileDraftFrequencyPenalty} inputmode="decimal" />
+                </label>
+                <label>
+                  <span>Presence</span>
+                  <input bind:value={profileDraftPresencePenalty} inputmode="decimal" />
+                </label>
+                <label>
+                  <span>Rep Penalty</span>
+                  <input bind:value={profileDraftRepetitionPenalty} inputmode="decimal" />
+                </label>
+                <label>
+                  <span>Max Tokens</span>
+                  <input bind:value={profileDraftMaxTokens} inputmode="numeric" />
+                </label>
+                <label>
+                  <span>Context</span>
+                  <input bind:value={profileDraftContextTokens} inputmode="numeric" />
+                </label>
+                <label>
+                  <span>Seed</span>
+                  <input bind:value={profileDraftSeed} inputmode="numeric" />
+                </label>
+                <label>
+                  <span>N</span>
+                  <input bind:value={profileDraftN} inputmode="numeric" />
+                </label>
+              </div>
+
+              <label class="profile-textarea-label">
+                <span>Stop strings</span>
+                <textarea bind:value={profileDraftStop} rows="3" placeholder="One stop string per line"></textarea>
+              </label>
+
+              <div class="profile-toggle-strip">
+                <label>
+                  <span>Mode</span>
+                  <select bind:value={profileDraftMode} aria-label="Prompt mode">
+                    <option value="chat">Chat</option>
+                    <option value="text">Text</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Macros</span>
+                  <select bind:value={profileDraftMacroMode} aria-label="Macro mode">
+                    <option value="none">None</option>
+                    <option value="sillytavern">SillyTavern</option>
+                  </select>
+                </label>
+                <label class="checkbox-row profile-toggle">
+                  <input type="checkbox" bind:checked={profileDraftSquashSystemMessages} />
+                  <span>Squash system</span>
+                </label>
+              </div>
+            </form>
+
+            <section class="prompt-manager-panel" aria-label="Prompt Manager">
+              <div class="prompt-manager-header">
+                <div>
+                  <strong>Prompt Manager</strong>
+                  <span>{draftPromptStats.enabled} enabled · {draftPromptStats.ordered} ordered · {draftPromptStats.total} total</span>
+                </div>
+                <button class="tool-button" type="button" on:click={addDraftPromptSlot} title="Add prompt" aria-label="Add prompt">
+                  <Plus size={16} />
+                </button>
+              </div>
+
+              <input class="profile-search" bind:value={promptSlotQuery} placeholder="Search prompts" aria-label="Search prompts" />
+
+              <div class="prompt-manager-grid">
+                <div class="prompt-slot-list" aria-label="Prompt slots">
+                  {#each filteredPromptSlots as slot}
+                    <div class="prompt-slot-row" class:active={slot.id === activePromptSlotId}>
+                      <input
+                        class="prompt-slot-toggle"
+                        type="checkbox"
+                        checked={slot.enabled !== false}
+                        title="Toggle prompt"
+                        aria-label={`Toggle ${slot.label || slot.id}`}
+                        on:change={(event) => updateDraftSlot(slot.id, { enabled: (event.currentTarget as HTMLInputElement).checked })}
+                      />
+                      <button type="button" on:click={() => (activePromptSlotId = slot.id)}>
+                        <strong>{slot.label || slot.id}</strong>
+                        <span>{slotMeta(slot)}</span>
+                      </button>
+                    </div>
+                  {:else}
+                    <div class="drawer-empty">No matching prompts</div>
+                  {/each}
+                </div>
+
+                {#if activePromptSlot}
+                  <div class="prompt-slot-editor">
+                    <div class="prompt-slot-editor-header">
+                      <div>
+                        <strong>{activePromptSlot.label || activePromptSlot.id}</strong>
+                        <span>{activePromptSlot.legacy?.identifier ?? activePromptSlot.id}</span>
+                      </div>
+                      <div class="preset-actions">
+                        <button class="tool-button" type="button" on:click={() => duplicateDraftPromptSlot(activePromptSlot)} title="Duplicate prompt" aria-label="Duplicate prompt">
+                          <Copy size={16} />
+                        </button>
+                        <button
+                          class="tool-button"
+                          type="button"
+                          on:click={() => removeDraftPromptSlot(activePromptSlot)}
+                          title="Remove prompt"
+                          aria-label="Remove prompt"
+                          disabled={!canRemovePromptSlot(activePromptSlot)}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="profile-field-grid">
+                      <label>
+                        <span>Label</span>
+                        <input
+                          value={activePromptSlot.label ?? ''}
+                          on:input={(event) => updateDraftSlot(activePromptSlot.id, { label: (event.currentTarget as HTMLInputElement).value })}
+                        />
+                      </label>
+                      <label>
+                        <span>Source</span>
+                        <select
+                          value={activePromptSlot.source}
+                          on:change={(event) => updateDraftSlot(activePromptSlot.id, { source: (event.currentTarget as HTMLSelectElement).value as PromptSlotSource })}
+                        >
+                          {#each promptSources as source}
+                            <option value={source}>{source}</option>
+                          {/each}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Role</span>
+                        <select value={activePromptSlot.role} on:change={(event) => updateDraftSlot(activePromptSlot.id, { role: (event.currentTarget as HTMLSelectElement).value as PromptRole })}>
+                          {#each promptRoles as role}
+                            <option value={role}>{role}</option>
+                          {/each}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Injection</span>
+                        <select
+                          value={activePromptSlot.injection?.position ?? 'none'}
+                          on:change={(event) => {
+                            const value = (event.currentTarget as HTMLSelectElement).value;
+                            updateDraftSlotInjection(activePromptSlot.id, value === 'none' ? undefined : { position: value as 'relative' | 'absolute' });
+                          }}
+                        >
+                          <option value="none">None</option>
+                          <option value="relative">Relative</option>
+                          <option value="absolute">In-chat</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    {#if activePromptSlot.injection}
+                      <div class="profile-field-grid compact">
+                        <label>
+                          <span>Depth</span>
+                          <input
+                            value={activePromptSlot.injection.depth ?? 4}
+                            inputmode="numeric"
+                            on:input={(event) =>
+                              updateDraftSlotInjection(activePromptSlot.id, {
+                                ...activePromptSlot.injection,
+                                depth: optionalInteger((event.currentTarget as HTMLInputElement).value) ?? 0
+                              })}
+                          />
+                        </label>
+                        <label>
+                          <span>Order</span>
+                          <input
+                            value={activePromptSlot.injection.order ?? 100}
+                            inputmode="numeric"
+                            on:input={(event) =>
+                              updateDraftSlotInjection(activePromptSlot.id, {
+                                ...activePromptSlot.injection,
+                                order: optionalNumber((event.currentTarget as HTMLInputElement).value) ?? 100
+                              })}
+                          />
+                        </label>
+                      </div>
+                      <label class="profile-textarea-label">
+                        <span>Triggers</span>
+                        <textarea
+                          rows="2"
+                          value={(activePromptSlot.injection.triggers ?? []).join('\n')}
+                          on:input={(event) =>
+                            updateDraftSlotInjection(activePromptSlot.id, {
+                              ...activePromptSlot.injection,
+                              triggers: (event.currentTarget as HTMLTextAreaElement).value
+                                .split('\n')
+                                .map((item) => item.trim())
+                                .filter(Boolean)
+                            })}
+                        ></textarea>
+                      </label>
+                    {/if}
+
+                    <label class="profile-textarea-label prompt-content-label">
+                      <span>Prompt</span>
+                      <textarea
+                        rows="10"
+                        value={activePromptSlot.content ?? ''}
+                        on:input={(event) => updateDraftSlot(activePromptSlot.id, { content: (event.currentTarget as HTMLTextAreaElement).value })}
+                      ></textarea>
+                    </label>
+                  </div>
                 {/if}
               </div>
-              <div class="profile-sampler">{profileSamplerLine(activeProfile)}</div>
             </section>
           {/if}
 
-          <input class="profile-search" bind:value={profileQuery} placeholder="Search profiles" aria-label="Search profiles" />
-        </div>
-
-        <div class="profile-list">
-          {#each filteredProfiles as profile}
-            {@const stats = profileStats(profile)}
-            <button
-              class="profile-row"
-              class:active={profile.id === activeProfileId}
-              type="button"
-              on:click={() => (activeProfileId = profile.id)}
-            >
-              <span class="profile-row-main">
-                <strong>{profile.name}</strong>
-                <span>{profile.provider.type} · {profile.provider.model}</span>
-              </span>
-              <span class="profile-row-meta">
-                <span>{stats.enabled}/{stats.total}</span>
-                <span>{profileOrigin(profile)}</span>
-              </span>
-            </button>
-          {:else}
-            <div class="drawer-empty">No matching profiles</div>
-          {/each}
+          <section class="profile-list-section" aria-label="Profiles">
+            <div class="profile-list">
+              {#each filteredProfiles as profile}
+                {@const stats = profileStats(profile)}
+                <button
+                  class="profile-row"
+                  class:active={profile.id === activeProfileId}
+                  type="button"
+                  on:click={() => (activeProfileId = profile.id)}
+                >
+                  <span class="profile-row-main">
+                    <strong>{profile.name}</strong>
+                    <span>{profile.provider.type} · {profile.provider.model}</span>
+                  </span>
+                  <span class="profile-row-meta">
+                    <span>{stats.enabled}/{stats.total}</span>
+                    <span>{profileOrigin(profile)}</span>
+                  </span>
+                </button>
+              {:else}
+                <div class="drawer-empty">No matching profiles</div>
+              {/each}
+            </div>
+          </section>
         </div>
       {:else if activeDrawer === 'import'}
         <div class="import-panel">
@@ -1352,6 +2118,10 @@
     box-shadow: -16px 0 36px rgb(28 36 31 / 14%);
   }
 
+  .drawer.profiles {
+    width: min(720px, calc(100vw - 64px));
+  }
+
   .drawer-header {
     display: flex;
     align-items: center;
@@ -1466,6 +2236,15 @@
     background: #fbfcfa;
   }
 
+  .profile-workspace {
+    display: grid;
+    align-content: start;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    background: #fff;
+  }
+
   .preset-toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -1565,13 +2344,178 @@
     padding-block: 8px;
   }
 
+  .profile-editor,
+  .prompt-manager-panel {
+    display: grid;
+    gap: 12px;
+    border-bottom: 1px solid #e6e8e3;
+    padding: 14px 16px 16px;
+    background: #fff;
+  }
+
+  .profile-editor-header,
+  .prompt-manager-header,
+  .prompt-slot-editor-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .profile-editor-header div,
+  .prompt-manager-header div,
+  .prompt-slot-editor-header div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .profile-editor-header span,
+  .prompt-manager-header span,
+  .prompt-slot-editor-header span,
+  .profile-field-grid span,
+  .sampler-grid span,
+  .profile-textarea-label span,
+  .profile-toggle-strip span,
+  .prompt-slot-row span {
+    color: #66716a;
+    font-size: 12px;
+  }
+
+  .profile-field-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .profile-field-grid.compact {
+    grid-template-columns: repeat(2, minmax(0, 150px));
+  }
+
+  .profile-field-grid label,
+  .sampler-grid label,
+  .profile-textarea-label,
+  .profile-toggle-strip label {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+  }
+
+  .profile-field-grid input,
+  .profile-field-grid select,
+  .sampler-grid input,
+  .profile-toggle-strip select,
+  .profile-textarea-label textarea {
+    min-height: 36px;
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .sampler-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .profile-toggle-strip {
+    display: grid;
+    grid-template-columns: minmax(0, 150px) minmax(0, 150px) auto;
+    align-items: end;
+    gap: 10px;
+  }
+
+  .profile-toggle {
+    min-height: 36px;
+    align-content: center;
+    justify-content: flex-start;
+  }
+
+  .prompt-manager-grid {
+    display: grid;
+    grid-template-columns: minmax(200px, 0.82fr) minmax(0, 1.18fr);
+    gap: 12px;
+    align-items: start;
+  }
+
+  .prompt-slot-list {
+    display: grid;
+    align-content: start;
+    max-height: 480px;
+    overflow: auto;
+    border: 1px solid #e0e4df;
+    border-radius: 8px;
+    background: #fbfcfa;
+  }
+
+  .prompt-slot-row {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    align-items: center;
+    border-bottom: 1px solid #eef0ec;
+    background: #fff;
+  }
+
+  .prompt-slot-row:last-child {
+    border-bottom: 0;
+  }
+
+  .prompt-slot-row.active {
+    background: #edf6f0;
+    box-shadow: inset 3px 0 0 #1c6b43;
+  }
+
+  .prompt-slot-toggle {
+    width: 16px;
+    height: 16px;
+    margin: 0 auto;
+  }
+
+  .prompt-slot-row button {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: #202823;
+    padding: 9px 10px 9px 0;
+    text-align: left;
+  }
+
+  .prompt-slot-row button strong,
+  .prompt-slot-editor-header strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .prompt-slot-editor {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    border: 1px solid #dfe3dc;
+    border-radius: 8px;
+    background: #fbfcfa;
+    padding: 12px;
+  }
+
+  .prompt-content-label textarea {
+    min-height: 220px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    line-height: 1.5;
+  }
+
+  .profile-list-section {
+    display: grid;
+    border-bottom: 1px solid #eef0ec;
+  }
+
   .profile-list {
     display: grid;
     align-content: start;
     gap: 0;
-    flex: 1 1 auto;
     min-height: 0;
-    overflow: auto;
   }
 
   .profile-row {
@@ -1685,8 +2629,25 @@
       width: calc(100vw - 56px);
     }
 
+    .drawer.profiles {
+      width: calc(100vw - 56px);
+    }
+
     .drawer.right {
       width: calc(100vw - 56px);
+    }
+
+    .profile-field-grid,
+    .prompt-manager-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .sampler-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .profile-toggle-strip {
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .avatar-viewer {

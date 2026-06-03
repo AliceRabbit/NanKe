@@ -3,16 +3,47 @@ import { createDefaultGenerationProfile, generationProfileSchema, type Generatio
 import { generationProfiles } from '../schema';
 import { getDatabase } from '../db';
 
+function ensureRequiredPromptSlots(profile: GenerationProfile): { profile: GenerationProfile; changed: boolean } {
+  if (profile.prompt.slots.some((slot) => slot.source === 'persona')) {
+    return { profile, changed: false };
+  }
+
+  const personaSlot = createDefaultGenerationProfile().prompt.slots.find((slot) => slot.source === 'persona');
+  if (!personaSlot) return { profile, changed: false };
+
+  const slots = [...profile.prompt.slots];
+  const scenarioIndex = slots.findIndex((slot) => slot.source === 'scenario');
+  slots.splice(scenarioIndex >= 0 ? scenarioIndex + 1 : slots.length, 0, personaSlot);
+
+  return {
+    profile: generationProfileSchema.parse({
+      ...profile,
+      prompt: {
+        ...profile.prompt,
+        slots
+      }
+    }),
+    changed: true
+  };
+}
+
 export class ProfileRepository {
   constructor(private readonly db = getDatabase()) {}
 
   list(): GenerationProfile[] {
-    return this.db.select().from(generationProfiles).orderBy(asc(generationProfiles.name)).all().map((row) => generationProfileSchema.parse(row.data));
+    return this.db
+      .select()
+      .from(generationProfiles)
+      .orderBy(asc(generationProfiles.name))
+      .all()
+      .map((row) => ensureRequiredPromptSlots(generationProfileSchema.parse(row.data)).profile);
   }
 
   get(id: string): GenerationProfile | undefined {
     const row = this.db.select().from(generationProfiles).where(eq(generationProfiles.id, id)).get();
-    return row ? generationProfileSchema.parse(row.data) : undefined;
+    if (!row) return undefined;
+    const normalized = ensureRequiredPromptSlots(generationProfileSchema.parse(row.data));
+    return normalized.changed ? this.save(normalized.profile) : normalized.profile;
   }
 
   save(profile: GenerationProfile): GenerationProfile {
@@ -41,8 +72,11 @@ export class ProfileRepository {
   }
 
   ensureDefault(): GenerationProfile {
-    const [first] = this.list();
-    if (first) return first;
+    const row = this.db.select().from(generationProfiles).orderBy(asc(generationProfiles.name)).get();
+    if (row) {
+      const normalized = ensureRequiredPromptSlots(generationProfileSchema.parse(row.data));
+      return normalized.changed ? this.save(normalized.profile) : normalized.profile;
+    }
     return this.save(createDefaultGenerationProfile());
   }
 }

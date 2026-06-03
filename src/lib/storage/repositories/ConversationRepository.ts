@@ -30,6 +30,7 @@ export class ConversationRepository {
         id: updated.id,
         title: updated.title,
         characterId: updated.characterId,
+        personaId: updated.personaId,
         profileId: updated.profileId,
         data: updated,
         createdAt: updated.createdAt,
@@ -40,6 +41,7 @@ export class ConversationRepository {
         set: {
           title: updated.title,
           characterId: updated.characterId,
+          personaId: updated.personaId,
           profileId: updated.profileId,
           data: updated,
           updatedAt: updated.updatedAt

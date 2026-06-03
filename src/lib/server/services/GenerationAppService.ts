@@ -9,6 +9,7 @@ export type GenerateInput = {
   conversationId?: string;
   profileId?: string;
   characterId?: string;
+  personaId?: string;
   message: string;
   dryRun?: boolean;
 };
@@ -26,6 +27,8 @@ export class GenerationAppService {
     if (!profile) throw new AppError('Generation profile not found.', 404, 'profile_not_found');
 
     const existingConversation = input.conversationId ? this.context.conversations.get(input.conversationId) : undefined;
+    const defaultPersona = this.context.personas.getDefault();
+    const personaId = input.personaId ?? existingConversation?.personaId ?? defaultPersona?.id;
     const conversation =
       existingConversation ??
       (input.dryRun
@@ -34,6 +37,7 @@ export class GenerationAppService {
             id: crypto.randomUUID(),
             title: input.message.slice(0, 40) || 'New Chat',
             characterId: input.characterId,
+            personaId,
             profileId: profile.id,
             worldBookIds: [],
             metadata: {},
@@ -43,6 +47,12 @@ export class GenerationAppService {
 
     const conversationId = conversation?.id ?? input.conversationId;
     const character = input.characterId ? this.context.characters.get(input.characterId) : conversation?.characterId ? this.context.characters.get(conversation.characterId) : undefined;
+    const persona = personaId ? this.context.personas.get(personaId) : undefined;
+
+    if (!input.dryRun && conversation && input.personaId && input.personaId !== conversation.personaId) {
+      this.context.conversations.save({ ...conversation, personaId: input.personaId });
+    }
+
     const userMessage = createMessage({ conversationId, role: 'user', content: input.message });
 
     const messages = [...(conversationId ? this.context.conversations.listMessages(conversationId) : []), userMessage];
@@ -52,7 +62,14 @@ export class GenerationAppService {
     }
 
     const worldBooks = (conversation?.worldBookIds ?? []).map((id) => this.context.worldBooks.get(id)).filter((item) => item !== undefined);
-    const compiled = this.pipeline.compile({ profile, character, messages, worldBooks });
+    const compiled = this.pipeline.compile({
+      profile,
+      character,
+      messages,
+      worldBooks,
+      persona: persona?.description,
+      userName: persona?.name
+    });
 
     if (input.dryRun) {
       yield JSON.stringify({ conversationId, inspector: inspectPrompt(compiled) });

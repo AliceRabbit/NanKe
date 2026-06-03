@@ -16,7 +16,8 @@ export class GenerationPipeline {
       character: context.character,
       messages: context.messages,
       activatedWorldEntries,
-      persona: context.persona
+      persona: context.persona,
+      userName: context.userName
     });
   }
 }

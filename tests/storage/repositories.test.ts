@@ -6,8 +6,9 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { createConversation } from '$lib/schemas/conversation';
 import { createMessage } from '$lib/schemas/message';
+import { createUserPersona } from '$lib/schemas/user-persona';
 import { initializeDatabase } from '$lib/storage/db';
-import { ConversationRepository } from '$lib/storage/repositories';
+import { ConversationRepository, UserPersonaRepository } from '$lib/storage/repositories';
 import * as schema from '$lib/storage/schema';
 
 describe('storage repositories', () => {
@@ -16,14 +17,18 @@ describe('storage repositories', () => {
     const sqlite = new Database(path.join(dir, 'test.db'));
     initializeDatabase(sqlite);
     const db = drizzle(sqlite, { schema });
+    const personas = new UserPersonaRepository(db);
     const repository = new ConversationRepository(db);
 
-    const conversation = repository.save(createConversation({ title: 'Test chat' }));
+    const persona = personas.save(createUserPersona({ name: 'Mira', description: 'Careful archivist.', isDefault: true }));
+    const conversation = repository.save(createConversation({ title: 'Test chat', personaId: persona.id }));
     repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Hello' }));
 
     const loaded = repository.getWithMessages(conversation.id);
     expect(loaded?.title).toBe('Test chat');
+    expect(loaded?.personaId).toBe(persona.id);
     expect(loaded?.messages[0].content).toBe('Hello');
+    expect(personas.getDefault()?.name).toBe('Mira');
 
     sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });

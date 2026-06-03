@@ -3,6 +3,7 @@ import type { Character } from '$lib/schemas/character';
 import type { Conversation } from '$lib/schemas/conversation';
 import type { NankeMessage } from '$lib/schemas/message';
 import type { GenerationProfile } from '$lib/schemas/profile';
+import type { UserPersona } from '$lib/schemas/user-persona';
 import type { WorldBook } from '$lib/schemas/worldbook';
 import type { CompatReport } from '$lib/compat/sillytavern/report';
 
@@ -18,6 +19,7 @@ export const conversations = sqliteTable('conversations', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   characterId: text('character_id'),
+  personaId: text('persona_id'),
   profileId: text('profile_id'),
   data: text('data', { mode: 'json' }).$type<Conversation>().notNull(),
   createdAt: integer('created_at').notNull(),
@@ -45,6 +47,15 @@ export const generationProfiles = sqliteTable('generation_profiles', {
   name: text('name').notNull(),
   providerType: text('provider_type').notNull(),
   data: text('data', { mode: 'json' }).$type<GenerationProfile>().notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+});
+
+export const userPersonas = sqliteTable('user_personas', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  isDefault: integer('is_default', { mode: 'boolean' }).notNull(),
+  data: text('data', { mode: 'json' }).$type<UserPersona>().notNull(),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull()
 });

@@ -44,6 +44,7 @@ export function initializeDatabase(sqlite: Database.Database = getDatabaseHandle
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       character_id TEXT,
+      persona_id TEXT,
       profile_id TEXT,
       data TEXT NOT NULL,
       created_at INTEGER NOT NULL,
@@ -78,6 +79,15 @@ export function initializeDatabase(sqlite: Database.Database = getDatabaseHandle
       updated_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS user_personas (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      data TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS import_reports (
       id TEXT PRIMARY KEY,
       kind TEXT NOT NULL,
@@ -85,4 +95,9 @@ export function initializeDatabase(sqlite: Database.Database = getDatabaseHandle
       created_at INTEGER NOT NULL
     );
   `);
+
+  const conversationColumns = sqlite.prepare(`PRAGMA table_info(conversations)`).all() as Array<{ name: string }>;
+  if (!conversationColumns.some((column) => column.name === 'persona_id')) {
+    sqlite.exec(`ALTER TABLE conversations ADD COLUMN persona_id TEXT;`);
+  }
 }

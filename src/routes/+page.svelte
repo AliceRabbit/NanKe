@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
+    Bot,
     BookOpen,
     Download,
     MessageSquare,
@@ -15,20 +16,23 @@
 
   type Profile = { id: string; name: string; provider: { type: string; model: string } };
   type Character = { id: string; name: string };
+  type UserPersona = { id: string; name: string; description: string; isDefault: boolean; createdAt: number; updatedAt: number };
   type WorldBook = { id: string; name: string; entries: unknown[] };
-  type Conversation = { id: string; title: string; messages?: ChatMessage[] };
+  type Conversation = { id: string; title: string; characterId?: string; personaId?: string; profileId?: string; messages?: ChatMessage[] };
   type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string };
-  type View = 'chat' | 'characters' | 'worldbooks' | 'profiles';
-  type Drawer = 'chats' | 'characters' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
+  type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
+  type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
 
   let profiles: Profile[] = [];
   let characters: Character[] = [];
+  let personas: UserPersona[] = [];
   let worldBooks: WorldBook[] = [];
   let conversations: Conversation[] = [];
   let activeView: View = 'chat';
   let activeDrawer: Drawer = null;
   let activeProfileId = '';
   let activeCharacterId = '';
+  let activePersonaId = '';
   let activeConversationId = '';
   let messages: ChatMessage[] = [];
   let input = '';
@@ -39,26 +43,42 @@
   let inspector = '';
   let newCharacterName = '';
   let newCharacterDescription = '';
+  let newPersonaName = '';
+  let newPersonaDescription = '';
+  let newPersonaDefault = false;
+  let personaDraftId = '';
+  let personaDraftName = '';
+  let personaDraftDescription = '';
+  let personaDraftDefault = false;
   let newWorldBookName = '';
 
   $: activeProfile = profiles.find((profile) => profile.id === activeProfileId);
   $: activeCharacter = characters.find((character) => character.id === activeCharacterId);
+  $: activePersona = personas.find((persona) => persona.id === activePersonaId);
   $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
   $: drawerTitle =
     activeDrawer === 'chats'
       ? 'Chats'
       : activeDrawer === 'characters'
         ? 'Characters'
-        : activeDrawer === 'worldbooks'
-          ? 'World Books'
-          : activeDrawer === 'profiles'
-            ? 'Profiles'
-            : activeDrawer === 'import'
-              ? 'Import'
-              : activeDrawer === 'inspector'
-                ? 'Inspector'
-                : '';
+        : activeDrawer === 'personas'
+          ? 'Personas'
+          : activeDrawer === 'worldbooks'
+            ? 'World Books'
+            : activeDrawer === 'profiles'
+              ? 'Profiles'
+              : activeDrawer === 'import'
+                ? 'Import'
+                : activeDrawer === 'inspector'
+                  ? 'Inspector'
+                  : '';
   $: drawerIsRight = activeDrawer === 'import' || activeDrawer === 'inspector';
+  $: if (activePersonaId !== personaDraftId) {
+    personaDraftId = activePersonaId;
+    personaDraftName = activePersona?.name ?? '';
+    personaDraftDescription = activePersona?.description ?? '';
+    personaDraftDefault = activePersona?.isDefault ?? false;
+  }
 
   onMount(() => {
     void refreshAll();
@@ -94,10 +114,12 @@
     status = 'Loading';
     profiles = await fetchJson<Profile[]>('/api/profiles');
     characters = await fetchJson<Character[]>('/api/characters');
+    personas = await fetchJson<UserPersona[]>('/api/personas');
     worldBooks = await fetchJson<WorldBook[]>('/api/worldbooks');
     conversations = await fetchJson<Conversation[]>('/api/conversations');
     activeProfileId ||= profiles[0]?.id ?? '';
     activeCharacterId ||= characters[0]?.id ?? '';
+    activePersonaId ||= personas.find((persona) => persona.isDefault)?.id ?? personas[0]?.id ?? '';
     status = 'Ready';
   }
 
@@ -109,6 +131,7 @@
       body: JSON.stringify({
         title: input.slice(0, 40) || 'New Chat',
         characterId: activeCharacterId || undefined,
+        personaId: activePersonaId || undefined,
         profileId: activeProfileId || undefined
       })
     });
@@ -122,6 +145,9 @@
     activeView = 'chat';
     const conversation = await fetchJson<Conversation>(`/api/conversations?id=${encodeURIComponent(id)}`);
     messages = conversation.messages ?? [];
+    activeCharacterId = conversation.characterId ?? activeCharacterId;
+    activePersonaId = conversation.personaId ?? activePersonaId;
+    activeProfileId = conversation.profileId ?? activeProfileId;
     closeDrawer();
   }
 
@@ -141,6 +167,7 @@
         conversationId,
         profileId: activeProfileId || undefined,
         characterId: activeCharacterId || undefined,
+        personaId: activePersonaId || undefined,
         message: content
       })
     });
@@ -173,6 +200,7 @@
         conversationId,
         profileId: activeProfileId || undefined,
         characterId: activeCharacterId || undefined,
+        personaId: activePersonaId || undefined,
         message: content,
         dryRun: true
       })
@@ -211,6 +239,51 @@
     activeCharacterId = character.id;
     newCharacterName = '';
     newCharacterDescription = '';
+    status = 'Ready';
+  }
+
+  async function createPersona() {
+    const name = newPersonaName.trim();
+    if (!name) return;
+    status = 'Saving';
+    const persona = await fetchJson<UserPersona>('/api/personas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description: newPersonaDescription.trim(), isDefault: newPersonaDefault })
+    });
+    personas = newPersonaDefault
+      ? [persona, ...personas.filter((item) => item.id !== persona.id).map((item) => ({ ...item, isDefault: false }))]
+      : [...personas, persona];
+    activePersonaId = persona.id;
+    newPersonaName = '';
+    newPersonaDescription = '';
+    newPersonaDefault = false;
+    status = 'Ready';
+  }
+
+  async function saveActivePersona() {
+    if (!activePersona) return;
+    const name = personaDraftName.trim();
+    if (!name) return;
+    status = 'Saving';
+    const persona = await fetchJson<UserPersona>('/api/personas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...activePersona,
+        name,
+        description: personaDraftDescription.trim(),
+        isDefault: personaDraftDefault
+      })
+    });
+    personas = personas.map((item) => {
+      if (item.id === persona.id) return persona;
+      return persona.isDefault ? { ...item, isDefault: false } : item;
+    });
+    personaDraftId = persona.id;
+    personaDraftName = persona.name;
+    personaDraftDescription = persona.description;
+    personaDraftDefault = persona.isDefault;
     status = 'Ready';
   }
 
@@ -256,6 +329,16 @@
       aria-label="Characters"
       aria-pressed={activeDrawer === 'characters'}
       on:click={() => openLibrary('characters')}
+    >
+      <Bot size={20} />
+    </button>
+    <button
+      class="icon-button"
+      class:active={activeDrawer === 'personas'}
+      title="Personas"
+      aria-label="Personas"
+      aria-pressed={activeDrawer === 'personas'}
+      on:click={() => openLibrary('personas')}
     >
       <UserRound size={20} />
     </button>
@@ -311,6 +394,7 @@
         </button>
         <div class="scene-meta" aria-live="polite">
           <span>{activeCharacter?.name ?? 'No character'}</span>
+          <span>{activePersona?.name ?? 'User'}</span>
           <span>{activeProfile?.name ?? 'No profile'}</span>
           <span>{status}</span>
         </div>
@@ -327,6 +411,13 @@
           <option value="">None</option>
           {#each characters as character}
             <option value={character.id}>{character.name}</option>
+          {/each}
+        </select>
+
+        <select aria-label="Persona" bind:value={activePersonaId}>
+          <option value="">User</option>
+          {#each personas as persona}
+            <option value={persona.id}>{persona.name}{persona.isDefault ? ' · Default' : ''}</option>
           {/each}
         </select>
 
@@ -348,7 +439,9 @@
           <div class="empty-state">
             <MessageSquare size={28} />
             <h1>{activeCharacter?.name ?? 'NanKe'}</h1>
-            <p>{activeProfile ? `${activeProfile.provider.type} · ${activeProfile.provider.model}` : 'No profile selected'}</p>
+            <p>
+              {activePersona?.name ?? 'User'} · {activeProfile ? `${activeProfile.provider.type} · ${activeProfile.provider.model}` : 'No profile selected'}
+            </p>
           </div>
         {/if}
         {#each messages as message}
@@ -399,7 +492,7 @@
         <form class="editor" on:submit|preventDefault={createCharacter}>
           <input bind:value={newCharacterName} placeholder="Name" />
           <textarea bind:value={newCharacterDescription} rows="5" placeholder="Description"></textarea>
-          <button class="primary full" type="submit"><UserRound size={16} />Create</button>
+          <button class="primary full" type="submit"><Bot size={16} />Create</button>
         </form>
 
         <div class="item-list">
@@ -412,6 +505,42 @@
             >
               <strong>{character.name}</strong>
               <span>{character.id}</span>
+            </button>
+          {/each}
+        </div>
+      {:else if activeDrawer === 'personas'}
+        <form class="editor" on:submit|preventDefault={createPersona}>
+          <input bind:value={newPersonaName} placeholder="Name" />
+          <textarea bind:value={newPersonaDescription} rows="5" placeholder="Description"></textarea>
+          <label class="checkbox-row">
+            <input type="checkbox" bind:checked={newPersonaDefault} />
+            <span>Default</span>
+          </label>
+          <button class="primary full" type="submit"><UserRound size={16} />Create</button>
+        </form>
+
+        {#if activePersona}
+          <form class="editor compact-editor" on:submit|preventDefault={saveActivePersona}>
+            <input bind:value={personaDraftName} placeholder="Name" />
+            <textarea bind:value={personaDraftDescription} rows="6" placeholder="Description"></textarea>
+            <label class="checkbox-row">
+              <input type="checkbox" bind:checked={personaDraftDefault} />
+              <span>Default</span>
+            </label>
+            <button class="secondary full" type="submit"><UserRound size={16} />Save</button>
+          </form>
+        {/if}
+
+        <div class="item-list">
+          {#each personas as persona}
+            <button
+              class="drawer-item"
+              class:active={persona.id === activePersonaId}
+              type="button"
+              on:click={() => (activePersonaId = persona.id)}
+            >
+              <strong>{persona.name}</strong>
+              <span>{persona.isDefault ? 'Default' : persona.id}</span>
             </button>
           {/each}
         </div>
@@ -748,8 +877,8 @@
     position: fixed;
     inset: 0 auto 0 64px;
     z-index: 30;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
     width: min(390px, calc(100vw - 64px));
     border-right: 1px solid #d7dad4;
     background: #ffffff;
@@ -789,9 +918,28 @@
     padding: 16px;
   }
 
+  .compact-editor {
+    border-top: 1px solid #eef0ec;
+    border-bottom: 1px solid #eef0ec;
+    background: #fafbf9;
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #4f5a53;
+    font-size: 13px;
+  }
+
+  .checkbox-row input {
+    width: auto;
+  }
+
   .item-list {
     display: grid;
     gap: 8px;
+    flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
     padding: 0 16px 16px;

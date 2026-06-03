@@ -24,6 +24,20 @@ describe('PromptCompiler', () => {
     expect(compiled.tokenReport.estimatedPromptTokens).toBeGreaterThan(0);
   });
 
+  it('injects user persona and uses persona name for user macros', () => {
+    const profile = createDefaultGenerationProfile();
+
+    const compiled = new PromptCompiler().compile({
+      profile,
+      persona: 'Mira is a careful archivist.',
+      userName: 'Mira',
+      messages: [createMessage({ role: 'user', content: 'Hello.' })]
+    });
+
+    expect(compiled.messages.map((message) => message.content)).toContain("Write Assistant's next reply in a fictional chat between Assistant and Mira.");
+    expect(compiled.messages.map((message) => message.content)).toContain('Mira is a careful archivist.');
+  });
+
   it('trims oldest non-system messages when context budget is exceeded', () => {
     const profile = createDefaultGenerationProfile({
       sampler: { contextTokens: 90, maxTokens: 10 }

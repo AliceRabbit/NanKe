@@ -9,6 +9,7 @@ export type GenerationContext = {
   messages: NankeMessage[];
   worldBooks: WorldBook[];
   persona?: string;
+  userName?: string;
 };
 
 export function assembleContext(context: GenerationContext): GenerationContext {

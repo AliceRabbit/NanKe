@@ -132,6 +132,7 @@ export function createDefaultGenerationProfile(input: Partial<GenerationProfile>
         { id: 'character-description', source: 'character-description', role: 'system', label: 'Character Description', enabled: true, content: '' },
         { id: 'character-personality', source: 'character-personality', role: 'system', label: 'Character Personality', enabled: true, content: '' },
         { id: 'scenario', source: 'scenario', role: 'system', label: 'Scenario', enabled: true, content: '' },
+        { id: 'persona', source: 'persona', role: 'system', label: 'Persona', enabled: true, content: '' },
         { id: 'world-after', source: 'worldbook-after', role: 'system', label: 'World Book After', enabled: true, content: '' },
         { id: 'examples', source: 'examples', role: 'system', label: 'Examples', enabled: true, content: '' },
         { id: 'history', source: 'history', role: 'user', label: 'Chat History', enabled: true, content: '' },

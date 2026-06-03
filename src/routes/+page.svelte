@@ -1052,12 +1052,15 @@
     --stage-width: calc(100vw - var(--rail-width));
     --chat-width: min(880px, var(--stage-width));
     --chat-left: calc(var(--rail-width) + (var(--stage-width) - var(--chat-width)) / 2);
-    --avatar-viewer-width: min(430px, calc(90vh * 0.666), calc(100vw - var(--rail-width) - 28px));
+    --left-gap-width: calc(var(--chat-left) - var(--rail-width));
+    --viewer-margin: 12px;
+    --max-avatar-viewer-width: min(430px, calc(90vh * 0.666));
     top: 78px;
-    left: max(calc(var(--rail-width) + 14px), calc(var(--chat-left) - var(--avatar-viewer-width) - 20px));
+    left: calc(var(--rail-width) + max(var(--viewer-margin), calc((var(--left-gap-width) - var(--max-avatar-viewer-width)) / 2)));
     z-index: 25;
     display: block;
-    width: var(--avatar-viewer-width);
+    width: max(0px, calc(var(--left-gap-width) - var(--viewer-margin) * 2));
+    max-width: var(--max-avatar-viewer-width);
     max-height: calc(100vh - 96px);
     background: transparent;
   }
@@ -1377,9 +1380,8 @@
 
     .avatar-viewer {
       --rail-width: 56px;
-      --avatar-viewer-width: min(320px, calc(100vw - 76px));
+      --viewer-margin: 8px;
       top: 72px;
-      left: 66px;
       max-height: calc(100vh - 92px);
     }
 

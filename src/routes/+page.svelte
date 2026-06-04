@@ -330,6 +330,7 @@
   let activeCharacterId = '';
   let activePersonaId = '';
   let activeConversationId = '';
+  let activeConversationRecord: Conversation | null = null;
   let messages: ChatMessage[] = [];
   let input = '';
   let status = 'Ready';
@@ -483,8 +484,8 @@
   $: filteredWorldBookEntries = filterWorldBookEntries(worldBookDraftEntries, worldBookEntryQuery, worldBookSortMode);
   $: activeWorldBookEntry = worldBookDraftEntries.find((entry) => entry.id === activeWorldBookEntryId);
   $: activePersona = personas.find((persona) => persona.id === activePersonaId);
-  $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
-  $: conversationGroups = groupConversations(conversations, conversationQuery, showArchivedConversations);
+  $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId) ?? (activeConversationRecord?.id === activeConversationId ? activeConversationRecord : undefined);
+  $: conversationGroups = groupConversations(conversations, showArchivedConversations);
   $: isGenerating = generationAbortController !== null;
   $: drawerTitle =
     activeDrawer === 'chats'
@@ -569,6 +570,7 @@
 
   function startNewConversation() {
     activeConversationId = '';
+    activeConversationRecord = null;
     openingPreviewCharacterId = '';
     messages = [];
     activeView = 'chat';
@@ -582,6 +584,7 @@
   }
 
   function rememberConversation(conversation: Conversation) {
+    if (conversation.id === activeConversationId) activeConversationRecord = conversation;
     const shouldKeep = showArchivedConversations || !conversation.archivedAt || conversation.id === activeConversationId;
     conversations = [
       ...(shouldKeep ? [conversation] : []),
@@ -592,6 +595,7 @@
   async function refreshConversationState(id: string, options: { close?: boolean } = {}) {
     const conversation = await fetchJson<Conversation>(`/api/conversations?id=${encodeURIComponent(id)}`);
     activeConversationId = conversation.id;
+    activeConversationRecord = conversation;
     messages = conversation.messages ?? [];
     activeCharacterId = conversation.characterId ?? activeCharacterId;
     activePersonaId = conversation.personaId ?? activePersonaId;
@@ -631,9 +635,8 @@
   async function refreshConversations(options: { reset?: boolean } = {}) {
     const cursor = options.reset ? null : conversationCursor;
     const page = await fetchJson<Conversation[]>(conversationListUrl(cursor));
-    const active = activeConversationId ? conversations.find((conversation) => conversation.id === activeConversationId) : undefined;
     const next = options.reset ? page : [...conversations, ...page.filter((conversation) => !conversations.some((item) => item.id === conversation.id))];
-    conversations = active && !next.some((conversation) => conversation.id === active.id) ? [active, ...next] : next;
+    conversations = next;
     const last = page.at(-1);
     conversationCursor = typeof last?.updatedAt === 'number' && last.id ? { updatedAt: last.updatedAt, id: last.id } : cursor;
     conversationHasMore = page.length === conversationPageSize;
@@ -655,14 +658,11 @@
     await refreshConversations({ reset: true });
   }
 
-  function groupConversations(items: Conversation[], query: string, includeArchived: boolean): ConversationGroup[] {
-    const needle = query.trim().toLowerCase();
+  function groupConversations(items: Conversation[], includeArchived: boolean): ConversationGroup[] {
     const groups = new Map<string, ConversationGroup>();
     for (const conversation of items) {
       if (!includeArchived && conversation.archivedAt) continue;
       const character = conversation.characterId ? characters.find((item) => item.id === conversation.characterId) : undefined;
-      const haystack = `${conversation.title} ${conversation.lastPreview ?? ''} ${character?.name ?? ''}`.toLowerCase();
-      if (needle && !haystack.includes(needle)) continue;
 
       const key = conversation.characterId ?? 'none';
       const group =
@@ -1746,6 +1746,7 @@
     conversations = conversations.filter((item) => item.id !== conversation.id);
     if (activeConversationId === conversation.id) {
       activeConversationId = '';
+      activeConversationRecord = null;
       openingPreviewCharacterId = '';
       messages = [];
       activeView = 'chat';

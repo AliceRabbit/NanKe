@@ -15,7 +15,22 @@ export async function POST({ request }) {
   try {
     const body = await request.json();
     const worldBook = createWorldBook(body);
-    return json(createRequestContext().worldBooks.save(worldBook), { status: 201 });
+    const context = createRequestContext();
+    const saved = context.worldBooks.save(worldBook);
+    const characterId = saved.metadata.characterId;
+    if (characterId) {
+      const character = context.characters.get(characterId);
+      if (character) {
+        const worldBookIds = new Set(character.worldBookIds ?? []);
+        worldBookIds.add(saved.id);
+        context.characters.save({
+          ...character,
+          worldBookIds: [...worldBookIds],
+          characterBook: character.characterBook?.id === saved.id ? saved : character.characterBook
+        });
+      }
+    }
+    return json(saved, { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { applyRegexScripts, hasRegexScriptForPlacement, REGEX_PLACEMENT } from '$lib/core/regex';
   import type { RegexPlacement, RegexScript } from '$lib/schemas/regex';
+  import type { WorldBook, WorldBookEntry } from '$lib/schemas/worldbook';
   import {
     ArrowDown,
     ArrowUp,
@@ -137,7 +138,7 @@
     firstMessage?: string;
     avatarAssetId?: string;
     worldBookIds?: string[];
-    characterBook?: { id: string; name: string; entries: unknown[] };
+    characterBook?: WorldBook;
   };
   type UserPersona = {
     id: string;
@@ -148,7 +149,6 @@
     createdAt: number;
     updatedAt: number;
   };
-  type WorldBook = { id: string; name: string; entries: unknown[]; metadata?: { source?: string; characterId?: string; characterName?: string } };
   type Conversation = { id: string; title: string; characterId?: string; personaId?: string; profileId?: string; messages?: ChatMessage[] };
   type ChatMessage = { role: 'user' | 'assistant' | 'system'; name?: string; content: string };
   type ZoomedAvatar = { key: string; name: string; role: ChatMessage['role']; src: string; initials: string };
@@ -172,6 +172,19 @@
   ];
   const promptRoles: PromptRole[] = ['system', 'user', 'assistant'];
   const promptTriggerOptions = ['normal', 'continue', 'impersonate', 'swipe', 'regenerate', 'quiet'];
+  const worldBookPositions: Array<{ value: WorldBookEntry['position']; label: string }> = [
+    { value: 'before', label: 'Before Char' },
+    { value: 'after', label: 'After Char' },
+    { value: 'depth', label: '@ Depth' }
+  ];
+  const worldBookSortModes = [
+    { value: 'order-desc', label: 'Order desc' },
+    { value: 'order-asc', label: 'Order asc' },
+    { value: 'title-asc', label: 'Title A-Z' },
+    { value: 'title-desc', label: 'Title Z-A' },
+    { value: 'depth-asc', label: 'Depth asc' },
+    { value: 'probability-desc', label: 'Trigger desc' }
+  ];
   const maxContextTokens = 2_000_000;
 
   let profiles: Profile[] = [];
@@ -204,6 +217,13 @@
   let personaDraftDescription = '';
   let personaDraftDefault = false;
   let newWorldBookName = '';
+  let activeWorldBookId = '';
+  let worldBookDraftId = '';
+  let worldBookDraftName = '';
+  let worldBookDraftEntries: WorldBookEntry[] = [];
+  let activeWorldBookEntryId = '';
+  let worldBookEntryQuery = '';
+  let worldBookSortMode = 'order-desc';
   let openingPreviewCharacterId = '';
   let zoomedAvatar: ZoomedAvatar | null = null;
   let profileQuery = '';
@@ -254,6 +274,9 @@
   $: promptEditorSlot = profileDraftSlots.find((slot) => slot.id === promptEditorSlotId);
   $: activeCharacter = characters.find((character) => character.id === activeCharacterId);
   $: activeCharacterWorldBooks = boundWorldBooksForCharacter(activeCharacter);
+  $: activeWorldBook = worldBooks.find((worldBook) => worldBook.id === activeWorldBookId);
+  $: filteredWorldBookEntries = filterWorldBookEntries(worldBookDraftEntries, worldBookEntryQuery, worldBookSortMode);
+  $: activeWorldBookEntry = worldBookDraftEntries.find((entry) => entry.id === activeWorldBookEntryId);
   $: activePersona = personas.find((persona) => persona.id === activePersonaId);
   $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
   $: drawerTitle =
@@ -288,6 +311,12 @@
     personaDraftName = activePersona?.name ?? '';
     personaDraftDescription = activePersona?.description ?? '';
     personaDraftDefault = activePersona?.isDefault ?? false;
+  }
+  $: if (activeWorldBookId !== worldBookDraftId) {
+    loadWorldBookDraft(activeWorldBook);
+  }
+  $: if (worldBookDraftEntries.length && !worldBookDraftEntries.some((entry) => entry.id === activeWorldBookEntryId)) {
+    activeWorldBookEntryId = worldBookDraftEntries[0].id;
   }
   $: if (!activeConversationId) {
     const opening = activeCharacter?.firstMessage?.trim() ? renderCharacterTemplate(activeCharacter.firstMessage) : '';
@@ -348,6 +377,9 @@
     activeProfileId ||= profiles[0]?.id ?? '';
     activeCharacterId ||= characters[0]?.id ?? '';
     activePersonaId ||= personas.find((persona) => persona.isDefault)?.id ?? personas[0]?.id ?? '';
+    if (!activeWorldBookId || !worldBooks.some((worldBook) => worldBook.id === activeWorldBookId)) {
+      activeWorldBookId = worldBooks[0]?.id ?? '';
+    }
     status = 'Ready';
   }
 
@@ -390,6 +422,160 @@
       return `${worldBook.entries.length} entries · bound to ${worldBook.metadata.characterName ?? 'character'}`;
     }
     return `${worldBook.entries.length} entries`;
+  }
+
+  function worldBookStats(entries: WorldBookEntry[]) {
+    const enabled = entries.filter((entry) => entry.enabled !== false).length;
+    const constant = entries.filter((entry) => entry.constant).length;
+    const regex = entries.filter((entry) => entry.extensions.use_regex === true).length;
+    return { total: entries.length, enabled, constant, regex };
+  }
+
+  function entryTitle(entry?: WorldBookEntry) {
+    if (!entry) return 'No entry';
+    return entry.comment.trim() || entry.keys[0] || entry.id;
+  }
+
+  function entryTokenEstimate(entry?: WorldBookEntry) {
+    if (!entry?.content) return '-';
+    return `~${Math.max(1, Math.ceil(entry.content.length / 4))}`;
+  }
+
+  function entryStatus(entry: WorldBookEntry) {
+    if (entry.enabled === false) return 'disabled';
+    if (entry.constant) return 'constant';
+    return 'normal';
+  }
+
+  function entryStatusLabel(entry: WorldBookEntry) {
+    const status = entryStatus(entry);
+    if (status === 'disabled') return 'Disabled';
+    if (status === 'constant') return 'Constant';
+    return 'Normal';
+  }
+
+  function entryMetaLine(entry: WorldBookEntry) {
+    const parts = [
+      entry.position === 'depth' ? `@${entry.depth} ${entry.role}` : entry.position,
+      `order ${entry.order}`,
+      `${entry.probability}%`,
+      entry.selective ? 'selective' : '',
+      entry.extensions.use_regex === true ? 'regex' : ''
+    ].filter(Boolean);
+    return parts.join(' · ');
+  }
+
+  function filterWorldBookEntries(entries: WorldBookEntry[], query: string, sortMode: string) {
+    const text = query.trim().toLowerCase();
+    const filtered = text
+      ? entries.filter((entry) => [entry.comment, entry.content, entry.keys.join(' '), entry.secondaryKeys.join(' ')].join(' ').toLowerCase().includes(text))
+      : entries;
+
+    return [...filtered].sort((a, b) => {
+      if (sortMode === 'order-asc') return a.order - b.order || a.id.localeCompare(b.id);
+      if (sortMode === 'title-asc') return entryTitle(a).localeCompare(entryTitle(b));
+      if (sortMode === 'title-desc') return entryTitle(b).localeCompare(entryTitle(a));
+      if (sortMode === 'depth-asc') return a.depth - b.depth || b.order - a.order;
+      if (sortMode === 'probability-desc') return b.probability - a.probability || b.order - a.order;
+      return b.order - a.order || a.id.localeCompare(b.id);
+    });
+  }
+
+  function keywordText(values: string[]) {
+    return values.join(', ');
+  }
+
+  function parseKeywordText(value: string) {
+    return value
+      .split(/[,\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  function loadWorldBookDraft(worldBook?: WorldBook) {
+    worldBookDraftId = worldBook?.id ?? '';
+    worldBookDraftName = worldBook?.name ?? '';
+    worldBookDraftEntries = structuredClone(worldBook?.entries ?? []);
+    activeWorldBookEntryId = worldBookDraftEntries[0]?.id ?? '';
+    worldBookEntryQuery = '';
+  }
+
+  function createWorldBookEntry(worldBookId: string): WorldBookEntry {
+    const id = crypto.randomUUID();
+    return {
+      id,
+      worldBookId,
+      keys: [],
+      secondaryKeys: [],
+      comment: 'New Entry',
+      content: '',
+      constant: false,
+      selective: false,
+      enabled: true,
+      order: Math.max(100, ...worldBookDraftEntries.map((entry) => entry.order + 1)),
+      position: 'before',
+      depth: 4,
+      role: 'system',
+      probability: 100,
+      extensions: { useProbability: true }
+    };
+  }
+
+  function updateWorldBookEntry(id: string, patch: Partial<WorldBookEntry>) {
+    worldBookDraftEntries = worldBookDraftEntries.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry));
+  }
+
+  function updateWorldBookEntryExtension(id: string, key: string, value: unknown) {
+    worldBookDraftEntries = worldBookDraftEntries.map((entry) =>
+      entry.id === id
+        ? {
+            ...entry,
+            extensions: {
+              ...entry.extensions,
+              [key]: value
+            }
+          }
+        : entry
+    );
+  }
+
+  function setWorldBookEntryState(entry: WorldBookEntry, state: 'normal' | 'constant' | 'disabled') {
+    updateWorldBookEntry(entry.id, {
+      enabled: state !== 'disabled',
+      constant: state === 'constant'
+    });
+  }
+
+  function addWorldBookEntry() {
+    if (!worldBookDraftId) return;
+    const entry = createWorldBookEntry(worldBookDraftId);
+    worldBookDraftEntries = [entry, ...worldBookDraftEntries];
+    activeWorldBookEntryId = entry.id;
+    worldBookEntryQuery = '';
+  }
+
+  function duplicateWorldBookEntry(entry: WorldBookEntry | undefined = activeWorldBookEntry) {
+    if (!entry) return;
+    const copy = {
+      ...structuredClone(entry),
+      id: crypto.randomUUID(),
+      comment: `${entryTitle(entry)} Copy`,
+      order: entry.order + 1
+    };
+    const index = worldBookDraftEntries.findIndex((item) => item.id === entry.id);
+    worldBookDraftEntries = [...worldBookDraftEntries.slice(0, index + 1), copy, ...worldBookDraftEntries.slice(index + 1)];
+    activeWorldBookEntryId = copy.id;
+  }
+
+  function removeWorldBookEntry(entry: WorldBookEntry | undefined = activeWorldBookEntry) {
+    if (!entry) return;
+    worldBookDraftEntries = worldBookDraftEntries.filter((item) => item.id !== entry.id);
+    activeWorldBookEntryId = worldBookDraftEntries[0]?.id ?? '';
+  }
+
+  function moveWorldBookEntryOrder(entry: WorldBookEntry | undefined, delta: number) {
+    if (!entry) return;
+    updateWorldBookEntry(entry.id, { order: Math.max(0, entry.order + delta) });
   }
 
   function regexScriptSurface(script: RegexScript) {
@@ -1216,7 +1402,39 @@
       body: JSON.stringify({ name, entries: [] })
     });
     worldBooks = [...worldBooks, worldBook];
+    activeWorldBookId = worldBook.id;
     newWorldBookName = '';
+    loadWorldBookDraft(worldBook);
+    status = 'Ready';
+  }
+
+  async function saveActiveWorldBook() {
+    if (!activeWorldBook || !worldBookDraftName.trim()) return;
+    status = 'Saving';
+    const payload: WorldBook = {
+      ...activeWorldBook,
+      name: worldBookDraftName.trim(),
+      entries: worldBookDraftEntries.map((entry) => ({
+        ...entry,
+        worldBookId: activeWorldBook.id,
+        keys: entry.keys.filter(Boolean),
+        secondaryKeys: entry.secondaryKeys.filter(Boolean),
+        comment: entry.comment ?? '',
+        content: entry.content ?? '',
+        order: Number.isFinite(entry.order) ? entry.order : 100,
+        depth: Number.isFinite(entry.depth) ? entry.depth : 4,
+        probability: Math.min(100, Math.max(0, Number.isFinite(entry.probability) ? entry.probability : 100)),
+        extensions: entry.extensions ?? {}
+      }))
+    };
+    const saved = await fetchJson<WorldBook>('/api/worldbooks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    worldBooks = worldBooks.map((worldBook) => (worldBook.id === saved.id ? saved : worldBook));
+    activeWorldBookId = saved.id;
+    loadWorldBookDraft(saved);
     status = 'Ready';
   }
 </script>
@@ -1401,7 +1619,7 @@
 
   {#if activeDrawer}
     <button class="scrim" type="button" aria-label="Close drawer" on:click={closeDrawer}></button>
-    <aside class="drawer" class:right={drawerIsRight} class:profiles={activeDrawer === 'profiles'} aria-label={drawerTitle}>
+    <aside class="drawer" class:right={drawerIsRight} class:profiles={activeDrawer === 'profiles'} class:worldbooks={activeDrawer === 'worldbooks'} aria-label={drawerTitle}>
       <header class="drawer-header">
         <h2>{drawerTitle}</h2>
         <button class="tool-button" type="button" title="Close" aria-label="Close" on:click={closeDrawer}>
@@ -1506,18 +1724,237 @@
           {/each}
         </div>
       {:else if activeDrawer === 'worldbooks'}
-        <form class="editor" on:submit|preventDefault={createWorldBook}>
-          <input bind:value={newWorldBookName} placeholder="Name" />
-          <button class="primary full" type="submit"><BookOpen size={16} />Create</button>
-        </form>
+        <div class="worldbook-workspace">
+          <section class="worldbook-library" aria-label="World book library">
+            <form class="worldbook-create" on:submit|preventDefault={createWorldBook}>
+              <input bind:value={newWorldBookName} placeholder="New lorebook name" />
+              <button class="primary" type="submit"><BookOpen size={16} />Create</button>
+            </form>
 
-        <div class="item-list">
-          {#each worldBooks as worldBook}
-            <article class="drawer-card">
-              <strong>{worldBook.name}</strong>
-              <span>{worldBookLine(worldBook)}</span>
-            </article>
-          {/each}
+            <div class="worldbook-list">
+              {#each worldBooks as worldBook}
+                <button
+                  class="worldbook-row"
+                  class:active={worldBook.id === activeWorldBookId}
+                  type="button"
+                  on:click={() => (activeWorldBookId = worldBook.id)}
+                >
+                  <span>
+                    <strong>{worldBook.name}</strong>
+                    <small>{worldBookLine(worldBook)}</small>
+                  </span>
+                  {#if worldBook.metadata?.source === 'character-card'}
+                    <em>bound</em>
+                  {/if}
+                </button>
+              {:else}
+                <div class="drawer-empty compact">No world books yet</div>
+              {/each}
+            </div>
+          </section>
+
+          {#if activeWorldBook}
+            {@const worldStats = worldBookStats(worldBookDraftEntries)}
+            <section class="worldbook-editor" aria-label="World book editor">
+              <header class="worldbook-editor-header">
+                <div>
+                  <strong>World Editor</strong>
+                  <span>{worldStats.enabled}/{worldStats.total} enabled · {worldStats.constant} constant · {worldStats.regex} regex</span>
+                </div>
+                <div class="preset-actions">
+                  <button class="tool-button" type="button" on:click={addWorldBookEntry} title="New entry" aria-label="New entry">
+                    <Plus size={16} />
+                  </button>
+                  <button class="tool-button" type="button" on:click={saveActiveWorldBook} title="Save world book" aria-label="Save world book">
+                    <Save size={16} />
+                  </button>
+                </div>
+              </header>
+
+              <div class="worldbook-title-row">
+                <label>
+                  <span>Name</span>
+                  <input bind:value={worldBookDraftName} placeholder="World book name" />
+                </label>
+                <div class="worldbook-source">
+                  <span>Source</span>
+                  <strong>{activeWorldBook.metadata?.source ?? 'native'}</strong>
+                  {#if activeWorldBook.metadata?.characterName}
+                    <small>{activeWorldBook.metadata.characterName}</small>
+                  {/if}
+                </div>
+              </div>
+
+              <div class="worldbook-entry-toolbar">
+                <input class="profile-search" bind:value={worldBookEntryQuery} placeholder="Search entries" aria-label="Search world book entries" />
+                <select bind:value={worldBookSortMode} aria-label="Sort world book entries">
+                  {#each worldBookSortModes as option}
+                    <option value={option.value}>{option.label}</option>
+                  {/each}
+                </select>
+              </div>
+
+              <div class="worldbook-editor-grid">
+                <div class="worldbook-entry-list" aria-label="Entries">
+                  {#each filteredWorldBookEntries as entry}
+                    <article class="worldbook-entry-row" class:active={entry.id === activeWorldBookEntryId}>
+                      <button class="worldbook-entry-main" type="button" on:click={() => (activeWorldBookEntryId = entry.id)}>
+                        <span class="entry-state" data-state={entryStatus(entry)}>{entryStatus(entry) === 'constant' ? 'C' : entryStatus(entry) === 'disabled' ? 'X' : 'N'}</span>
+                        <span>
+                          <strong>{entryTitle(entry)}</strong>
+                          <small>{entryMetaLine(entry)}</small>
+                        </span>
+                      </button>
+                      <div class="worldbook-entry-actions">
+                        <button type="button" on:click={() => moveWorldBookEntryOrder(entry, 1)} title="Raise order" aria-label={`Raise ${entryTitle(entry)} order`}>
+                          <ArrowUp size={14} />
+                        </button>
+                        <button type="button" on:click={() => moveWorldBookEntryOrder(entry, -1)} title="Lower order" aria-label={`Lower ${entryTitle(entry)} order`}>
+                          <ArrowDown size={14} />
+                        </button>
+                        <button type="button" on:click={() => duplicateWorldBookEntry(entry)} title="Duplicate entry" aria-label={`Duplicate ${entryTitle(entry)}`}>
+                          <Copy size={14} />
+                        </button>
+                        <button type="button" on:click={() => removeWorldBookEntry(entry)} title="Delete entry" aria-label={`Delete ${entryTitle(entry)}`}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </article>
+                  {:else}
+                    <div class="drawer-empty compact">No matching entries</div>
+                  {/each}
+                </div>
+
+                {#if activeWorldBookEntry}
+                  <section class="worldbook-entry-editor" aria-label="Entry editor">
+                    <div class="worldbook-entry-editor-head">
+                      <div>
+                        <strong>{entryTitle(activeWorldBookEntry)}</strong>
+                        <span>{entryTokenEstimate(activeWorldBookEntry)} tokens · {entryStatusLabel(activeWorldBookEntry)}</span>
+                      </div>
+                      <div class="preset-actions">
+                        <button class="tool-button" type="button" on:click={() => duplicateWorldBookEntry(activeWorldBookEntry)} title="Duplicate entry" aria-label="Duplicate entry">
+                          <Copy size={16} />
+                        </button>
+                        <button class="tool-button" type="button" on:click={() => removeWorldBookEntry(activeWorldBookEntry)} title="Delete entry" aria-label="Delete entry">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="worldbook-entry-fields">
+                      <label class="span-2">
+                        <span>Memo / Title</span>
+                        <input value={activeWorldBookEntry.comment} on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { comment: (event.currentTarget as HTMLInputElement).value })} />
+                      </label>
+
+                      <div class="segmented-field">
+                        <span>Status</span>
+                        <div class="mini-segment three" aria-label="Entry status">
+                          <button class:active={entryStatus(activeWorldBookEntry) === 'normal'} type="button" on:click={() => setWorldBookEntryState(activeWorldBookEntry, 'normal')}>Normal</button>
+                          <button class:active={entryStatus(activeWorldBookEntry) === 'constant'} type="button" on:click={() => setWorldBookEntryState(activeWorldBookEntry, 'constant')}>Constant</button>
+                          <button class:active={entryStatus(activeWorldBookEntry) === 'disabled'} type="button" on:click={() => setWorldBookEntryState(activeWorldBookEntry, 'disabled')}>Off</button>
+                        </div>
+                      </div>
+
+                      <div class="segmented-field">
+                        <span>Position</span>
+                        <div class="mini-segment three" aria-label="World info position">
+                          {#each worldBookPositions as position}
+                            <button class:active={activeWorldBookEntry.position === position.value} type="button" on:click={() => updateWorldBookEntry(activeWorldBookEntry.id, { position: position.value })}>
+                              {position.label}
+                            </button>
+                          {/each}
+                        </div>
+                      </div>
+
+                      <label>
+                        <span>Depth</span>
+                        <input
+                          value={activeWorldBookEntry.depth}
+                          inputmode="numeric"
+                          on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { depth: optionalInteger((event.currentTarget as HTMLInputElement).value) ?? 0 })}
+                        />
+                      </label>
+                      <label>
+                        <span>Order</span>
+                        <input
+                          value={activeWorldBookEntry.order}
+                          inputmode="numeric"
+                          on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { order: optionalNumber((event.currentTarget as HTMLInputElement).value) ?? 0 })}
+                        />
+                      </label>
+                      <label>
+                        <span>Trigger %</span>
+                        <input
+                          value={activeWorldBookEntry.probability}
+                          inputmode="numeric"
+                          on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { probability: Math.min(100, Math.max(0, optionalNumber((event.currentTarget as HTMLInputElement).value) ?? 100)) })}
+                        />
+                      </label>
+
+                      <div class="segmented-field">
+                        <span>Role @ Depth</span>
+                        <div class="mini-segment three" aria-label="Entry role">
+                          {#each promptRoles as role}
+                            <button class:active={activeWorldBookEntry.role === role} type="button" on:click={() => updateWorldBookEntry(activeWorldBookEntry.id, { role })}>{role}</button>
+                          {/each}
+                        </div>
+                      </div>
+
+                      <label class="span-2">
+                        <span>Primary Keywords</span>
+                        <textarea
+                          rows="2"
+                          value={keywordText(activeWorldBookEntry.keys)}
+                          placeholder="Comma or newline separated"
+                          on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { keys: parseKeywordText((event.currentTarget as HTMLTextAreaElement).value) })}
+                        ></textarea>
+                      </label>
+                      <label class="span-2">
+                        <span>Optional Filter</span>
+                        <textarea
+                          rows="2"
+                          value={keywordText(activeWorldBookEntry.secondaryKeys)}
+                          placeholder="Secondary keys, comma or newline separated"
+                          on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { secondaryKeys: parseKeywordText((event.currentTarget as HTMLTextAreaElement).value) })}
+                        ></textarea>
+                      </label>
+                      <label class="span-2 content-field">
+                        <span>Content</span>
+                        <textarea
+                          rows="10"
+                          value={activeWorldBookEntry.content}
+                          placeholder="Text injected when this entry activates"
+                          on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { content: (event.currentTarget as HTMLTextAreaElement).value })}
+                        ></textarea>
+                      </label>
+                    </div>
+
+                    <div class="worldbook-toggle-grid">
+                      <button class="toggle-pill" class:active={activeWorldBookEntry.selective} type="button" on:click={() => updateWorldBookEntry(activeWorldBookEntry.id, { selective: !activeWorldBookEntry.selective })}>Selective</button>
+                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.useProbability !== false} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'useProbability', activeWorldBookEntry.extensions.useProbability === false)}>Use Probability</button>
+                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.use_regex === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'use_regex', activeWorldBookEntry.extensions.use_regex !== true)}>Regex Keys</button>
+                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.case_sensitive === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'case_sensitive', activeWorldBookEntry.extensions.case_sensitive !== true)}>Case Sensitive</button>
+                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.match_whole_words === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'match_whole_words', activeWorldBookEntry.extensions.match_whole_words !== true)}>Whole Words</button>
+                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.ignore_budget === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'ignore_budget', activeWorldBookEntry.extensions.ignore_budget !== true)}>Ignore Budget</button>
+                    </div>
+                  </section>
+                {:else}
+                  <section class="worldbook-entry-editor empty">
+                    <BookOpen size={28} />
+                    <strong>No entry selected</strong>
+                    <button class="primary" type="button" on:click={addWorldBookEntry}><Plus size={16} />New Entry</button>
+                  </section>
+                {/if}
+              </div>
+            </section>
+          {:else}
+            <section class="worldbook-editor empty">
+              <BookOpen size={28} />
+              <strong>Select or create a world book</strong>
+            </section>
+          {/if}
         </div>
       {:else if activeDrawer === 'profiles'}
         <div class="profile-workspace">
@@ -2669,6 +3106,10 @@
     width: min(720px, calc(100vw - 64px));
   }
 
+  .drawer.worldbooks {
+    width: min(1040px, calc(100vw - 64px));
+  }
+
   .drawer-header {
     display: flex;
     align-items: center;
@@ -2814,6 +3255,332 @@
     background: #fff;
     padding: 9px 10px;
     text-align: center;
+  }
+
+  .worldbook-workspace {
+    display: grid;
+    grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .worldbook-library {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 12px;
+    min-height: 0;
+    border-right: 1px solid #e1e4df;
+    background: #fbfcfa;
+    padding: 14px;
+  }
+
+  .worldbook-create {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .worldbook-create input,
+  .worldbook-title-row input,
+  .worldbook-entry-toolbar input,
+  .worldbook-entry-toolbar select,
+  .worldbook-entry-fields input,
+  .worldbook-entry-fields textarea {
+    min-height: 36px;
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .worldbook-create button {
+    min-height: 36px;
+    padding: 0 12px;
+  }
+
+  .worldbook-list,
+  .worldbook-entry-list,
+  .regex-script-list {
+    scrollbar-width: thin;
+  }
+
+  .worldbook-list {
+    display: grid;
+    align-content: start;
+    gap: 7px;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .worldbook-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border: 1px solid #dfe3dc;
+    border-radius: 8px;
+    background: #fff;
+    color: #202823;
+    padding: 10px;
+    text-align: left;
+  }
+
+  .worldbook-row.active,
+  .worldbook-row:hover {
+    border-color: #9dc7ad;
+    background: #edf6f0;
+  }
+
+  .worldbook-row span {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .worldbook-row strong,
+  .worldbook-entry-row strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .worldbook-row small,
+  .worldbook-row em,
+  .worldbook-editor-header span,
+  .worldbook-source span,
+  .worldbook-source small,
+  .worldbook-entry-row small,
+  .worldbook-entry-editor-head span,
+  .worldbook-entry-fields span {
+    color: #66716a;
+    font-size: 12px;
+  }
+
+  .worldbook-row em {
+    border: 1px solid #bfd5c7;
+    border-radius: 999px;
+    background: #edf6f0;
+    color: #22533b;
+    padding: 2px 6px;
+    font-style: normal;
+  }
+
+  .worldbook-editor {
+    display: grid;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    gap: 12px;
+    min-height: 0;
+    overflow: hidden;
+    padding: 14px;
+  }
+
+  .worldbook-editor.empty,
+  .worldbook-entry-editor.empty {
+    place-content: center;
+    justify-items: center;
+    color: #66716a;
+  }
+
+  .worldbook-editor-header,
+  .worldbook-entry-editor-head,
+  .worldbook-title-row,
+  .worldbook-entry-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .worldbook-editor-header > div:first-child,
+  .worldbook-entry-editor-head > div:first-child {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .worldbook-title-row {
+    align-items: stretch;
+  }
+
+  .worldbook-title-row label {
+    display: grid;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 5px;
+  }
+
+  .worldbook-title-row label span {
+    color: #66716a;
+    font-size: 12px;
+  }
+
+  .worldbook-source {
+    display: grid;
+    align-content: center;
+    min-width: 150px;
+    border: 1px solid #e0e4df;
+    border-radius: 8px;
+    background: #fbfcfa;
+    padding: 8px 10px;
+  }
+
+  .worldbook-entry-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
+  }
+
+  .worldbook-editor-grid {
+    display: grid;
+    grid-template-columns: minmax(236px, 0.68fr) minmax(0, 1.32fr);
+    gap: 12px;
+    min-height: 0;
+  }
+
+  .worldbook-entry-list {
+    display: grid;
+    align-content: start;
+    gap: 7px;
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid #e0e4df;
+    border-radius: 8px;
+    background: #fbfcfa;
+    padding: 8px;
+  }
+
+  .worldbook-entry-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    border: 1px solid #dfe3dc;
+    border-radius: 8px;
+    background: #fff;
+    padding: 6px;
+  }
+
+  .worldbook-entry-row.active {
+    border-color: #9dc7ad;
+    background: #edf6f0;
+  }
+
+  .worldbook-entry-main {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    background: transparent;
+    color: #202823;
+    padding: 4px;
+    text-align: left;
+  }
+
+  .worldbook-entry-main > span {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .entry-state {
+    display: inline-grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: #dfeee5;
+    color: #155a36;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .entry-state[data-state='constant'] {
+    background: #dbeafe;
+    color: #1e4e8c;
+  }
+
+  .entry-state[data-state='disabled'] {
+    background: #f1f2ef;
+    color: #828b85;
+  }
+
+  .worldbook-entry-actions {
+    display: grid;
+    grid-template-columns: repeat(2, 28px);
+    gap: 4px;
+  }
+
+  .worldbook-entry-actions button {
+    width: 28px;
+    height: 28px;
+    border: 1px solid #d6d8d3;
+    border-radius: 6px;
+    background: #fff;
+    color: #4b5650;
+    padding: 0;
+  }
+
+  .worldbook-entry-actions button:hover,
+  .worldbook-entry-actions button:focus-visible {
+    border-color: #9dc7ad;
+    background: #edf6f0;
+    outline: 0;
+  }
+
+  .worldbook-entry-editor {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 1px solid #e0e4df;
+    border-radius: 8px;
+    background: #fff;
+    padding: 12px;
+  }
+
+  .worldbook-entry-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .worldbook-entry-fields label,
+  .content-field {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+  }
+
+  .worldbook-entry-fields .span-2,
+  .worldbook-entry-fields > .segmented-field,
+  .content-field {
+    grid-column: 1 / -1;
+  }
+
+  .worldbook-entry-fields textarea {
+    resize: vertical;
+  }
+
+  .worldbook-entry-fields .mini-segment button,
+  .worldbook-toggle-grid .toggle-pill {
+    min-width: 0;
+    padding: 0 6px;
+    line-height: 1.15;
+  }
+
+  .content-field textarea {
+    min-height: 190px;
+    font-family: inherit;
+    line-height: 1.45;
+  }
+
+  .worldbook-toggle-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
   }
 
   .profile-panel {
@@ -3712,8 +4479,51 @@
       width: calc(100vw - 56px);
     }
 
+    .drawer.worldbooks {
+      width: calc(100vw - 56px);
+    }
+
     .drawer.right {
       width: calc(100vw - 56px);
+    }
+
+    .worldbook-workspace,
+    .worldbook-editor-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .worldbook-workspace {
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: auto;
+    }
+
+    .worldbook-library {
+      border-right: 0;
+      border-bottom: 1px solid #e1e4df;
+    }
+
+    .worldbook-list {
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(190px, 1fr);
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 2px;
+    }
+
+    .worldbook-entry-list,
+    .worldbook-entry-editor {
+      max-height: none;
+    }
+
+    .worldbook-title-row,
+    .worldbook-entry-editor-head {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .worldbook-entry-fields,
+    .worldbook-toggle-grid {
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .provider-config,

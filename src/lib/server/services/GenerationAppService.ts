@@ -101,7 +101,7 @@ export class GenerationAppService {
         .map((item) => [item.id, item])
     );
     if (character?.characterBook && !worldBooksById.has(character.characterBook.id)) {
-      worldBooksById.set(character.characterBook.id, character.characterBook);
+      worldBooksById.set(character.characterBook.id, this.context.worldBooks.get(character.characterBook.id) ?? character.characterBook);
     }
     const worldBooks = [...worldBooksById.values()];
     const compiled = this.pipeline.compile({

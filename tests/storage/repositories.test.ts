@@ -173,6 +173,21 @@ describe('storage repositories', () => {
     expect(importedSnapshot?.nodes.find((node) => node.content === 'Option A.')).toBeDefined();
     expect(importedSnapshot?.nodes.find((node) => node.id === first.id)).toBeUndefined();
 
+    const cloned = repository.clone(conversation.id);
+    expect(cloned?.id).not.toBe(conversation.id);
+    expect(cloned?.title).toBe('Copy of Snapshot chat');
+    expect(cloned?.messages.map((message) => message.content)).toEqual(['Pick one.', 'Option B.']);
+    expect(cloned?.branchCount).toBe(1);
+
+    const clonedSnapshot = cloned ? repository.exportSnapshot(cloned.id) : undefined;
+    expect(clonedSnapshot?.nodes.find((node) => node.content === 'Option A.')).toBeDefined();
+    expect(clonedSnapshot?.conversation.metadata.clonedFrom).toMatchObject({
+      conversationId: conversation.id,
+      format: 'nanke.conversation.snapshot',
+      version: 1
+    });
+    expect(clonedSnapshot?.nodes.find((node) => node.id === second.id)).toBeUndefined();
+
     sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });

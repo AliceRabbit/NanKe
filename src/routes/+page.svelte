@@ -1689,6 +1689,25 @@
     rememberConversation(updated);
   }
 
+  async function cloneConversation(event: MouseEvent, conversation: Conversation) {
+    event.stopPropagation();
+    status = 'Cloning';
+    const cloned = await fetchJson<Conversation>('/api/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'clone',
+        conversationId: conversation.id
+      })
+    });
+    activeConversationId = cloned.id;
+    messages = cloned.messages ?? [];
+    rememberConversation(cloned);
+    activeView = 'chat';
+    if (activeDrawer === 'chats') await refreshConversationTree(cloned.id);
+    status = 'Ready';
+  }
+
   async function deleteConversation(event: MouseEvent, conversation: Conversation) {
     event.stopPropagation();
     if (!window.confirm(`Delete "${conversation.title}"? This cannot be undone.`)) return;
@@ -2840,6 +2859,9 @@
                     <div class="conversation-row-actions">
                       <button type="button" title="Rename chat" aria-label="Rename chat" on:click={(event) => renameConversation(event, conversation)}>
                         <Pencil size={14} />
+                      </button>
+                      <button type="button" title="Duplicate chat" aria-label="Duplicate chat" on:click={(event) => cloneConversation(event, conversation)}>
+                        <Copy size={14} />
                       </button>
                       <button type="button" title="Export chat" aria-label="Export chat" on:click={(event) => exportConversation(event, conversation)}>
                         <Download size={14} />

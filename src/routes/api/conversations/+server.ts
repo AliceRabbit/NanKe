@@ -74,6 +74,15 @@ export async function PATCH({ request }) {
       return json(conversation);
     }
 
+    if (body?.action === 'clone') {
+      if (typeof body.conversationId !== 'string') {
+        throw new AppError('conversationId is required.', 400, 'conversation_clone_required');
+      }
+      const conversation = context.conversations.clone(body.conversationId, typeof body.title === 'string' ? body.title : undefined);
+      if (!conversation) throw new AppError('Conversation not found.', 404, 'conversation_not_found');
+      return json(conversation, { status: 201 });
+    }
+
     if (body?.action === 'set-active-leaf') {
       if (typeof body.conversationId !== 'string' || typeof body.leafId !== 'string') {
         throw new AppError('conversationId and leafId are required.', 400, 'conversation_leaf_required');

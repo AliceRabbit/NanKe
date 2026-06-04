@@ -112,6 +112,7 @@ export type ConversationSnapshotOptions = {
 
 export type ConversationSnapshotImportOptions = {
   title?: string;
+  source?: 'import' | 'clone';
 };
 
 export class ConversationRepository {
@@ -257,6 +258,13 @@ export class ConversationRepository {
 
     const activeLeafId = this.importedActiveLeafId(snapshot, remappedNodes, idMap, rootNodeId);
     const title = options.title?.trim() || snapshot.conversation.title;
+    const provenance = {
+      format: snapshot.format,
+      version: snapshot.version,
+      conversationId: snapshot.conversation.id,
+      exportedAt: snapshot.exportedAt,
+      importedAt: now
+    };
     const draftConversation = conversationSchema.parse({
       ...snapshot.conversation,
       id: conversationId,
@@ -266,13 +274,7 @@ export class ConversationRepository {
       archivedAt: undefined,
       metadata: {
         ...snapshot.conversation.metadata,
-        importedFrom: {
-          format: snapshot.format,
-          version: snapshot.version,
-          conversationId: snapshot.conversation.id,
-          exportedAt: snapshot.exportedAt,
-          importedAt: now
-        }
+        ...(options.source === 'clone' ? { clonedFrom: provenance } : { importedFrom: provenance })
       },
       createdAt: now,
       updatedAt: now
@@ -301,6 +303,15 @@ export class ConversationRepository {
     const imported = this.getWithMessages(conversationId);
     if (!imported) throw new Error(`Imported conversation could not be loaded: ${conversationId}`);
     return imported;
+  }
+
+  clone(id: string, title?: string): ConversationWithMessages | undefined {
+    const snapshot = this.exportSnapshot(id);
+    if (!snapshot) return undefined;
+    return this.importSnapshot(snapshot, {
+      title: title?.trim() || `Copy of ${snapshot.conversation.title}`,
+      source: 'clone'
+    });
   }
 
   save(conversation: Conversation): Conversation {

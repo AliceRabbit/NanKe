@@ -40,6 +40,7 @@
   type MacroMode = 'none' | 'sillytavern';
   type CharacterSortMode = 'favorite' | 'name-asc' | 'name-desc' | 'newest' | 'oldest' | 'tokens-desc';
   type CharacterEditorTab = 'core' | 'prompt' | 'lore' | 'metadata';
+  type CharacterPanelMode = 'edit' | 'create';
   type PromptSlotSource =
     | 'system'
     | 'character-system'
@@ -216,8 +217,22 @@
   let inspector = '';
   let newCharacterName = '';
   let newCharacterDescription = '';
+  let newCharacterPersonality = '';
+  let newCharacterScenario = '';
+  let newCharacterFirstMessage = '';
+  let newCharacterAlternateGreetings = '';
+  let newCharacterExampleMessages = '';
+  let newCharacterSystemPrompt = '';
+  let newCharacterPostHistoryInstructions = '';
+  let newCharacterCreatorNotes = '';
+  let newCharacterTags = '';
+  let newCharacterCreator = '';
+  let newCharacterCharacterVersion = '';
+  let newCharacterTalkativeness = '';
+  let newCharacterFavorite = false;
   let characterQuery = '';
   let characterSortMode: CharacterSortMode = 'favorite';
+  let characterPanelMode: CharacterPanelMode = 'edit';
   let characterEditorTab: CharacterEditorTab = 'core';
   let characterDraftId = '';
   let characterDraftName = '';
@@ -302,6 +317,7 @@
   $: activeCharacterWorldBooks = boundWorldBooksForCharacter(activeCharacter);
   $: filteredCharacters = filterCharacters(characters, characterQuery, characterSortMode);
   $: activeCharacterStats = characterStats(activeCharacter);
+  $: createCharacterStats = characterCreateStats();
   $: activeWorldBook = worldBooks.find((worldBook) => worldBook.id === activeWorldBookId);
   $: filteredWorldBookEntries = filterWorldBookEntries(worldBookDraftEntries, worldBookEntryQuery, worldBookSortMode);
   $: activeWorldBookEntry = worldBookDraftEntries.find((entry) => entry.id === activeWorldBookEntryId);
@@ -490,6 +506,28 @@
     };
   }
 
+  function characterCreateStats() {
+    const text = [
+      newCharacterName,
+      newCharacterDescription,
+      newCharacterPersonality,
+      newCharacterScenario,
+      newCharacterFirstMessage,
+      newCharacterExampleMessages,
+      newCharacterSystemPrompt,
+      newCharacterPostHistoryInstructions,
+      newCharacterCreatorNotes,
+      newCharacterAlternateGreetings
+    ].join('\n');
+    const overrides = [newCharacterSystemPrompt, newCharacterPostHistoryInstructions].filter((value) => value.trim()).length;
+    return {
+      tokens: Math.max(0, Math.ceil(text.length / 4)),
+      greetings: 1 + parseSectionText(newCharacterAlternateGreetings).length,
+      tags: parseKeywordText(newCharacterTags).length,
+      overrides
+    };
+  }
+
   function characterOrigin(character?: Character) {
     if (!character) return 'No character';
     if (character.legacy?.source === 'sillytavern') return 'SillyTavern card';
@@ -566,6 +604,35 @@
     characterDraftCharacterVersion = character?.characterVersion ?? '';
     characterDraftTalkativeness = numberToDraft(character?.talkativeness);
     characterDraftFavorite = character?.favorite ?? false;
+  }
+
+  function resetNewCharacterDraft() {
+    newCharacterName = '';
+    newCharacterDescription = '';
+    newCharacterPersonality = '';
+    newCharacterScenario = '';
+    newCharacterFirstMessage = '';
+    newCharacterAlternateGreetings = '';
+    newCharacterExampleMessages = '';
+    newCharacterSystemPrompt = '';
+    newCharacterPostHistoryInstructions = '';
+    newCharacterCreatorNotes = '';
+    newCharacterTags = '';
+    newCharacterCreator = '';
+    newCharacterCharacterVersion = '';
+    newCharacterTalkativeness = '';
+    newCharacterFavorite = false;
+  }
+
+  function startCharacterCreate() {
+    characterPanelMode = 'create';
+    characterEditorTab = 'core';
+    resetNewCharacterDraft();
+  }
+
+  function selectCharacter(character: Character) {
+    activeCharacterId = character.id;
+    characterPanelMode = 'edit';
   }
 
   function worldBookLine(worldBook: WorldBook) {
@@ -1534,12 +1601,29 @@
     const character = await fetchJson<Character>('/api/characters', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description: newCharacterDescription.trim() })
+      body: JSON.stringify({
+        name,
+        description: newCharacterDescription.trim(),
+        personality: newCharacterPersonality.trim(),
+        scenario: newCharacterScenario.trim(),
+        firstMessage: newCharacterFirstMessage.trim(),
+        alternateGreetings: parseSectionText(newCharacterAlternateGreetings),
+        exampleMessages: newCharacterExampleMessages.trim(),
+        systemPrompt: newCharacterSystemPrompt.trim(),
+        postHistoryInstructions: newCharacterPostHistoryInstructions.trim(),
+        creatorNotes: newCharacterCreatorNotes.trim(),
+        tags: parseKeywordText(newCharacterTags),
+        creator: newCharacterCreator.trim(),
+        characterVersion: newCharacterCharacterVersion.trim(),
+        talkativeness: optionalNumber(newCharacterTalkativeness),
+        favorite: newCharacterFavorite
+      })
     });
     characters = [...characters, character];
     activeCharacterId = character.id;
-    newCharacterName = '';
-    newCharacterDescription = '';
+    characterPanelMode = 'edit';
+    loadCharacterDraft(character);
+    resetNewCharacterDraft();
     status = 'Ready';
   }
 
@@ -1950,17 +2034,16 @@
       {:else if activeDrawer === 'characters'}
         <div class="character-workspace">
           <section class="character-library" aria-label="Character library">
-            <form class="character-create" on:submit|preventDefault={createCharacter}>
-              <input bind:value={newCharacterName} placeholder="New character name" />
-              <button class="primary" type="submit"><Bot size={16} />Create</button>
-            </form>
-
-            <textarea class="character-quick-description" bind:value={newCharacterDescription} rows="3" placeholder="Optional starter description"></textarea>
+            <div class="character-library-actions">
+              <button class="primary" type="button" on:click={startCharacterCreate}>
+                <Plus size={16} />New
+              </button>
+              <button class="secondary" type="button" on:click={openCharacterImport}>
+                <FileInput size={16} />Import
+              </button>
+            </div>
 
             <div class="character-toolbar">
-              <button class="tool-button" type="button" on:click={openCharacterImport} title="Import character card" aria-label="Import character card">
-                <FileInput size={16} />
-              </button>
               <input class="profile-search" bind:value={characterQuery} placeholder="Search characters" aria-label="Search characters" />
               <select bind:value={characterSortMode} aria-label="Sort characters">
                 {#each characterSortModes as option}
@@ -1972,7 +2055,7 @@
             <div class="character-list" aria-label="Characters">
               {#each filteredCharacters as character}
                 <article class="character-row" class:active={character.id === activeCharacterId}>
-                  <button class="character-row-main" type="button" on:click={() => (activeCharacterId = character.id)}>
+                  <button class="character-row-main" type="button" on:click={() => selectCharacter(character)}>
                     <span class="character-avatar-small">
                       {#if characterAvatarUrl(character)}
                         <img src={characterAvatarUrl(character)} alt={`${character.name} avatar`} />
@@ -2002,7 +2085,153 @@
             </div>
           </section>
 
-          {#if activeCharacter}
+          {#if characterPanelMode === 'create'}
+            <form class="character-editor character-editor-create" on:submit|preventDefault={createCharacter}>
+              <header class="character-editor-hero">
+                <div class="character-avatar-large placeholder-avatar" aria-hidden="true">
+                  <Image size={28} />
+                </div>
+
+                <div class="character-hero-copy">
+                  <div class="character-hero-title">
+                    <div>
+                      <strong>{newCharacterName.trim() || 'New Character'}</strong>
+                      <span>NanKe native draft</span>
+                    </div>
+                    <button
+                      class="favorite-button hero-favorite"
+                      class:active={newCharacterFavorite}
+                      type="button"
+                      on:click={() => (newCharacterFavorite = !newCharacterFavorite)}
+                      title={newCharacterFavorite ? 'Unfavorite' : 'Favorite'}
+                      aria-label="Toggle favorite"
+                    >
+                      <Star size={16} fill={newCharacterFavorite ? 'currentColor' : 'none'} />
+                    </button>
+                  </div>
+
+                  <div class="character-chips" aria-label="New character statistics">
+                    <span>{createCharacterStats.tokens} tokens</span>
+                    <span>{createCharacterStats.greetings} greetings</span>
+                    <span>{createCharacterStats.tags} tags</span>
+                    {#if createCharacterStats.overrides}
+                      <span>{createCharacterStats.overrides} overrides</span>
+                    {/if}
+                  </div>
+                </div>
+
+                <div class="character-actions">
+                  <button class="tool-button" type="button" on:click={openCharacterImport} title="Import character card" aria-label="Import character card">
+                    <FileInput size={16} />
+                  </button>
+                  <button class="tool-button" type="button" on:click={resetNewCharacterDraft} title="Reset draft" aria-label="Reset draft">
+                    <RotateCcw size={16} />
+                  </button>
+                  <button class="tool-button" type="submit" title="Create character" aria-label="Create character" disabled={!newCharacterName.trim()}>
+                    <Save size={16} />
+                  </button>
+                </div>
+              </header>
+
+              <nav class="character-tabs" aria-label="New character sections">
+                <button class:active={characterEditorTab === 'core'} type="button" on:click={() => (characterEditorTab = 'core')}>Core</button>
+                <button class:active={characterEditorTab === 'prompt'} type="button" on:click={() => (characterEditorTab = 'prompt')}>Prompt</button>
+                <button class:active={characterEditorTab === 'lore'} type="button" on:click={() => (characterEditorTab = 'lore')}>Lore</button>
+                <button class:active={characterEditorTab === 'metadata'} type="button" on:click={() => (characterEditorTab = 'metadata')}>Metadata</button>
+              </nav>
+
+              {#if characterEditorTab === 'core'}
+                <section class="character-editor-section">
+                  <div class="character-field-grid">
+                    <label>
+                      <span>Name</span>
+                      <input bind:value={newCharacterName} placeholder="Character name" />
+                    </label>
+                    <label>
+                      <span>Tags</span>
+                      <input bind:value={newCharacterTags} placeholder="Comma or newline separated" />
+                    </label>
+                    <label class="span-2">
+                      <span>Description</span>
+                      <textarea bind:value={newCharacterDescription} rows="8" placeholder="Physical and mental traits"></textarea>
+                    </label>
+                    <label>
+                      <span>Personality</span>
+                      <textarea bind:value={newCharacterPersonality} rows="5" placeholder="Personality notes"></textarea>
+                    </label>
+                    <label>
+                      <span>Scenario</span>
+                      <textarea bind:value={newCharacterScenario} rows="5" placeholder="Scene and relationship context"></textarea>
+                    </label>
+                    <label class="span-2">
+                      <span>First Message</span>
+                      <textarea bind:value={newCharacterFirstMessage} rows="6" placeholder="Opening message"></textarea>
+                    </label>
+                    <label class="span-2">
+                      <span>Alternate Greetings</span>
+                      <textarea bind:value={newCharacterAlternateGreetings} rows="5" placeholder="Separate greetings with a line containing ---"></textarea>
+                    </label>
+                  </div>
+                </section>
+              {:else if characterEditorTab === 'prompt'}
+                <section class="character-editor-section">
+                  <div class="character-field-grid">
+                    <label class="span-2">
+                      <span>System Prompt Override</span>
+                      <textarea bind:value={newCharacterSystemPrompt} rows="7" placeholder="Character-level system prompt"></textarea>
+                    </label>
+                    <label class="span-2">
+                      <span>Post-History Instructions</span>
+                      <textarea bind:value={newCharacterPostHistoryInstructions} rows="7" placeholder="Instructions injected after chat history"></textarea>
+                    </label>
+                    <label class="span-2">
+                      <span>Example Messages</span>
+                      <textarea bind:value={newCharacterExampleMessages} rows="9" placeholder="Example dialogue"></textarea>
+                    </label>
+                  </div>
+                </section>
+              {:else if characterEditorTab === 'lore'}
+                <section class="character-editor-section">
+                  <div class="character-lore-header">
+                    <div>
+                      <strong>Character Lore</strong>
+                      <span>0 bound world books</span>
+                    </div>
+                    <button class="secondary" type="button" on:click={openCharacterImport}>
+                      <FileInput size={16} />Import
+                    </button>
+                  </div>
+
+                  <label class="character-textarea-label">
+                    <span>Creator Notes</span>
+                    <textarea bind:value={newCharacterCreatorNotes} rows="8" placeholder="Private author notes and card usage notes"></textarea>
+                  </label>
+                </section>
+              {:else}
+                <section class="character-editor-section">
+                  <div class="character-field-grid">
+                    <label>
+                      <span>Creator</span>
+                      <input bind:value={newCharacterCreator} placeholder="Creator" />
+                    </label>
+                    <label>
+                      <span>Version</span>
+                      <input bind:value={newCharacterCharacterVersion} placeholder="Character version" />
+                    </label>
+                    <label>
+                      <span>Talkativeness</span>
+                      <input bind:value={newCharacterTalkativeness} inputmode="decimal" placeholder="Optional" />
+                    </label>
+                    <div class="character-source-panel">
+                      <span>Card Source</span>
+                      <strong>NanKe native draft</strong>
+                      <small>New character</small>
+                    </div>
+                  </div>
+                </section>
+              {/if}
+            </form>
+          {:else if activeCharacter}
             <form class="character-editor" on:submit|preventDefault={saveActiveCharacter}>
               <header class="character-editor-hero">
                 <button class="character-avatar-large" type="button" on:click={() => openCharacterAvatar(activeCharacter)} title="Open avatar preview" aria-label={`Open avatar for ${activeCharacter.name}`}>
@@ -3743,7 +3972,7 @@
 
   .character-library {
     display: grid;
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     gap: 10px;
     min-height: 0;
     border-right: 1px solid #e1e4df;
@@ -3751,14 +3980,12 @@
     padding: 14px;
   }
 
-  .character-create {
+  .character-library-actions {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
 
-  .character-create input,
-  .character-quick-description,
   .character-toolbar input,
   .character-toolbar select,
   .character-field-grid input,
@@ -3770,18 +3997,14 @@
     font-size: 13px;
   }
 
-  .character-create button {
+  .character-library-actions button {
     min-height: 36px;
     padding: 0 12px;
   }
 
-  .character-quick-description {
-    resize: vertical;
-  }
-
   .character-toolbar {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) minmax(118px, auto);
+    grid-template-columns: minmax(0, 1fr) minmax(118px, auto);
     align-items: center;
     gap: 8px;
   }
@@ -3931,6 +4154,16 @@
     border-color: #92bfa4;
     box-shadow: 0 0 0 3px rgb(146 191 164 / 22%);
     outline: 0;
+  }
+
+  .character-avatar-large.placeholder-avatar {
+    cursor: default;
+  }
+
+  .character-avatar-large.placeholder-avatar:hover,
+  .character-avatar-large.placeholder-avatar:focus-visible {
+    border-color: #d9ddd7;
+    box-shadow: none;
   }
 
   .character-hero-copy,

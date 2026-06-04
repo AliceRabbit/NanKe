@@ -65,7 +65,7 @@ function withQuery(url: string, params: Record<string, string | undefined>): str
 
 export function geminiUrl(profile: GenerationProfile, stream = true): string {
   if (profile.provider.type !== 'gemini') throw new Error('Invalid profile for Gemini adapter.');
-  if (profile.provider.endpoint) return profile.provider.endpoint;
+  if (profile.provider.endpoint) return stream ? withQuery(profile.provider.endpoint, { alt: 'sse' }) : profile.provider.endpoint;
   const method = stream ? 'streamGenerateContent' : 'generateContent';
   if (profile.provider.vertex) {
     const mode = profile.provider.vertex.mode ?? 'express';

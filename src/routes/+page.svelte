@@ -9,6 +9,7 @@
     ArrowUp,
     Bot,
     BookOpen,
+    CircleStop,
     Copy,
     Download,
     FileInput,
@@ -209,6 +210,8 @@
   let messages: ChatMessage[] = [];
   let input = '';
   let status = 'Ready';
+  let generationAbortController: AbortController | null = null;
+  let isGenerating = false;
   let importKind: ImportKind = 'preset';
   let importName = '';
   let importText = '';
@@ -323,6 +326,7 @@
   $: activeWorldBookEntry = worldBookDraftEntries.find((entry) => entry.id === activeWorldBookEntryId);
   $: activePersona = personas.find((persona) => persona.id === activePersonaId);
   $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
+  $: isGenerating = generationAbortController !== null;
   $: drawerTitle =
     activeDrawer === 'chats'
       ? 'Chats'
@@ -1332,6 +1336,11 @@
   }
 
   async function sendMessage() {
+    if (isGenerating) {
+      stopGeneration();
+      return;
+    }
+
     const content = input.trim();
     if (!content) return;
     input = '';
@@ -1343,35 +1352,67 @@
       { role: 'assistant', name: activeCharacter?.name, content: '' }
     ];
     status = 'Generating';
+    const controller = new AbortController();
+    generationAbortController = controller;
 
-    const response = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        conversationId,
-        profileId: activeProfileId || undefined,
-        characterId: activeCharacterId || undefined,
-        personaId: activePersonaId || undefined,
-        message: content
-      })
-    });
+    try {
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId,
+          profileId: activeProfileId || undefined,
+          characterId: activeCharacterId || undefined,
+          personaId: activePersonaId || undefined,
+          message: content
+        })
+      });
 
-    if (!response.body || !response.ok) {
-      status = 'Error';
-      return;
+      if (!response.body || !response.ok) {
+        removeEmptyAssistantDraft();
+        status = 'Error';
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        if (!chunk) continue;
+        const next = [...messages];
+        next[next.length - 1] = { ...next[next.length - 1], role: 'assistant', content: `${next[next.length - 1].content}${chunk}` };
+        messages = next;
+      }
+      const finalChunk = decoder.decode();
+      if (finalChunk) {
+        const next = [...messages];
+        next[next.length - 1] = { ...next[next.length - 1], role: 'assistant', content: `${next[next.length - 1].content}${finalChunk}` };
+        messages = next;
+      }
+      status = controller.signal.aborted ? 'Stopped' : 'Ready';
+    } catch {
+      removeEmptyAssistantDraft();
+      status = controller.signal.aborted ? 'Stopped' : 'Error';
+    } finally {
+      if (generationAbortController === controller) {
+        generationAbortController = null;
+      }
     }
+  }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      const next = [...messages];
-      next[next.length - 1] = { ...next[next.length - 1], role: 'assistant', content: `${next[next.length - 1].content}${chunk}` };
-      messages = next;
+  function removeEmptyAssistantDraft() {
+    const last = messages[messages.length - 1];
+    if (last?.role === 'assistant' && !last.content.trim()) {
+      messages = messages.slice(0, -1);
     }
-    status = 'Ready';
+  }
+
+  function stopGeneration() {
+    generationAbortController?.abort();
+    status = 'Stopping';
   }
 
   async function inspectCurrentPrompt() {
@@ -1973,7 +2014,23 @@
 
     <form class="composer" on:submit|preventDefault={sendMessage}>
       <textarea bind:value={input} rows="3" placeholder="Message"></textarea>
-      <button class="primary" type="submit"><Send size={18} /><span>Send</span></button>
+      <button
+        class="composer-action"
+        class:stopping={isGenerating}
+        type={isGenerating ? 'button' : 'submit'}
+        title={isGenerating ? 'Stop generation' : 'Send message'}
+        aria-label={isGenerating ? 'Stop generation' : 'Send message'}
+        disabled={!isGenerating && !input.trim()}
+        on:click={() => {
+          if (isGenerating) stopGeneration();
+        }}
+      >
+        {#if isGenerating}
+          <CircleStop size={20} />
+        {:else}
+          <Send size={20} />
+        {/if}
+      </button>
     </form>
   </section>
 
@@ -3679,6 +3736,42 @@
     border-top: 1px solid #dfe1dc;
     padding: 14px 20px;
     background: #fff;
+  }
+
+  .composer-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: stretch;
+    width: 52px;
+    min-height: 52px;
+    border: 1px solid #1c6b43;
+    border-radius: 8px;
+    background: #1c6b43;
+    color: #fff;
+  }
+
+  .composer-action:hover,
+  .composer-action:focus-visible {
+    background: #155437;
+    outline: 0;
+  }
+
+  .composer-action.stopping {
+    border-color: #bb3f33;
+    background: #bb3f33;
+  }
+
+  .composer-action.stopping:hover,
+  .composer-action.stopping:focus-visible {
+    background: #9b2f24;
+  }
+
+  .composer-action:disabled {
+    cursor: not-allowed;
+    border-color: #cfd4cd;
+    background: #eef0ec;
+    color: #8b968f;
   }
 
   .avatar-viewer {

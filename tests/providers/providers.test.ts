@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { parseSseStream } from '$lib/providers/ProviderAdapter';
 import { buildGeminiRequest, createGeminiAdapter, geminiUrl } from '$lib/providers/gemini';
 import { buildOpenAICompatibleRequest, createOpenAICompatibleAdapter, openAICompatibleUrl } from '$lib/providers/openai-compatible';
 import { createDefaultGenerationProfile } from '$lib/schemas/profile';
+
+async function collect<T>(source: AsyncIterable<T>): Promise<T[]> {
+  const items: T[] = [];
+  for await (const item of source) {
+    items.push(item);
+  }
+  return items;
+}
 
 describe('provider request mapping', () => {
   it('maps canonical messages to strict OpenAI-compatible request bodies', () => {
@@ -84,6 +93,24 @@ describe('provider request mapping', () => {
     expect(geminiUrl(profile, false)).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent');
   });
 
+  it('adds SSE mode to custom Gemini streaming endpoints', () => {
+    const profile = createDefaultGenerationProfile({
+      provider: {
+        type: 'gemini',
+        model: 'gemini-2.5-pro',
+        endpoint: 'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-pro:streamGenerateContent?key=test-key'
+      }
+    });
+
+    expect(geminiUrl(profile)).toBe('https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-pro:streamGenerateContent?key=test-key&alt=sse');
+  });
+
+  it('parses SSE events without a trailing blank line', async () => {
+    const payloads = await collect(parseSseStream(new Response('data: {"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}')));
+
+    expect(payloads).toEqual([{ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }]);
+  });
+
   it('treats legacy Vertex profiles without mode as OAuth profiles', () => {
     const profile = createDefaultGenerationProfile({
       provider: {
@@ -151,6 +178,23 @@ describe('provider request mapping', () => {
 
     expect(openAIChunks[0]).toEqual(expect.objectContaining({ type: 'text', text: 'openai ok' }));
     expect(geminiChunks[0]).toEqual(expect.objectContaining({ type: 'text', text: 'gemini ok' }));
+  });
+
+  it('normalizes Gemini JSON array stream responses', async () => {
+    const geminiProfile = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'gemini-2.5-pro' }
+    });
+    const geminiFetch = async () =>
+      new Response(
+        JSON.stringify([
+          { candidates: [{ content: { parts: [{ text: 'first ' }] } }] },
+          { candidates: [{ content: { parts: [{ text: 'second' }] } }] }
+        ])
+      );
+
+    const chunks = await collect(createGeminiAdapter(geminiFetch).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, geminiProfile));
+
+    expect(chunks.filter((chunk) => chunk.type === 'text').map((chunk) => chunk.text).join('')).toBe('first second');
   });
 
   it('uses x-goog-api-key for Gemini AI Studio, key query for Vertex Express, and bearer auth for Vertex OAuth', async () => {

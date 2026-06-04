@@ -10,6 +10,26 @@ export interface ProviderAdapter {
 
 export type ProviderFetch = typeof fetch;
 
+function parseProviderPayload(data: string): unknown[] {
+  const text = data.trim();
+  if (!text || text === '[DONE]') return [];
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [text];
+  }
+}
+
+function parseSseEvent(event: string): unknown[] {
+  const data = event
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trim())
+    .join('\n');
+  return parseProviderPayload(data);
+}
+
 export async function* parseSseStream(response: Response): AsyncIterable<unknown> {
   if (!response.body) return;
   const reader = response.body.getReader();
@@ -18,19 +38,38 @@ export async function* parseSseStream(response: Response): AsyncIterable<unknown
 
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      buffer += decoder.decode();
+      break;
+    }
+
     buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (!data || data === '[DONE]') continue;
-      try {
-        yield JSON.parse(data);
-      } catch {
-        yield data;
+
+    while (true) {
+      const match = /\r?\n\r?\n/.exec(buffer);
+      if (!match) break;
+      const event = buffer.slice(0, match.index);
+      buffer = buffer.slice(match.index + match[0].length);
+      for (const payload of parseSseEvent(event)) {
+        yield payload;
       }
     }
+  }
+
+  const remaining = buffer.trim();
+  if (!remaining) return;
+
+  if (remaining.includes('data:')) {
+    const events = remaining.split(/\r?\n\r?\n/).filter(Boolean);
+    for (const event of events) {
+      for (const payload of parseSseEvent(event)) {
+        yield payload;
+      }
+    }
+    return;
+  }
+
+  for (const payload of parseProviderPayload(remaining)) {
+    yield payload;
   }
 }

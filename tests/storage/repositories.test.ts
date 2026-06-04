@@ -62,6 +62,36 @@ describe('storage repositories', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('edits a message by creating a sibling branch without mutating the original node', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const repository = new ConversationRepository(db, sqlite);
+
+    const conversation = repository.save(createConversation({ title: 'Edited branch chat' }));
+    const user = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Original wording.' }));
+    const assistant = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'Reply to original.' }));
+
+    const loaded = repository.editMessageAsSibling(conversation.id, user.id, 'Edited wording.');
+    expect(loaded?.messages.map((message) => message.content)).toEqual(['Edited wording.']);
+    expect(loaded?.branchCount).toBe(1);
+    expect(loaded?.activeLeafId).not.toBe(user.id);
+    expect(repository.getMessageNode(user.id)?.content).toBe('Original wording.');
+
+    const edited = loaded?.messages[0];
+    expect(edited?.branch?.current).toBe(2);
+    expect(edited?.branch?.total).toBe(2);
+    expect(edited?.branch?.nodeId).not.toBe(user.id);
+
+    const restored = repository.switchSibling(edited?.branch?.nodeId ?? '', 'left');
+    expect(restored?.activeLeafId).toBe(assistant.id);
+    expect(restored?.messages.map((message) => message.content)).toEqual(['Original wording.', 'Reply to original.']);
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('can focus an exact historical node without restoring its subtree', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
     const sqlite = new Database(path.join(dir, 'test.db'));

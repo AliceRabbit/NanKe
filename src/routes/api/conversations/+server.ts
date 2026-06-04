@@ -81,6 +81,15 @@ export async function PATCH({ request }) {
       return json(conversation);
     }
 
+    if (body?.action === 'edit-message-branch') {
+      if (typeof body.conversationId !== 'string' || typeof body.nodeId !== 'string' || typeof body.content !== 'string') {
+        throw new AppError('conversationId, nodeId, and content are required.', 400, 'conversation_node_edit_required');
+      }
+      const conversation = context.conversations.editMessageAsSibling(body.conversationId, body.nodeId, body.content);
+      if (!conversation) throw new AppError('Conversation node not found.', 404, 'conversation_node_not_found');
+      return json(conversation);
+    }
+
     throw new AppError('Unsupported conversation action.', 400, 'conversation_action_unknown');
   } catch (error) {
     return errorResponse(error);

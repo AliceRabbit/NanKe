@@ -1907,6 +1907,28 @@
     if (activeDrawer === 'chats') await refreshConversationTree(conversation.id);
   }
 
+  async function editMessageAsBranch(message: ChatMessage) {
+    const nodeId = message.branch?.nodeId ?? message.id;
+    const conversationId = message.conversationId ?? activeConversationId;
+    if (!nodeId || !conversationId || isGenerating) return;
+    const content = window.prompt('Edit message as a new branch', message.content)?.trim();
+    if (!content || content === message.content.trim()) return;
+    const conversation = await fetchJson<Conversation>('/api/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'edit-message-branch',
+        conversationId,
+        nodeId,
+        content
+      })
+    });
+    activeConversationId = conversation.id;
+    messages = conversation.messages ?? [];
+    rememberConversation(conversation);
+    if (activeDrawer === 'chats') await refreshConversationTree(conversation.id);
+  }
+
   async function focusConversationTreeNode(node: ConversationTreeNode, restoreSubtree = true) {
     if (!activeConversationId || isGenerating) return;
     const conversation = await fetchJson<Conversation>('/api/conversations', {
@@ -2573,8 +2595,17 @@
               {#if message.content.trim() || !message.thinking?.trim()}
                 <div class="message-content rich">{@html messageDisplayContent(message, index)}</div>
               {/if}
-              {#if message.branch && (message.branch.total > 1 || !message.branch.isLatest || (message.role === 'assistant' && message.branch.isLatest))}
+              {#if message.branch}
                 <div class="branch-controls" aria-label="Message branches">
+                  <button
+                    type="button"
+                    title="Edit as branch"
+                    aria-label="Edit as branch"
+                    disabled={isGenerating}
+                    on:click={() => editMessageAsBranch(message)}
+                  >
+                    <Pencil size={14} />
+                  </button>
                   {#if !message.branch.isLatest}
                     <button
                       type="button"
@@ -2586,25 +2617,27 @@
                       <GitBranch size={15} />
                     </button>
                   {/if}
-                  <button
-                    type="button"
-                    title="Previous branch"
-                    aria-label="Previous branch"
-                    disabled={isGenerating || message.branch.current <= 1}
-                    on:click={() => switchMessageSibling(message, 'left')}
-                  >
-                    <ChevronLeft size={15} />
-                  </button>
-                  <span>{message.branch.current}/{message.branch.total}</span>
-                  <button
-                    type="button"
-                    title={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
-                    aria-label={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
-                    disabled={isGenerating || (message.branch.current >= message.branch.total && !(message.role === 'assistant' && message.branch.isLatest))}
-                    on:click={() => nextMessageBranch(message)}
-                  >
-                    <ChevronRight size={15} />
-                  </button>
+                  {#if message.branch.total > 1 || (message.role === 'assistant' && message.branch.isLatest)}
+                    <button
+                      type="button"
+                      title="Previous branch"
+                      aria-label="Previous branch"
+                      disabled={isGenerating || message.branch.current <= 1}
+                      on:click={() => switchMessageSibling(message, 'left')}
+                    >
+                      <ChevronLeft size={15} />
+                    </button>
+                    <span>{message.branch.current}/{message.branch.total}</span>
+                    <button
+                      type="button"
+                      title={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
+                      aria-label={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
+                      disabled={isGenerating || (message.branch.current >= message.branch.total && !(message.role === 'assistant' && message.branch.isLatest))}
+                      on:click={() => nextMessageBranch(message)}
+                    >
+                      <ChevronRight size={15} />
+                    </button>
+                  {/if}
                 </div>
               {/if}
             </div>

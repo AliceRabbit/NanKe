@@ -357,6 +357,56 @@ export class ConversationRepository {
     return this.toMessage(node, true);
   }
 
+  editMessageAsSibling(conversationId: string, nodeId: string, content: string): ConversationWithMessages | undefined {
+    const conversation = this.get(conversationId);
+    const source = this.getMessageNode(nodeId);
+    const trimmed = content.trim();
+    if (
+      !conversation ||
+      !source ||
+      source.conversationId !== conversationId ||
+      source.kind !== 'message' ||
+      source.status === 'deleted' ||
+      !source.parentId ||
+      !source.role ||
+      !trimmed
+    ) {
+      return undefined;
+    }
+
+    const now = Date.now();
+    const siblingOrder = this.nextSiblingOrder(conversation.id, source.parentId);
+    const node = createMessageNode({
+      conversationId: conversation.id,
+      parentId: source.parentId,
+      role: source.role,
+      speakerId: source.speakerId,
+      speakerName: source.speakerName,
+      speakerAvatarAssetId: source.speakerAvatarAssetId,
+      content: trimmed,
+      siblingOrder,
+      depth: source.depth,
+      tokenEstimate: estimateStoredTokens({ ...this.toMessage(source, false), content: trimmed, thinking: undefined }),
+      metadata: {
+        ...source.metadata,
+        editedFromNodeId: source.id,
+        editedAt: now
+      },
+      createdAt: now,
+      updatedAt: now
+    });
+    const updatedConversation = this.conversationAfterAppend(conversation, node, siblingOrder);
+
+    const transaction = this.sqlite.transaction(() => {
+      this.insertNode(node);
+      this.updateAncestorsLastLeaf(source.parentId!, node.id, now);
+      this.persistConversation(updatedConversation);
+    });
+    transaction();
+
+    return this.getWithMessages(conversation.id);
+  }
+
   setActiveLeaf(conversationId: string, leafId: string, options: ActiveLeafOptions = {}): ConversationWithMessages | undefined {
     const conversation = this.get(conversationId);
     const node = this.getMessageNode(leafId);

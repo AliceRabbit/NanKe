@@ -15,9 +15,11 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "better-sqlite3": "^12.10.0",
-    "drizzle-orm": "^0.45.2",
     "@lucide/svelte": "^1.17.0",
+    "better-sqlite3": "^12.10.0",
+    "dompurify": "^3.4.7",
+    "drizzle-orm": "^0.45.2",
+    "marked": "^18.0.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {

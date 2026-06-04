@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { applyRegexScripts, hasRegexScriptForPlacement, REGEX_PLACEMENT } from '$lib/core/regex';
+  import { applyRegexScripts, REGEX_PLACEMENT } from '$lib/core/regex';
+  import { renderMessageMarkdown } from '$lib/ui/markdown';
   import type { Character } from '$lib/schemas/character';
   import type { RegexPlacement, RegexScript } from '$lib/schemas/regex';
   import type { WorldBook, WorldBookEntry } from '$lib/schemas/worldbook';
@@ -1624,27 +1625,9 @@
     return activeProfile?.regex?.scripts ?? [];
   }
 
-  function messageUsesDisplayRegex(message: ChatMessage, index: number) {
-    const placement = messageRegexPlacement(message);
-    if (placement === undefined) return false;
-    const options = {
-      placement,
-      isMarkdown: true,
-      depth: messages.length - index,
-      macros: messageRegexMacros()
-    };
-    return (
-      hasRegexScriptForPlacement(activeDisplayRegexScripts(), options) ||
-      hasRegexScriptForPlacement(activeDisplayRegexScripts(), {
-        ...options,
-        placement: REGEX_PLACEMENT.MD_DISPLAY
-      })
-    );
-  }
-
   function messageDisplayContent(message: ChatMessage, index: number) {
     const placement = messageRegexPlacement(message);
-    if (placement === undefined) return message.content;
+    if (placement === undefined) return renderMessageMarkdown(message.content);
     const options = {
       placement,
       isMarkdown: true,
@@ -1652,10 +1635,11 @@
       macros: messageRegexMacros()
     };
     const roleDisplay = applyRegexScripts(message.content, activeDisplayRegexScripts(), options);
-    return applyRegexScripts(roleDisplay, activeDisplayRegexScripts(), {
+    const markdown = applyRegexScripts(roleDisplay, activeDisplayRegexScripts(), {
       ...options,
       placement: REGEX_PLACEMENT.MD_DISPLAY
     });
+    return renderMessageMarkdown(markdown);
   }
 
   function openZoomedAvatar(message: ChatMessage) {
@@ -2143,11 +2127,7 @@
             </button>
             <div class="message {message.role}">
               <strong>{messageSpeaker(message)}</strong>
-              {#if messageUsesDisplayRegex(message, index)}
-                <div class="message-content rich">{@html messageDisplayContent(message, index)}</div>
-              {:else}
-                <p class="message-content">{message.content}</p>
-              {/if}
+              <div class="message-content rich">{@html messageDisplayContent(message, index)}</div>
             </div>
           </article>
         {/each}
@@ -3882,16 +3862,83 @@
     white-space: pre-wrap;
   }
 
+  .message-content.rich {
+    line-height: 1.72;
+    white-space: normal;
+  }
+
   .message-content.rich :global(*) {
     max-width: 100%;
   }
 
   .message-content.rich :global(p) {
-    margin: 0 0 0.7em;
+    margin: 0 0 0.72em;
   }
 
   .message-content.rich :global(p:last-child) {
     margin-bottom: 0;
+  }
+
+  .message-content.rich :global(ul),
+  .message-content.rich :global(ol) {
+    margin: 0.45em 0 0.8em;
+    padding-left: 1.35em;
+  }
+
+  .message-content.rich :global(li) {
+    margin: 0.18em 0;
+  }
+
+  .message-content.rich :global(li > p) {
+    margin: 0.2em 0;
+  }
+
+  .message-content.rich :global(blockquote) {
+    margin: 0.75em 0;
+    border-left: 3px solid #c4d9cb;
+    padding: 0.2em 0 0.2em 0.85em;
+    color: #4f5d55;
+  }
+
+  .message-content.rich :global(em) {
+    color: #39473f;
+  }
+
+  .message-content.rich :global(code) {
+    border: 1px solid #dfe4de;
+    border-radius: 5px;
+    background: #f4f6f3;
+    padding: 0.08em 0.34em;
+    font-size: 0.92em;
+  }
+
+  .message-content.rich :global(pre) {
+    min-height: 0;
+    max-height: 42vh;
+    margin: 0.8em 0;
+    white-space: pre;
+  }
+
+  .message-content.rich :global(pre code) {
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+
+  .message-content.rich :global(details) {
+    margin: 0.45em 0 0.85em;
+  }
+
+  .message-content.rich :global(details:not([open])) {
+    margin-bottom: 0.6em;
+  }
+
+  .message-content.rich :global(details:not([open]) > :not(summary)) {
+    display: none !important;
+  }
+
+  .message-content.rich :global(summary) {
+    cursor: pointer;
   }
 
   .composer {

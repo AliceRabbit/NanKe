@@ -9,3 +9,5 @@ NanKe v1 is a SvelteKit modular monolith. The app keeps one deployable unit whil
 - `server` wires routes, repositories, core, and providers together.
 
 The UI never constructs the final model prompt. It submits user intent to API routes, and server-side services run the generation pipeline.
+
+Conversation history uses a tree-shaped native model; see [conversation-history.md](conversation-history.md) for its data invariants and operations.

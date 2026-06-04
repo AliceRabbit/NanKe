@@ -17,8 +17,8 @@
   type TreeFlowNode = Node<ConversationTreeFlowNodeData, 'conversationNode'>;
   type TreeFlowEdge = Edge<Record<string, unknown>, 'smoothstep'>;
 
-  const nodeWidth = 210;
-  const nodeHeight = 96;
+  const nodeWidth = 220;
+  const nodeHeight = 112;
   const nodeTypes = { conversationNode: ConversationTreeNode };
 
   let {
@@ -66,22 +66,22 @@
     function place(id: string, depth: number): number {
       const children = childrenByParent.get(id) ?? [];
       if (!children.length) {
-        const y = nextLeaf++ * nodeHeight;
-        positioned.set(id, { x: depth * nodeWidth, y });
-        return y;
+        const x = nextLeaf++ * nodeWidth;
+        positioned.set(id, { x, y: depth * nodeHeight });
+        return x;
       }
 
-      const childYs = children.map((child) => place(child.id, Math.max(child.depth, depth + 1)));
-      const y = (Math.min(...childYs) + Math.max(...childYs)) / 2;
-      positioned.set(id, { x: depth * nodeWidth, y });
-      return y;
+      const childXs = children.map((child) => place(child.id, Math.max(child.depth, depth + 1)));
+      const x = (Math.min(...childXs) + Math.max(...childXs)) / 2;
+      positioned.set(id, { x, y: depth * nodeHeight });
+      return x;
     }
 
     place(rootId, 0);
 
     for (const node of tree.nodes) {
       if (positioned.has(node.id)) continue;
-      positioned.set(node.id, { x: Math.max(1, node.depth) * nodeWidth, y: nextLeaf++ * nodeHeight });
+      positioned.set(node.id, { x: nextLeaf++ * nodeWidth, y: Math.max(1, node.depth) * nodeHeight });
     }
 
     const rootChildren = childrenByParent.get(rootId)?.length ?? 0;
@@ -106,7 +106,7 @@
       ...tree.nodes.map((node) => ({
         id: node.id,
         type: 'conversationNode' as const,
-        position: positioned.get(node.id) ?? { x: Math.max(1, node.depth) * nodeWidth, y: 0 },
+        position: positioned.get(node.id) ?? { x: 0, y: Math.max(1, node.depth) * nodeHeight },
         draggable: false,
         selected: node.id === activeSelectionId,
         data: {
@@ -202,6 +202,7 @@
         elementsSelectable={true}
         panOnDrag={true}
         zoomOnScroll={true}
+        fitViewOptions={{ padding: 0.18 }}
         proOptions={{ hideAttribution: true }}
         onnodeclick={selectNode}
       >

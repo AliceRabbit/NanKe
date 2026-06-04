@@ -14,7 +14,7 @@
   title={node.preview}
 >
   {#if node.role !== 'root'}
-    <Handle type="target" position={Position.Left} />
+    <Handle type="target" position={Position.Top} />
   {/if}
   <div class="node-row">
     <span class="role-dot"></span>
@@ -31,7 +31,7 @@
   {#if node.preview}
     <div class="node-tooltip">{node.preview}</div>
   {/if}
-  <Handle type="source" position={Position.Right} />
+  <Handle type="source" position={Position.Bottom} />
 </div>
 
 <style>

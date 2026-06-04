@@ -13,7 +13,7 @@ import type { createRequestContext } from '$lib/server/request-context';
 import { AppError } from '$lib/server/errors';
 import { AssetStore } from '$lib/storage/assets/AssetStore';
 
-export type ImportKind = 'character-card-json' | 'character-card-png' | 'worldbook' | 'preset' | 'chat-jsonl';
+export type ImportKind = 'character-card-json' | 'character-card-png' | 'worldbook' | 'preset' | 'chat-jsonl' | 'conversation-snapshot';
 
 export class ImportAppService {
   constructor(
@@ -91,6 +91,11 @@ export class ImportAppService {
       const saved = this.context.conversations.save({ ...conversation, metadata });
       this.context.importReports.save(report);
       return { type: 'conversation', item: saved, messages, report };
+    }
+
+    if (kind === 'conversation-snapshot') {
+      const imported = this.context.conversations.importSnapshot(data, { title: name });
+      return { type: 'conversation', item: imported };
     }
 
     throw new AppError(`Unsupported import kind: ${kind}`, 400, 'unsupported_import_kind');

@@ -1,6 +1,13 @@
 import type Database from 'better-sqlite3';
 import { eq } from 'drizzle-orm';
-import { conversationSchema, type Conversation, type ConversationWithMessages } from '$lib/schemas/conversation';
+import {
+  conversationSchema,
+  conversationSnapshotSchema,
+  type Conversation,
+  type ConversationSnapshot,
+  type ConversationSnapshotAsset,
+  type ConversationWithMessages
+} from '$lib/schemas/conversation';
 import {
   createMessageNode,
   createRootMessageNode,
@@ -99,28 +106,12 @@ export type ConversationTreeSummary = {
   nodes: ConversationTreeNode[];
 };
 
-export type ConversationSnapshotAsset = {
-  id: string;
-  messageNodeId: string;
-  assetId: string;
-  kind: string;
-  sortOrder: number;
-  data: Record<string, unknown>;
-  createdAt: number;
-};
-
-export type ConversationSnapshot = {
-  format: 'nanke.conversation.snapshot';
-  version: 1;
-  exportedAt: number;
-  conversation: Conversation;
-  nodes: MessageNode[];
-  activePathNodeIds: string[];
-  assets: ConversationSnapshotAsset[];
-};
-
 export type ConversationSnapshotOptions = {
   includeDeleted?: boolean;
+};
+
+export type ConversationSnapshotImportOptions = {
+  title?: string;
 };
 
 export class ConversationRepository {
@@ -242,6 +233,74 @@ export class ConversationRepository {
       activePathNodeIds,
       assets: this.snapshotAssets(nodes.map((node) => node.id))
     };
+  }
+
+  importSnapshot(input: unknown, options: ConversationSnapshotImportOptions = {}): ConversationWithMessages {
+    const snapshot = conversationSnapshotSchema.parse(input);
+    const now = Date.now();
+    const conversationId = crypto.randomUUID();
+    const idMap = new Map(snapshot.nodes.map((node) => [node.id, crypto.randomUUID()]));
+    const sourceRootNode = snapshot.nodes.find((node) => node.id === snapshot.conversation.rootNodeId) ?? snapshot.nodes.find((node) => node.kind === 'root');
+    const rootNodeId = sourceRootNode ? idMap.get(sourceRootNode.id)! : crypto.randomUUID();
+    const remappedNodes = snapshot.nodes.map((node) =>
+      messageNodeSchema.parse({
+        ...node,
+        id: idMap.get(node.id),
+        conversationId,
+        parentId: node.parentId ? (idMap.get(node.parentId) ?? null) : null,
+        lastActiveLeafId: node.lastActiveLeafId ? idMap.get(node.lastActiveLeafId) : undefined
+      })
+    );
+    if (!sourceRootNode) {
+      remappedNodes.unshift(createRootMessageNode(conversationId, rootNodeId));
+    }
+
+    const activeLeafId = this.importedActiveLeafId(snapshot, remappedNodes, idMap, rootNodeId);
+    const title = options.title?.trim() || snapshot.conversation.title;
+    const draftConversation = conversationSchema.parse({
+      ...snapshot.conversation,
+      id: conversationId,
+      title,
+      rootNodeId,
+      activeLeafId,
+      archivedAt: undefined,
+      metadata: {
+        ...snapshot.conversation.metadata,
+        importedFrom: {
+          format: snapshot.format,
+          version: snapshot.version,
+          conversationId: snapshot.conversation.id,
+          exportedAt: snapshot.exportedAt,
+          importedAt: now
+        }
+      },
+      createdAt: now,
+      updatedAt: now
+    });
+
+    const transaction = this.sqlite.transaction(() => {
+      this.persistConversation(draftConversation);
+      for (const node of remappedNodes) this.insertNode(node);
+      this.insertSnapshotAssets(snapshot.assets, idMap, now);
+      const stats = this.conversationTreeStats(conversationId);
+      const activeNode = this.getMessageNode(activeLeafId);
+      this.persistConversation(
+        conversationSchema.parse({
+          ...draftConversation,
+          nodeCount: stats.nodeCount,
+          branchCount: stats.branchCount,
+          activeDepth: activeNode?.depth ?? 0,
+          lastPreview: activeNode?.kind === 'message' ? previewText(activeNode.content) : undefined,
+          revision: 0,
+          updatedAt: now
+        })
+      );
+    });
+    transaction();
+
+    const imported = this.getWithMessages(conversationId);
+    if (!imported) throw new Error(`Imported conversation could not be loaded: ${conversationId}`);
+    return imported;
   }
 
   save(conversation: Conversation): Conversation {
@@ -626,6 +685,58 @@ export class ConversationRepository {
       data: JSON.parse(row.data) as Record<string, unknown>,
       createdAt: row.created_at
     }));
+  }
+
+  private importedActiveLeafId(snapshot: ConversationSnapshot, nodes: MessageNode[], idMap: Map<string, string>, rootNodeId: string): string {
+    const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    const sourceActiveLeafId = snapshot.conversation.activeLeafId ? idMap.get(snapshot.conversation.activeLeafId) : undefined;
+    if (sourceActiveLeafId && nodesById.get(sourceActiveLeafId)?.status !== 'deleted') return sourceActiveLeafId;
+
+    for (const sourceNodeId of [...snapshot.activePathNodeIds].reverse()) {
+      const nodeId = idMap.get(sourceNodeId);
+      if (nodeId && nodesById.get(nodeId)?.status !== 'deleted') return nodeId;
+    }
+
+    return rootNodeId;
+  }
+
+  private insertSnapshotAssets(assets: ConversationSnapshotAsset[], idMap: Map<string, string>, importedAt: number): void {
+    if (!assets.length) return;
+    const insert = this.sqlite.prepare(
+      `
+      INSERT INTO message_assets (
+        id,
+        message_node_id,
+        asset_id,
+        kind,
+        sort_order,
+        data,
+        created_at
+      )
+      VALUES (
+        @id,
+        @messageNodeId,
+        @assetId,
+        @kind,
+        @sortOrder,
+        @data,
+        @createdAt
+      )
+    `
+    );
+    for (const asset of assets) {
+      const messageNodeId = idMap.get(asset.messageNodeId);
+      if (!messageNodeId) continue;
+      insert.run({
+        id: crypto.randomUUID(),
+        messageNodeId,
+        assetId: asset.assetId,
+        kind: asset.kind,
+        sortOrder: asset.sortOrder,
+        data: JSON.stringify(asset.data ?? {}),
+        createdAt: importedAt
+      });
+    }
   }
 
   private pathMessages(conversationId: string, leafId: string): NankeMessage[] {

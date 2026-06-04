@@ -162,6 +162,17 @@ describe('storage repositories', () => {
     expect(snapshot?.nodes.find((node) => node.id === first.id)?.content).toBe('Option A.');
     expect(snapshot?.assets).toEqual([]);
 
+    if (!snapshot) throw new Error('Snapshot was not created.');
+    const imported = repository.importSnapshot(snapshot, { title: 'Restored snapshot' });
+    expect(imported.id).not.toBe(conversation.id);
+    expect(imported.title).toBe('Restored snapshot');
+    expect(imported.messages.map((message) => message.content)).toEqual(['Pick one.', 'Option B.']);
+    expect(imported.branchCount).toBe(1);
+
+    const importedSnapshot = repository.exportSnapshot(imported.id);
+    expect(importedSnapshot?.nodes.find((node) => node.content === 'Option A.')).toBeDefined();
+    expect(importedSnapshot?.nodes.find((node) => node.id === first.id)).toBeUndefined();
+
     sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });

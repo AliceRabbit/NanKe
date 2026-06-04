@@ -224,7 +224,7 @@
     updatedAt: number;
   };
   type ConversationTreeSummary = { conversation: Conversation; nodes: ConversationTreeNode[] };
-  type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl';
+  type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl' | 'conversation-snapshot';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
   type SamplerField = Exclude<keyof NonNullable<Profile['sampler']>, 'stop'>;
@@ -2244,6 +2244,11 @@
       activeCharacterId = result.item.id;
     } else if (result.type === 'profile' && result.item?.id) {
       activeProfileId = result.item.id;
+    } else if (result.type === 'conversation' && result.item?.id) {
+      activeConversationId = result.item.id;
+      activeView = 'chat';
+      closeDrawer();
+      await refreshConversationState(result.item.id);
     }
   }
 
@@ -4213,6 +4218,7 @@
             <option value="character-card-png">Character PNG</option>
             <option value="worldbook">World Book</option>
             <option value="chat-jsonl">Chat JSONL</option>
+            <option value="conversation-snapshot">NanKe Chat Snapshot</option>
           </select>
           <input bind:value={importName} placeholder="Name" />
           <label class="file-picker">

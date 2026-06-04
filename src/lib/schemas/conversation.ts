@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { nankeMessageSchema } from './message';
+import { messageNodeSchema, nankeMessageSchema } from './message';
 
 export const conversationSchema = z.object({
   id: z.string(),
@@ -28,6 +28,29 @@ export const conversationWithMessagesSchema = conversationSchema.extend({
 });
 
 export type ConversationWithMessages = z.infer<typeof conversationWithMessagesSchema>;
+
+export const conversationSnapshotAssetSchema = z.object({
+  id: z.string(),
+  messageNodeId: z.string(),
+  assetId: z.string(),
+  kind: z.string(),
+  sortOrder: z.number().int().nonnegative(),
+  data: z.record(z.string(), z.unknown()).default({}),
+  createdAt: z.number()
+});
+
+export const conversationSnapshotSchema = z.object({
+  format: z.literal('nanke.conversation.snapshot'),
+  version: z.literal(1),
+  exportedAt: z.number(),
+  conversation: conversationSchema,
+  nodes: z.array(messageNodeSchema),
+  activePathNodeIds: z.array(z.string()).default([]),
+  assets: z.array(conversationSnapshotAssetSchema).default([])
+});
+
+export type ConversationSnapshotAsset = z.infer<typeof conversationSnapshotAssetSchema>;
+export type ConversationSnapshot = z.infer<typeof conversationSnapshotSchema>;
 
 export function createConversation(input: Partial<Conversation> & Pick<Conversation, 'title'>): Conversation {
   const now = Date.now();

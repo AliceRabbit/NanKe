@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { applyRegexScripts, REGEX_PLACEMENT } from '$lib/core/regex';
   import { renderMessageMarkdown } from '$lib/ui/markdown';
+  import type { Component } from 'svelte';
+  import type { ConversationTreeNode, ConversationTreeSummary } from '$lib/ui/features/conversation-tree/types';
   import type { Character } from '$lib/schemas/character';
   import type { RegexPlacement, RegexScript } from '$lib/schemas/regex';
   import type { WorldBook, WorldBookEntry } from '$lib/schemas/worldbook';
@@ -207,27 +209,22 @@
   type ZoomedAvatar = { key: string; name: string; role: ChatMessage['role']; src: string; initials: string };
   type GenerationStreamEvent = { type: 'text' | 'thinking' | 'inspector' | 'done' | 'error'; text?: string; conversationId?: string; activeLeafId?: string };
   type ConversationGroup = { key: string; label: string; avatarUrl: string; count: number; conversations: Conversation[] };
-  type ConversationTreeNode = {
-    id: string;
-    parentId: string | null;
-    role: string;
-    speakerName?: string;
-    preview: string;
-    depth: number;
-    siblingOrder: number;
-    status: string;
-    isActivePath: boolean;
-    isActiveLeaf: boolean;
-    childCount: number;
-    branchCount: number;
-    createdAt: number;
-    updatedAt: number;
-  };
-  type ConversationTreeSummary = { conversation: Conversation; nodes: ConversationTreeNode[] };
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl' | 'conversation-snapshot';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
   type SamplerField = Exclude<keyof NonNullable<Profile['sampler']>, 'stop'>;
+  type ConversationTreeDockProps = {
+    summary: ConversationTreeSummary | null;
+    loading?: boolean;
+    actionStatus?: string;
+    selectedNodeId?: string;
+    onSelectNode?: (nodeId: string) => void;
+    onClose?: () => void;
+    onRefresh?: () => void;
+    onFocusNode?: (node: ConversationTreeNode, restoreSubtree: boolean) => void | Promise<void>;
+    onDeleteNode?: (node: ConversationTreeNode) => void | Promise<void>;
+  };
+  type ConversationTreeDockComponent = Component<ConversationTreeDockProps>;
 
   const promptSources: PromptSlotSource[] = [
     'system',
@@ -322,8 +319,6 @@
   let conversationSearchTimer: ReturnType<typeof setTimeout> | undefined;
   const conversationPageSize = 80;
   let showArchivedConversations = false;
-  let conversationTree: ConversationTreeNode[] = [];
-  let conversationTreeConversationId = '';
   let activeView: View = 'chat';
   let activeDrawer: Drawer = null;
   let activeProfileId = '';
@@ -331,6 +326,11 @@
   let activePersonaId = '';
   let activeConversationId = '';
   let activeConversationRecord: Conversation | null = null;
+  let conversationTreeSummary: ConversationTreeSummary | null = null;
+  let conversationTreeLoading = false;
+  let conversationTreeSelectedNodeId = '';
+  let conversationTreeActionStatus = '';
+  let ConversationTreeDockComponent: ConversationTreeDockComponent | null = null;
   let messages: ChatMessage[] = [];
   let input = '';
   let status = 'Ready';
@@ -554,7 +554,6 @@
   function openDrawer(drawer: Exclude<Drawer, null>) {
     activeDrawer = activeDrawer === drawer ? null : drawer;
     if (activeDrawer === 'chats') {
-      void refreshConversationTree();
       void refreshConversations({ reset: true });
     }
   }
@@ -601,23 +600,54 @@
     activePersonaId = conversation.personaId ?? activePersonaId;
     activeProfileId = conversation.profileId ?? activeProfileId;
     rememberConversation(conversation);
-    if (activeDrawer === 'chats') {
-      await refreshConversationTree(conversation.id);
-    }
     if (options.close) closeDrawer();
     return conversation;
   }
 
-  async function refreshConversationTree(id = activeConversationId) {
-    if (!id) {
-      conversationTree = [];
-      conversationTreeConversationId = '';
-      return;
+  async function ensureConversationTreeDock() {
+    if (!ConversationTreeDockComponent) {
+      ConversationTreeDockComponent = (await import('$lib/ui/features/conversation-tree/ConversationTreeDock.svelte')).default as ConversationTreeDockComponent;
     }
+  }
+
+  async function loadConversationTree(id: string) {
     const summary = await fetchJson<ConversationTreeSummary>(`/api/conversations?id=${encodeURIComponent(id)}&tree=true`);
-    conversationTree = summary.nodes;
-    conversationTreeConversationId = summary.conversation.id;
+    conversationTreeSummary = summary;
+    conversationTreeSelectedNodeId = summary.conversation.activeLeafId ?? summary.nodes.find((node) => node.isActiveLeaf)?.id ?? summary.nodes[0]?.id ?? '';
     rememberConversation(summary.conversation);
+    return summary;
+  }
+
+  async function openConversationTree(event: MouseEvent, conversation: Conversation) {
+    event.stopPropagation();
+    conversationTreeLoading = true;
+    conversationTreeSummary = {
+      conversation,
+      nodes: []
+    };
+    closeDrawer();
+    try {
+      await Promise.all([ensureConversationTreeDock(), loadConversationTree(conversation.id)]);
+    } finally {
+      conversationTreeLoading = false;
+    }
+  }
+
+  async function refreshOpenConversationTree() {
+    const id = conversationTreeSummary?.conversation.id ?? activeConversationId;
+    if (!id) return;
+    conversationTreeLoading = true;
+    try {
+      await Promise.all([ensureConversationTreeDock(), loadConversationTree(id)]);
+    } finally {
+      conversationTreeLoading = false;
+    }
+  }
+
+  function closeConversationTree() {
+    conversationTreeSummary = null;
+    conversationTreeSelectedNodeId = '';
+    conversationTreeActionStatus = '';
   }
 
   function conversationListUrl(cursor = conversationCursor) {
@@ -1733,7 +1763,6 @@
     messages = cloned.messages ?? [];
     rememberConversation(cloned);
     activeView = 'chat';
-    if (activeDrawer === 'chats') await refreshConversationTree(cloned.id);
     status = 'Ready';
   }
 
@@ -1962,7 +1991,6 @@
     activeConversationId = conversation.id;
     messages = conversation.messages ?? [];
     rememberConversation(conversation);
-    if (activeDrawer === 'chats') await refreshConversationTree(conversation.id);
   }
 
   async function continueFromMessage(message: ChatMessage) {
@@ -1982,7 +2010,6 @@
     activeConversationId = conversation.id;
     messages = conversation.messages ?? [];
     rememberConversation(conversation);
-    if (activeDrawer === 'chats') await refreshConversationTree(conversation.id);
   }
 
   async function editMessageAsBranch(message: ChatMessage) {
@@ -2004,7 +2031,6 @@
     activeConversationId = conversation.id;
     messages = conversation.messages ?? [];
     rememberConversation(conversation);
-    if (activeDrawer === 'chats') await refreshConversationTree(conversation.id);
   }
 
   async function forkMessagePathToConversation(message: ChatMessage) {
@@ -2025,45 +2051,58 @@
     messages = conversation.messages ?? [];
     rememberConversation(conversation);
     activeView = 'chat';
-    if (activeDrawer === 'chats') await refreshConversationTree(conversation.id);
     status = 'Ready';
   }
 
   async function focusConversationTreeNode(node: ConversationTreeNode, restoreSubtree = true) {
-    if (!activeConversationId || isGenerating) return;
-    const conversation = await fetchJson<Conversation>('/api/conversations', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'set-active-leaf',
-        conversationId: activeConversationId,
-        leafId: node.id,
-        restoreSubtree
-      })
-    });
-    activeConversationId = conversation.id;
-    messages = conversation.messages ?? [];
-    rememberConversation(conversation);
-    await refreshConversationTree(conversation.id);
+    const conversationId = conversationTreeSummary?.conversation.id ?? activeConversationId;
+    if (!conversationId || isGenerating || conversationTreeActionStatus) return;
+    conversationTreeActionStatus = restoreSubtree ? 'Focusing node' : 'Continuing from node';
+    try {
+      const conversation = await fetchJson<Conversation>('/api/conversations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'set-active-leaf',
+          conversationId,
+          leafId: node.id,
+          restoreSubtree
+        })
+      });
+      activeConversationId = conversation.id;
+      activeConversationRecord = conversation;
+      messages = conversation.messages ?? [];
+      rememberConversation(conversation);
+      await loadConversationTree(conversation.id);
+    } finally {
+      conversationTreeActionStatus = '';
+    }
   }
 
   async function deleteConversationTreeNode(node: ConversationTreeNode) {
-    if (!activeConversationId || isGenerating) return;
+    const conversationId = conversationTreeSummary?.conversation.id ?? activeConversationId;
+    if (!conversationId || isGenerating || conversationTreeActionStatus) return;
     const label = node.preview || node.speakerName || node.role;
     if (!window.confirm(`Delete this branch and all descendants?\n\n${label}`)) return;
-    const conversation = await fetchJson<Conversation>('/api/conversations', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'delete-node-subtree',
-        conversationId: activeConversationId,
-        nodeId: node.id
-      })
-    });
-    activeConversationId = conversation.id;
-    messages = conversation.messages ?? [];
-    rememberConversation(conversation);
-    await refreshConversationTree(conversation.id);
+    conversationTreeActionStatus = 'Deleting branch';
+    try {
+      const conversation = await fetchJson<Conversation>('/api/conversations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete-node-subtree',
+          conversationId,
+          nodeId: node.id
+        })
+      });
+      activeConversationId = conversation.id;
+      activeConversationRecord = conversation;
+      messages = conversation.messages ?? [];
+      rememberConversation(conversation);
+      await loadConversationTree(conversation.id);
+    } finally {
+      conversationTreeActionStatus = '';
+    }
   }
 
   async function regenerateAssistantSibling(message: ChatMessage) {
@@ -2629,7 +2668,7 @@
     </button>
   </aside>
 
-  <section class="stage" aria-label="Chat workspace">
+  <section class="stage" class:tree-open={conversationTreeLoading || Boolean(conversationTreeSummary)} aria-label="Chat workspace">
     <header class="chatbar">
       <div class="scene">
         <button class="conversation-button" type="button" on:click={() => openDrawer('chats')}>
@@ -2780,6 +2819,27 @@
         {/if}
       </button>
     </form>
+
+    {#if conversationTreeLoading || conversationTreeSummary}
+      {#if ConversationTreeDockComponent}
+        <ConversationTreeDockComponent
+          summary={conversationTreeSummary}
+          loading={conversationTreeLoading}
+          actionStatus={conversationTreeActionStatus}
+          selectedNodeId={conversationTreeSelectedNodeId}
+          onSelectNode={(nodeId) => (conversationTreeSelectedNodeId = nodeId)}
+          onClose={closeConversationTree}
+          onRefresh={refreshOpenConversationTree}
+          onFocusNode={focusConversationTreeNode}
+          onDeleteNode={deleteConversationTreeNode}
+        />
+      {:else}
+        <aside class="tree-dock-loading" aria-label="Conversation tree">
+          <RefreshCw size={20} />
+          <span>Loading tree</span>
+        </aside>
+      {/if}
+    {/if}
   </section>
 
   {#if zoomedAvatar}
@@ -2831,64 +2891,6 @@
             <span>Show archived chats</span>
           </label>
         </div>
-        {#if activeConversationId}
-          <section class="branch-map" aria-label="Current conversation branch map">
-            <header>
-              <span>
-                <GitBranch size={15} />
-                <strong>Branch Map</strong>
-              </span>
-              <button type="button" title="Refresh branch map" aria-label="Refresh branch map" on:click={() => refreshConversationTree()}>
-                <RefreshCw size={14} />
-              </button>
-            </header>
-            {#if conversationTreeConversationId !== activeConversationId}
-              <div class="drawer-empty compact">Loading branches.</div>
-            {:else if conversationTree.length === 0}
-              <div class="drawer-empty compact">No persisted messages.</div>
-            {:else}
-              <div class="branch-map-list">
-                {#each conversationTree as node}
-                  <article
-                    class="branch-node"
-                    class:active={node.isActivePath}
-                    class:leaf={node.isActiveLeaf}
-                    style={`--branch-depth: ${Math.min(Math.max(node.depth - 1, 0), 10)}`}
-                  >
-                    <button class="branch-node-main" type="button" on:click={() => focusConversationTreeNode(node, true)}>
-                      <span class="branch-role {node.role}"></span>
-                      <span class="branch-node-copy">
-                        <strong>{node.speakerName ?? node.role}</strong>
-                        <span>{node.preview || '(empty)'}</span>
-                      </span>
-                      <small>{node.childCount ? `${node.childCount} child${node.childCount > 1 ? 'ren' : ''}` : ''}</small>
-                    </button>
-                    <button
-                      class="branch-node-fork"
-                      type="button"
-                      title="Continue from here"
-                      aria-label="Continue from here"
-                      disabled={isGenerating}
-                      on:click={() => focusConversationTreeNode(node, false)}
-                    >
-                      <GitBranch size={14} />
-                    </button>
-                    <button
-                      class="branch-node-delete"
-                      type="button"
-                      title="Delete branch"
-                      aria-label="Delete branch"
-                      disabled={isGenerating}
-                      on:click={() => deleteConversationTreeNode(node)}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </article>
-                {/each}
-              </div>
-            {/if}
-          </section>
-        {/if}
         <div class="conversation-list">
           {#if conversationGroups.length === 0}
             <div class="drawer-empty compact">No chats found.</div>
@@ -2923,6 +2925,9 @@
                       </button>
                       <button type="button" title="Duplicate chat" aria-label="Duplicate chat" on:click={(event) => cloneConversation(event, conversation)}>
                         <Copy size={14} />
+                      </button>
+                      <button type="button" title="Open chat tree" aria-label="Open chat tree" on:click={(event) => openConversationTree(event, conversation)}>
+                        <GitBranch size={14} />
                       </button>
                       <button type="button" title="Export chat" aria-label="Export chat" on:click={(event) => exportConversation(event, conversation)}>
                         <Download size={14} />
@@ -4426,6 +4431,36 @@
     grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
+  .stage.tree-open {
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 38vw);
+  }
+
+  .stage.tree-open .chatbar {
+    grid-column: 1 / -1;
+  }
+
+  .stage.tree-open .messages,
+  .stage.tree-open .composer {
+    grid-column: 1;
+  }
+
+  .stage.tree-open :global(.tree-dock),
+  .stage.tree-open .tree-dock-loading {
+    grid-column: 2;
+    grid-row: 2 / 4;
+  }
+
+  .tree-dock-loading {
+    display: grid;
+    place-items: center;
+    gap: 8px;
+    min-height: 0;
+    border-left: 1px solid #dfe6df;
+    background: #fbfcfa;
+    color: #66736b;
+    font-size: 13px;
+  }
+
   .chatbar {
     display: grid;
     grid-template-columns: minmax(180px, 0.75fr) minmax(280px, 1.45fr) auto;
@@ -5429,141 +5464,6 @@
     border-color: #e6b8b4;
     background: #fff5f4;
     color: #9b2d25;
-  }
-
-  .branch-map {
-    display: grid;
-    gap: 8px;
-    border-top: 1px solid #edf0eb;
-    border-bottom: 1px solid #edf0eb;
-    background: #fbfcfa;
-    padding: 10px 16px 12px;
-  }
-
-  .branch-map > header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    color: #39453e;
-    font-size: 13px;
-  }
-
-  .branch-map > header span {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    min-width: 0;
-  }
-
-  .branch-map > header button,
-  .branch-node-fork,
-  .branch-node-delete {
-    display: grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    border: 1px solid transparent;
-    border-radius: 7px;
-    background: transparent;
-    color: #66736c;
-    padding: 0;
-  }
-
-  .branch-map > header button:hover,
-  .branch-node-fork:hover {
-    border-color: #cbd8ce;
-    background: #fff;
-    color: #214433;
-  }
-
-  .branch-node-delete:hover {
-    border-color: #e6b8b4;
-    background: #fff5f4;
-    color: #9b2d25;
-  }
-
-  .branch-map-list {
-    display: grid;
-    gap: 5px;
-    max-height: min(36vh, 360px);
-    min-height: 0;
-    overflow: auto;
-  }
-
-  .branch-node {
-    --branch-depth: 0;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 5px;
-    margin-left: calc(var(--branch-depth) * 10px);
-    border: 1px solid #e2e6df;
-    border-radius: 8px;
-    background: #fff;
-    padding: 5px;
-  }
-
-  .branch-node.active {
-    border-color: #b9d5c1;
-    background: #f0f8f2;
-  }
-
-  .branch-node.leaf {
-    border-color: #83b894;
-    box-shadow: inset 3px 0 0 #378b57;
-  }
-
-  .branch-node-main {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 7px;
-    min-width: 0;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    padding: 0;
-    text-align: left;
-  }
-
-  .branch-role {
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    background: #97a19a;
-  }
-
-  .branch-role.user {
-    background: #328653;
-  }
-
-  .branch-role.assistant {
-    background: #4e6fa9;
-  }
-
-  .branch-node-copy {
-    display: grid;
-    min-width: 0;
-    gap: 1px;
-  }
-
-  .branch-node-copy strong,
-  .branch-node-copy span,
-  .branch-node-main small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .branch-node-copy strong {
-    color: #2d3831;
-    font-size: 12px;
-  }
-
-  .branch-node-copy span,
-  .branch-node-main small {
-    color: #69746d;
-    font-size: 11px;
   }
 
   .drawer-empty.compact {
@@ -7180,6 +7080,19 @@
     .composer {
       grid-template-columns: minmax(0, 1fr);
       padding: 12px;
+    }
+
+    .stage.tree-open {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(0, 1fr) auto minmax(42vh, 52vh);
+    }
+
+    .stage.tree-open :global(.tree-dock),
+    .stage.tree-open .tree-dock-loading {
+      grid-column: 1;
+      grid-row: 4;
+      border-top: 1px solid #dfe6df;
+      border-left: 0;
     }
 
     .scrim {

@@ -109,6 +109,33 @@ describe('storage repositories', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('soft-deletes a node subtree and falls back from an active deleted branch', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const repository = new ConversationRepository(db, sqlite);
+
+    const conversation = repository.save(createConversation({ title: 'Pruned chat' }));
+    const user = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Choose.' }));
+    const first = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'Keep me.' }));
+    const second = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'Delete me.' }), user.id);
+    repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Delete this descendant too.' }));
+
+    const loaded = repository.deleteNodeSubtree(conversation.id, second.id);
+    expect(loaded?.activeLeafId).toBe(first.id);
+    expect(loaded?.nodeCount).toBe(2);
+    expect(loaded?.branchCount).toBe(0);
+    expect(loaded?.messages.map((message) => message.content)).toEqual(['Choose.', 'Keep me.']);
+
+    const summary = repository.getTree(conversation.id);
+    expect(summary?.nodes.map((node) => node.id)).toEqual([user.id, first.id]);
+    expect(repository.getMessageNode(second.id)?.status).toBe('deleted');
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('renames, archives, restores, and deletes conversations', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
     const sqlite = new Database(path.join(dir, 'test.db'));

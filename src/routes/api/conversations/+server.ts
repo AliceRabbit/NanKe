@@ -72,6 +72,15 @@ export async function PATCH({ request }) {
       return json(conversation);
     }
 
+    if (body?.action === 'delete-node-subtree') {
+      if (typeof body.conversationId !== 'string' || typeof body.nodeId !== 'string') {
+        throw new AppError('conversationId and nodeId are required.', 400, 'conversation_node_delete_required');
+      }
+      const conversation = context.conversations.deleteNodeSubtree(body.conversationId, body.nodeId);
+      if (!conversation) throw new AppError('Conversation node not found.', 404, 'conversation_node_not_found');
+      return json(conversation);
+    }
+
     throw new AppError('Unsupported conversation action.', 400, 'conversation_action_unknown');
   } catch (error) {
     return errorResponse(error);

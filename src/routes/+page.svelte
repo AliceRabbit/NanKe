@@ -1925,6 +1925,25 @@
     await refreshConversationTree(conversation.id);
   }
 
+  async function deleteConversationTreeNode(node: ConversationTreeNode) {
+    if (!activeConversationId || isGenerating) return;
+    const label = node.preview || node.speakerName || node.role;
+    if (!window.confirm(`Delete this branch and all descendants?\n\n${label}`)) return;
+    const conversation = await fetchJson<Conversation>('/api/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'delete-node-subtree',
+        conversationId: activeConversationId,
+        nodeId: node.id
+      })
+    });
+    activeConversationId = conversation.id;
+    messages = conversation.messages ?? [];
+    rememberConversation(conversation);
+    await refreshConversationTree(conversation.id);
+  }
+
   async function regenerateAssistantSibling(message: ChatMessage) {
     const nodeId = message.branch?.nodeId ?? message.id;
     if (!nodeId || !activeConversationId || isGenerating) return;
@@ -2706,6 +2725,16 @@
                       on:click={() => focusConversationTreeNode(node, false)}
                     >
                       <GitBranch size={14} />
+                    </button>
+                    <button
+                      class="branch-node-delete"
+                      type="button"
+                      title="Delete branch"
+                      aria-label="Delete branch"
+                      disabled={isGenerating}
+                      on:click={() => deleteConversationTreeNode(node)}
+                    >
+                      <Trash2 size={14} />
                     </button>
                   </article>
                 {/each}
@@ -5269,7 +5298,8 @@
   }
 
   .branch-map > header button,
-  .branch-node-fork {
+  .branch-node-fork,
+  .branch-node-delete {
     display: grid;
     place-items: center;
     width: 28px;
@@ -5288,6 +5318,12 @@
     color: #214433;
   }
 
+  .branch-node-delete:hover {
+    border-color: #e6b8b4;
+    background: #fff5f4;
+    color: #9b2d25;
+  }
+
   .branch-map-list {
     display: grid;
     gap: 5px;
@@ -5299,7 +5335,7 @@
   .branch-node {
     --branch-depth: 0;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 5px;
     margin-left: calc(var(--branch-depth) * 10px);
     border: 1px solid #e2e6df;

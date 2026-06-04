@@ -491,6 +491,40 @@ export class ConversationRepository {
     return remove();
   }
 
+  repairDerivedState(conversationId: string): Conversation | undefined {
+    const conversation = this.get(conversationId);
+    if (!conversation) return undefined;
+
+    const repair = this.sqlite.transaction(() => {
+      const rootNodeId = conversation.rootNodeId ?? crypto.randomUUID();
+      const rootedConversation = conversationSchema.parse({
+        ...conversation,
+        rootNodeId,
+        activeLeafId: conversation.activeLeafId ?? rootNodeId
+      });
+      this.ensureRootNode(rootedConversation);
+
+      const activeNode =
+        this.validActiveNode(rootedConversation.id, rootedConversation.activeLeafId, rootNodeId) ??
+        this.fallbackActiveNode(rootedConversation.id, rootNodeId);
+      const stats = this.conversationTreeStats(rootedConversation.id);
+      const updated = conversationSchema.parse({
+        ...rootedConversation,
+        activeLeafId: activeNode?.id ?? rootNodeId,
+        nodeCount: stats.nodeCount,
+        branchCount: stats.branchCount,
+        activeDepth: activeNode?.depth ?? 0,
+        lastPreview: activeNode?.kind === 'message' ? previewText(activeNode.content) : undefined
+      });
+
+      if (activeNode?.parentId) this.updateAncestorsLastLeaf(activeNode.parentId, activeNode.id, updated.updatedAt);
+      this.persistConversation(updated);
+      return updated;
+    });
+
+    return repair();
+  }
+
   deleteNodeSubtree(conversationId: string, nodeId: string): ConversationWithMessages | undefined {
     const conversation = this.get(conversationId);
     const node = this.getMessageNode(nodeId);
@@ -1083,6 +1117,69 @@ export class ConversationRepository {
     if (!node.lastActiveLeafId) return undefined;
     const leaf = this.getMessageNode(node.lastActiveLeafId);
     return leaf?.conversationId === node.conversationId && leaf.status !== 'deleted' ? leaf : undefined;
+  }
+
+  private validActiveNode(conversationId: string, nodeId: string | undefined, rootNodeId: string): MessageNode | undefined {
+    if (!nodeId) return undefined;
+    const node = this.getMessageNode(nodeId);
+    if (!node || node.conversationId !== conversationId || node.status === 'deleted') return undefined;
+    if (node.id === rootNodeId) return node;
+    return this.isNodeReachableFromRoot(conversationId, rootNodeId, node.id) ? node : undefined;
+  }
+
+  private isNodeReachableFromRoot(conversationId: string, rootNodeId: string, nodeId: string): boolean {
+    const row = this.sqlite
+      .prepare(
+        `
+        WITH RECURSIVE live_tree(id) AS (
+          SELECT id
+          FROM message_nodes
+          WHERE id = @rootNodeId
+            AND conversation_id = @conversationId
+            AND status != 'deleted'
+          UNION ALL
+          SELECT child.id
+          FROM message_nodes child
+          JOIN live_tree parent ON child.parent_id = parent.id
+          WHERE child.conversation_id = @conversationId
+            AND child.status != 'deleted'
+        )
+        SELECT 1 AS found
+        FROM live_tree
+        WHERE id = @nodeId
+        LIMIT 1
+      `
+      )
+      .get({ conversationId, rootNodeId, nodeId }) as { found: number } | undefined;
+    return Boolean(row);
+  }
+
+  private fallbackActiveNode(conversationId: string, rootNodeId: string): MessageNode | undefined {
+    const row = this.sqlite
+      .prepare(
+        `
+        WITH RECURSIVE live_tree AS (
+          SELECT *
+          FROM message_nodes
+          WHERE id = @rootNodeId
+            AND conversation_id = @conversationId
+            AND status != 'deleted'
+          UNION ALL
+          SELECT child.*
+          FROM message_nodes child
+          JOIN live_tree parent ON child.parent_id = parent.id
+          WHERE child.conversation_id = @conversationId
+            AND child.status != 'deleted'
+        )
+        SELECT *
+        FROM live_tree
+        WHERE kind = 'message'
+        ORDER BY depth DESC, updated_at DESC, sibling_order DESC, created_at DESC, id DESC
+        LIMIT 1
+      `
+      )
+      .get({ conversationId, rootNodeId }) as MessageNodeRow | undefined;
+    return row ? this.hydrateMessageNode(row) : this.getMessageNode(rootNodeId);
   }
 
   private conversationAfterAppend(conversation: Conversation, node: MessageNode, siblingOrder: number): Conversation {

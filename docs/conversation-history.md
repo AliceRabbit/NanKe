@@ -33,6 +33,7 @@ NanKe stores chat history as an append-oriented message tree. This keeps branchi
 - `nodeCount` and `branchCount` count non-deleted message nodes. Recompute them after subtree deletion and imported snapshots.
 - `lastActiveLeafId` is updated on ancestors whenever a branch is selected or appended. It lets NanKe restore a previous subtree without guessing.
 - `Conversation` summary fields are cache/index data. `message_nodes` is the source of truth for history content and branching.
+- Maintenance repair treats `message_nodes` as authoritative and rebuilds derived conversation fields without changing user-facing lifecycle fields.
 
 ## Operations
 
@@ -45,6 +46,7 @@ NanKe stores chat history as an append-oriented message tree. This keeps branchi
 - `forkPathToConversation`: copy only the path from root to a selected message into a new linear conversation.
 - `exportSnapshot`: export the native tree snapshot.
 - `importSnapshot`: import a native snapshot as a new conversation with remapped IDs.
+- `repairDerivedState`: maintenance-only rebuild of `rootNodeId`, `activeLeafId`, `nodeCount`, `branchCount`, `activeDepth`, and `lastPreview`.
 
 ## Listing And Search
 

@@ -230,6 +230,49 @@ describe('storage repositories', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('repairs derived conversation state from the message tree', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const repository = new ConversationRepository(db, sqlite);
+
+    const conversation = repository.save(createConversation({ title: 'Repairable chat' }));
+    const user = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Choose.' }));
+    const first = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'First path.' }));
+    const second = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'Second path.' }), user.id);
+    const beforeRepair = repository.get(conversation.id);
+
+    sqlite
+      .prepare(
+        `
+        UPDATE conversations
+        SET active_leaf_id = 'missing-node',
+            node_count = 999,
+            branch_count = 999,
+            active_depth = 999,
+            last_preview = 'stale preview'
+        WHERE id = @id
+      `
+      )
+      .run({ id: conversation.id });
+    sqlite.prepare(`UPDATE message_nodes SET last_active_leaf_id = @leafId WHERE id = @id`).run({ id: user.id, leafId: first.id });
+
+    const repaired = repository.repairDerivedState(conversation.id);
+    expect(repaired?.activeLeafId).toBe(second.id);
+    expect(repaired?.nodeCount).toBe(3);
+    expect(repaired?.branchCount).toBe(1);
+    expect(repaired?.activeDepth).toBe(2);
+    expect(repaired?.lastPreview).toBe('Second path.');
+    expect(repaired?.revision).toBe(beforeRepair?.revision);
+    expect(repaired?.updatedAt).toBe(beforeRepair?.updatedAt);
+    expect(repository.getMessageNode(user.id)?.lastActiveLeafId).toBe(second.id);
+    expect(repository.getWithMessages(conversation.id)?.messages.map((message) => message.content)).toEqual(['Choose.', 'Second path.']);
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('filters and pages conversation lists on the server side', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
     const sqlite = new Database(path.join(dir, 'test.db'));

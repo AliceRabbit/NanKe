@@ -79,6 +79,11 @@ export type SwitchSiblingDirection = 'left' | 'right';
 export type ConversationListOptions = {
   includeArchived?: boolean;
   characterId?: string;
+  characterIds?: string[];
+  queryCharacterIds?: string[];
+  query?: string;
+  limit?: number;
+  offset?: number;
 };
 
 export type ActiveLeafOptions = {
@@ -128,13 +133,31 @@ export class ConversationRepository {
 
   list(options: ConversationListOptions = {}): Conversation[] {
     const where: string[] = [];
-    const params: Record<string, string> = {};
+    const params: Record<string, number | string> = {};
     if (!options.includeArchived) where.push('archived_at IS NULL');
     if (options.characterId) {
       where.push('character_id = @characterId');
       params.characterId = options.characterId;
+    } else if (options.characterIds?.length) {
+      where.push(`character_id IN (${options.characterIds.map((_, index) => `@characterId${index}`).join(', ')})`);
+      for (const [index, id] of options.characterIds.entries()) params[`characterId${index}`] = id;
     }
 
+    const query = options.query?.trim();
+    if (query) {
+      params.query = `%${escapeSqlLike(query)}%`;
+      const queryClauses = [`title LIKE @query ESCAPE '\\'`, `COALESCE(last_preview, '') LIKE @query ESCAPE '\\'`];
+      if (!options.characterId && options.queryCharacterIds?.length) {
+        queryClauses.push(`character_id IN (${options.queryCharacterIds.map((_, index) => `@queryCharacterId${index}`).join(', ')})`);
+        for (const [index, id] of options.queryCharacterIds.entries()) params[`queryCharacterId${index}`] = id;
+      }
+      where.push(`(${queryClauses.join(' OR ')})`);
+    }
+
+    const limit = clampListLimit(options.limit);
+    const offset = Math.max(0, Math.trunc(options.offset ?? 0));
+    params.limit = limit;
+    params.offset = offset;
     const rows = this.sqlite
       .prepare(
         `
@@ -142,6 +165,7 @@ export class ConversationRepository {
         FROM conversations
         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
         ORDER BY updated_at DESC
+        LIMIT @limit OFFSET @offset
       `
       )
       .all(params) as ConversationSqlRow[];
@@ -1090,6 +1114,15 @@ function estimateStoredTokens(message: NankeMessage): number {
 function estimateStoredNodeTokens(node: MessageNode): number {
   const contentLength = `${node.thinking ?? ''}${node.content}`.length;
   return Math.max(1, Math.ceil(contentLength / 4));
+}
+
+function clampListLimit(limit: number | undefined): number {
+  if (!Number.isFinite(limit)) return 80;
+  return Math.min(200, Math.max(1, Math.trunc(limit ?? 80)));
+}
+
+function escapeSqlLike(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
 }
 
 function previewText(content: string): string {

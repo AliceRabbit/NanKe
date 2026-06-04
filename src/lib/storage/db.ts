@@ -60,6 +60,15 @@ export function initializeDatabase(sqlite: Database.Database = getDatabaseHandle
       updated_at INTEGER NOT NULL
     );
 
+    CREATE INDEX IF NOT EXISTS conversations_updated_idx
+      ON conversations (updated_at DESC);
+
+    CREATE INDEX IF NOT EXISTS conversations_archive_updated_idx
+      ON conversations (archived_at, updated_at DESC);
+
+    CREATE INDEX IF NOT EXISTS conversations_character_updated_idx
+      ON conversations (character_id, updated_at DESC);
+
     CREATE TABLE IF NOT EXISTS message_nodes (
       id TEXT PRIMARY KEY,
       conversation_id TEXT NOT NULL,

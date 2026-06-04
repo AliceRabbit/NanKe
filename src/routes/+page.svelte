@@ -317,6 +317,10 @@
   let worldBooks: WorldBook[] = [];
   let conversations: Conversation[] = [];
   let conversationQuery = '';
+  let conversationOffset = 0;
+  let conversationHasMore = false;
+  let conversationSearchTimer: ReturnType<typeof setTimeout> | undefined;
+  const conversationPageSize = 80;
   let showArchivedConversations = false;
   let conversationTree: ConversationTreeNode[] = [];
   let conversationTreeConversationId = '';
@@ -550,6 +554,7 @@
     activeDrawer = activeDrawer === drawer ? null : drawer;
     if (activeDrawer === 'chats') {
       void refreshConversationTree();
+      void refreshConversations({ reset: true });
     }
   }
 
@@ -611,19 +616,39 @@
     rememberConversation(summary.conversation);
   }
 
-  function conversationListUrl() {
+  function conversationListUrl(offset = conversationOffset) {
     const params = new URLSearchParams();
     if (showArchivedConversations) params.set('includeArchived', 'true');
+    if (conversationQuery.trim()) params.set('q', conversationQuery.trim());
+    params.set('limit', String(conversationPageSize));
+    params.set('offset', String(offset));
     return `/api/conversations${params.size ? `?${params}` : ''}`;
   }
 
-  async function refreshConversations() {
-    conversations = await fetchJson<Conversation[]>(conversationListUrl());
+  async function refreshConversations(options: { reset?: boolean } = {}) {
+    const offset = options.reset ? 0 : conversationOffset;
+    const page = await fetchJson<Conversation[]>(conversationListUrl(offset));
+    const active = activeConversationId ? conversations.find((conversation) => conversation.id === activeConversationId) : undefined;
+    const next = options.reset ? page : [...conversations, ...page.filter((conversation) => !conversations.some((item) => item.id === conversation.id))];
+    conversations = active && !next.some((conversation) => conversation.id === active.id) ? [active, ...next] : next;
+    conversationOffset = offset + page.length;
+    conversationHasMore = page.length === conversationPageSize;
+  }
+
+  function queueConversationSearch() {
+    if (conversationSearchTimer) clearTimeout(conversationSearchTimer);
+    conversationSearchTimer = setTimeout(() => {
+      void refreshConversations({ reset: true });
+    }, 220);
+  }
+
+  async function loadMoreConversations() {
+    await refreshConversations();
   }
 
   async function toggleArchivedConversations() {
     showArchivedConversations = !showArchivedConversations;
-    await refreshConversations();
+    await refreshConversations({ reset: true });
   }
 
   function groupConversations(items: Conversation[], query: string, includeArchived: boolean): ConversationGroup[] {
@@ -681,7 +706,7 @@
     characters = await fetchJson<Character[]>('/api/characters');
     personas = await fetchJson<UserPersona[]>('/api/personas');
     worldBooks = await fetchJson<WorldBook[]>('/api/worldbooks');
-    conversations = await fetchJson<Conversation[]>(conversationListUrl());
+    await refreshConversations({ reset: true });
     activeProfileId ||= profiles[0]?.id ?? '';
     activeCharacterId ||= characters[0]?.id ?? '';
     activePersonaId ||= personas.find((persona) => persona.isDefault)?.id ?? personas[0]?.id ?? '';
@@ -2794,7 +2819,7 @@
           </button>
           <label class="search-field">
             <Search size={15} />
-            <input bind:value={conversationQuery} placeholder="Search chats" aria-label="Search chats" />
+            <input bind:value={conversationQuery} placeholder="Search chats" aria-label="Search chats" on:input={queueConversationSearch} />
           </label>
           <label class="checkbox-row compact">
             <input type="checkbox" checked={showArchivedConversations} on:change={toggleArchivedConversations} />
@@ -2918,6 +2943,11 @@
               </div>
             </section>
           {/each}
+          {#if conversationHasMore}
+            <button class="secondary full" type="button" on:click={loadMoreConversations}>
+              <ArrowDown size={16} />Load More
+            </button>
+          {/if}
         </div>
       {:else if activeDrawer === 'characters'}
         <div class="character-workspace">

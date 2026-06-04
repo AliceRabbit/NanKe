@@ -230,6 +230,32 @@ describe('storage repositories', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('filters and pages conversation lists on the server side', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const repository = new ConversationRepository(db, sqlite);
+
+    const alpha = repository.save(createConversation({ title: 'Alpha route', characterId: 'char-alpha' }));
+    repository.appendMessage(createMessage({ conversationId: alpha.id, role: 'user', content: 'Hello.' }));
+    const beta = repository.save(createConversation({ title: 'Beta route', characterId: 'char-beta' }));
+    repository.appendMessage(createMessage({ conversationId: beta.id, role: 'user', content: 'The preview has a needle.' }));
+    const archived = repository.save(createConversation({ title: 'Archived needle', characterId: 'char-archived' }));
+    repository.archive(archived.id, true);
+    const literal = repository.save(createConversation({ title: '100% literal', characterId: 'char-literal' }));
+
+    expect(repository.list({ query: 'needle' }).map((conversation) => conversation.id)).toEqual([beta.id]);
+    expect(repository.list({ includeArchived: true, query: 'needle' }).map((conversation) => conversation.id)).toContain(archived.id);
+    expect(repository.list({ query: 'mira', queryCharacterIds: ['char-alpha'] }).map((conversation) => conversation.id)).toEqual([alpha.id]);
+    expect(repository.list({ query: '100%' }).map((conversation) => conversation.id)).toEqual([literal.id]);
+    expect(repository.list({ includeArchived: true, limit: 2 })).toHaveLength(2);
+    expect(repository.list({ includeArchived: true, limit: 2, offset: 2 })).toHaveLength(2);
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('renames, archives, restores, and deletes conversations', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
     const sqlite = new Database(path.join(dir, 'test.db'));

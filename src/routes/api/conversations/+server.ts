@@ -9,6 +9,9 @@ export function GET({ url }) {
     const id = url.searchParams.get('id');
     const characterId = url.searchParams.get('characterId') ?? undefined;
     const includeArchived = url.searchParams.get('includeArchived') === 'true';
+    const query = url.searchParams.get('q') ?? undefined;
+    const limit = parsePositiveInt(url.searchParams.get('limit'));
+    const offset = parsePositiveInt(url.searchParams.get('offset')) ?? 0;
     if (id && url.searchParams.get('export') === 'true') {
       const snapshot = context.conversations.exportSnapshot(id, {
         includeDeleted: url.searchParams.get('includeDeleted') === 'true'
@@ -26,10 +29,25 @@ export function GET({ url }) {
       if (!tree) throw new AppError('Conversation not found.', 404, 'conversation_not_found');
       return json(tree);
     }
-    return json(id ? context.conversations.getWithMessages(id) : context.conversations.list({ characterId, includeArchived }));
+    if (id) return json(context.conversations.getWithMessages(id));
+
+    const queryCharacterIds =
+      query && !characterId
+        ? context.characters
+            .list()
+            .filter((character) => character.name.toLowerCase().includes(query.trim().toLowerCase()))
+            .map((character) => character.id)
+        : undefined;
+    return json(context.conversations.list({ characterId, includeArchived, query, queryCharacterIds, limit, offset }));
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+function parsePositiveInt(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function downloadFilename(title: string): string {

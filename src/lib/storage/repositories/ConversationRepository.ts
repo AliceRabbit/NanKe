@@ -84,6 +84,8 @@ export type ConversationListOptions = {
   query?: string;
   limit?: number;
   offset?: number;
+  beforeUpdatedAt?: number;
+  beforeId?: string;
 };
 
 export type ActiveLeafOptions = {
@@ -154,6 +156,13 @@ export class ConversationRepository {
       where.push(`(${queryClauses.join(' OR ')})`);
     }
 
+    const beforeUpdatedAt = options.beforeUpdatedAt;
+    if (typeof beforeUpdatedAt === 'number' && Number.isFinite(beforeUpdatedAt) && options.beforeId) {
+      where.push(`(updated_at < @beforeUpdatedAt OR (updated_at = @beforeUpdatedAt AND id < @beforeId))`);
+      params.beforeUpdatedAt = Math.trunc(beforeUpdatedAt);
+      params.beforeId = options.beforeId;
+    }
+
     const limit = clampListLimit(options.limit);
     const offset = Math.max(0, Math.trunc(options.offset ?? 0));
     params.limit = limit;
@@ -164,7 +173,7 @@ export class ConversationRepository {
         SELECT *
         FROM conversations
         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-        ORDER BY updated_at DESC
+        ORDER BY updated_at DESC, id DESC
         LIMIT @limit OFFSET @offset
       `
       )

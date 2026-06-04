@@ -252,6 +252,17 @@ describe('storage repositories', () => {
     expect(repository.list({ includeArchived: true, limit: 2 })).toHaveLength(2);
     expect(repository.list({ includeArchived: true, limit: 2, offset: 2 })).toHaveLength(2);
 
+    const touch = sqlite.prepare(`UPDATE conversations SET updated_at = @updatedAt WHERE id = @id`);
+    touch.run({ id: alpha.id, updatedAt: 400 });
+    touch.run({ id: beta.id, updatedAt: 300 });
+    touch.run({ id: archived.id, updatedAt: 200 });
+    touch.run({ id: literal.id, updatedAt: 100 });
+    const firstPage = repository.list({ includeArchived: true, limit: 2 });
+    const cursor = firstPage.at(-1);
+    const secondPage = repository.list({ includeArchived: true, limit: 2, beforeUpdatedAt: cursor?.updatedAt, beforeId: cursor?.id });
+    expect(firstPage.map((conversation) => conversation.id)).toEqual([alpha.id, beta.id]);
+    expect(secondPage.map((conversation) => conversation.id)).toEqual([archived.id, literal.id]);
+
     sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });

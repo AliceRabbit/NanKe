@@ -12,6 +12,8 @@ export function GET({ url }) {
     const query = url.searchParams.get('q') ?? undefined;
     const limit = parsePositiveInt(url.searchParams.get('limit'));
     const offset = parsePositiveInt(url.searchParams.get('offset')) ?? 0;
+    const beforeUpdatedAt = parsePositiveInt(url.searchParams.get('beforeUpdatedAt'));
+    const beforeId = url.searchParams.get('beforeId') ?? undefined;
     if (id && url.searchParams.get('export') === 'true') {
       const snapshot = context.conversations.exportSnapshot(id, {
         includeDeleted: url.searchParams.get('includeDeleted') === 'true'
@@ -38,7 +40,7 @@ export function GET({ url }) {
             .filter((character) => character.name.toLowerCase().includes(query.trim().toLowerCase()))
             .map((character) => character.id)
         : undefined;
-    return json(context.conversations.list({ characterId, includeArchived, query, queryCharacterIds, limit, offset }));
+    return json(context.conversations.list({ characterId, includeArchived, query, queryCharacterIds, limit, offset, beforeUpdatedAt, beforeId }));
   } catch (error) {
     return errorResponse(error);
   }

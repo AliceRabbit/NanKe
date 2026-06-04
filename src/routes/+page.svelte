@@ -317,7 +317,7 @@
   let worldBooks: WorldBook[] = [];
   let conversations: Conversation[] = [];
   let conversationQuery = '';
-  let conversationOffset = 0;
+  let conversationCursor: { updatedAt: number; id: string } | null = null;
   let conversationHasMore = false;
   let conversationSearchTimer: ReturnType<typeof setTimeout> | undefined;
   const conversationPageSize = 80;
@@ -616,22 +616,26 @@
     rememberConversation(summary.conversation);
   }
 
-  function conversationListUrl(offset = conversationOffset) {
+  function conversationListUrl(cursor = conversationCursor) {
     const params = new URLSearchParams();
     if (showArchivedConversations) params.set('includeArchived', 'true');
     if (conversationQuery.trim()) params.set('q', conversationQuery.trim());
     params.set('limit', String(conversationPageSize));
-    params.set('offset', String(offset));
+    if (cursor) {
+      params.set('beforeUpdatedAt', String(cursor.updatedAt));
+      params.set('beforeId', cursor.id);
+    }
     return `/api/conversations${params.size ? `?${params}` : ''}`;
   }
 
   async function refreshConversations(options: { reset?: boolean } = {}) {
-    const offset = options.reset ? 0 : conversationOffset;
-    const page = await fetchJson<Conversation[]>(conversationListUrl(offset));
+    const cursor = options.reset ? null : conversationCursor;
+    const page = await fetchJson<Conversation[]>(conversationListUrl(cursor));
     const active = activeConversationId ? conversations.find((conversation) => conversation.id === activeConversationId) : undefined;
     const next = options.reset ? page : [...conversations, ...page.filter((conversation) => !conversations.some((item) => item.id === conversation.id))];
     conversations = active && !next.some((conversation) => conversation.id === active.id) ? [active, ...next] : next;
-    conversationOffset = offset + page.length;
+    const last = page.at(-1);
+    conversationCursor = typeof last?.updatedAt === 'number' && last.id ? { updatedAt: last.updatedAt, id: last.id } : cursor;
     conversationHasMore = page.length === conversationPageSize;
   }
 

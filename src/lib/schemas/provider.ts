@@ -21,7 +21,7 @@ export const providerRequestSchema = z.object({
 export type ProviderRequest = z.infer<typeof providerRequestSchema>;
 
 export const generationChunkSchema = z.object({
-  type: z.enum(['text', 'reasoning', 'done', 'error']),
+  type: z.enum(['text', 'thinking', 'done', 'error']),
   text: z.string().default(''),
   raw: z.unknown().optional()
 });

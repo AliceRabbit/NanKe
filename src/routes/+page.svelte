@@ -120,9 +120,7 @@
     request?: {
       stream?: boolean;
     };
-    reasoning?: {
-      display?: boolean;
-      openByDefault?: boolean;
+    thinking?: {
       openai?: {
         effort?: OpenAIReasoningEffort;
       };
@@ -168,9 +166,9 @@
     updatedAt: number;
   };
   type Conversation = { id: string; title: string; characterId?: string; personaId?: string; profileId?: string; messages?: ChatMessage[] };
-  type ChatMessage = { role: 'user' | 'assistant' | 'system'; name?: string; content: string; reasoning?: string };
+  type ChatMessage = { role: 'user' | 'assistant' | 'system'; name?: string; content: string; thinking?: string };
   type ZoomedAvatar = { key: string; name: string; role: ChatMessage['role']; src: string; initials: string };
-  type GenerationStreamEvent = { type: 'text' | 'reasoning' | 'inspector' | 'done' | 'error'; text?: string };
+  type GenerationStreamEvent = { type: 'text' | 'thinking' | 'inspector' | 'done' | 'error'; text?: string };
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
@@ -360,8 +358,6 @@
   let profileDraftN = '';
   let profileDraftStop = '';
   let profileDraftStream = true;
-  let profileDraftReasoningDisplay = true;
-  let profileDraftReasoningOpen = false;
   let profileDraftOpenAIReasoningEffort: OpenAIReasoningEffort = 'default';
   let profileDraftGeminiIncludeThoughts = false;
   let profileDraftGeminiThinkingMode: GeminiThinkingMode = 'default';
@@ -1011,8 +1007,6 @@
       profileDraftN = '';
       profileDraftStop = '';
       profileDraftStream = true;
-      profileDraftReasoningDisplay = true;
-      profileDraftReasoningOpen = false;
       profileDraftOpenAIReasoningEffort = 'default';
       profileDraftGeminiIncludeThoughts = false;
       profileDraftGeminiThinkingMode = 'default';
@@ -1059,13 +1053,11 @@
     profileDraftN = numberToDraft(sampler.n);
     profileDraftStop = (sampler.stop ?? []).join('\n');
     profileDraftStream = profile.request?.stream !== false;
-    profileDraftReasoningDisplay = profile.reasoning?.display !== false;
-    profileDraftReasoningOpen = profile.reasoning?.openByDefault === true;
-    profileDraftOpenAIReasoningEffort = profile.reasoning?.openai?.effort ?? 'default';
-    profileDraftGeminiIncludeThoughts = profile.reasoning?.gemini?.includeThoughts === true;
-    profileDraftGeminiThinkingMode = profile.reasoning?.gemini?.mode ?? 'default';
-    profileDraftGeminiThinkingBudget = numberToDraft(profile.reasoning?.gemini?.budget);
-    profileDraftGeminiThinkingLevel = profile.reasoning?.gemini?.level ?? 'medium';
+    profileDraftOpenAIReasoningEffort = profile.thinking?.openai?.effort ?? 'default';
+    profileDraftGeminiIncludeThoughts = profile.thinking?.gemini?.includeThoughts === true;
+    profileDraftGeminiThinkingMode = profile.thinking?.gemini?.mode ?? 'default';
+    profileDraftGeminiThinkingBudget = numberToDraft(profile.thinking?.gemini?.budget);
+    profileDraftGeminiThinkingLevel = profile.thinking?.gemini?.level ?? 'medium';
     profileDraftMode = profile.prompt?.mode ?? 'chat';
     profileDraftMacroMode = profile.prompt?.macroMode ?? 'none';
     profileDraftSquashSystemMessages = profile.prompt?.squashSystemMessages ?? false;
@@ -1156,11 +1148,9 @@
     };
   }
 
-  function profileDraftReasoning(): Profile['reasoning'] {
+  function profileDraftThinking(): Profile['thinking'] {
     const budget = nonNegativeIntegerDraft(profileDraftGeminiThinkingBudget);
     return {
-      display: profileDraftReasoningDisplay,
-      openByDefault: profileDraftReasoningOpen,
       openai: {
         effort: profileDraftOpenAIReasoningEffort
       },
@@ -1225,7 +1215,7 @@
         ...(base.request ?? {}),
         stream: profileDraftStream
       },
-      reasoning: profileDraftReasoning(),
+      thinking: profileDraftThinking(),
       prompt: {
         ...(base.prompt ?? {}),
         mode: profileDraftMode,
@@ -1558,7 +1548,7 @@
       let buffer = '';
       const consumeLine = (line: string) => {
         const event = parseGenerationStreamLine(line);
-        if (event.type === 'reasoning') appendAssistantDraftReasoning(event.text ?? '');
+        if (event.type === 'thinking') appendAssistantDraftThinking(event.text ?? '');
         if (event.type === 'text') appendAssistantDraftText(event.text ?? '');
         if (event.type === 'error') {
           replaceAssistantDraft(`Generation error: ${event.text ?? 'Unknown error'}`);
@@ -1612,7 +1602,7 @@
     if (!text) return { type: 'done', text: '' };
     try {
       const parsed = JSON.parse(text) as GenerationStreamEvent;
-      if (parsed.type === 'text' || parsed.type === 'reasoning' || parsed.type === 'inspector' || parsed.type === 'done' || parsed.type === 'error') {
+      if (parsed.type === 'text' || parsed.type === 'thinking' || parsed.type === 'inspector' || parsed.type === 'done' || parsed.type === 'error') {
         return parsed;
       }
     } catch {
@@ -1633,23 +1623,23 @@
     messages = [...messages, { role: 'assistant', name: activeCharacter?.name, content }];
   }
 
-  function appendAssistantDraftReasoning(reasoning: string) {
-    if (!reasoning || activeProfile?.reasoning?.display === false) return;
+  function appendAssistantDraftThinking(thinking: string) {
+    if (!thinking) return;
     const last = messages[messages.length - 1];
     if (last?.role === 'assistant') {
       const next = [...messages];
-      next[next.length - 1] = { ...last, reasoning: `${last.reasoning ?? ''}${reasoning}` };
+      next[next.length - 1] = { ...last, thinking: `${last.thinking ?? ''}${thinking}` };
       messages = next;
       return;
     }
-    messages = [...messages, { role: 'assistant', name: activeCharacter?.name, content: '', reasoning }];
+    messages = [...messages, { role: 'assistant', name: activeCharacter?.name, content: '', thinking }];
   }
 
   function replaceAssistantDraft(content: string) {
     const last = messages[messages.length - 1];
     if (last?.role === 'assistant') {
       const next = [...messages];
-      next[next.length - 1] = { ...last, content, reasoning: '' };
+      next[next.length - 1] = { ...last, content, thinking: '' };
       messages = next;
       return;
     }
@@ -1658,7 +1648,7 @@
 
   function removeEmptyAssistantDraft() {
     const last = messages[messages.length - 1];
-    if (last?.role === 'assistant' && !last.content.trim() && !last.reasoning?.trim()) {
+    if (last?.role === 'assistant' && !last.content.trim() && !last.thinking?.trim()) {
       messages = messages.slice(0, -1);
     }
   }
@@ -1757,16 +1747,16 @@
     return renderMessageMarkdown(markdown);
   }
 
-  function nativeReasoningDisplayContent(message: ChatMessage, index: number) {
-    const content = message.reasoning ?? '';
+  function thinkingDisplayContent(message: ChatMessage, index: number) {
+    const content = message.thinking ?? '';
     const options = {
       placement: REGEX_PLACEMENT.REASONING,
       isMarkdown: true,
       depth: messages.length - index,
       macros: messageRegexMacros()
     };
-    const reasoningDisplay = applyRegexScripts(content, activeDisplayRegexScripts(), options);
-    const markdown = applyRegexScripts(reasoningDisplay, activeDisplayRegexScripts(), {
+    const thinkingDisplay = applyRegexScripts(content, activeDisplayRegexScripts(), options);
+    const markdown = applyRegexScripts(thinkingDisplay, activeDisplayRegexScripts(), {
       ...options,
       placement: REGEX_PLACEMENT.MD_DISPLAY
     });
@@ -2258,16 +2248,15 @@
             </button>
             <div class="message {message.role}">
               <strong>{messageSpeaker(message)}</strong>
-              {#if message.role === 'assistant' && message.reasoning?.trim()}
-                <details class="native-thinking" open={activeProfile?.reasoning?.openByDefault === true}>
+              {#if message.role === 'assistant' && message.thinking?.trim()}
+                <details class="thinking-block">
                   <summary>
-                    <span>Model thinking</span>
-                    <small>summary</small>
+                    <span>Thinking</span>
                   </summary>
-                  <div class="native-thinking-content rich">{@html nativeReasoningDisplayContent(message, index)}</div>
+                  <div class="thinking-block-content rich">{@html thinkingDisplayContent(message, index)}</div>
                 </details>
               {/if}
-              {#if message.content.trim() || !message.reasoning?.trim()}
+              {#if message.content.trim() || !message.thinking?.trim()}
                 <div class="message-content rich">{@html messageDisplayContent(message, index)}</div>
               {/if}
             </div>
@@ -3210,24 +3199,16 @@
                   </button>
                 </div>
 
-                <div class="reasoning-panel" aria-label="Native thinking controls">
-                  <div class="reasoning-panel-header">
+                <div class="thinking-panel" aria-label="Thinking request controls">
+                  <div class="thinking-panel-header">
                     <div>
-                      <strong>Native Thinking</strong>
+                      <strong>Thinking Request</strong>
                       <span>{profileDraftProviderType === 'gemini' ? (profileDraftGeminiIncludeThoughts ? 'Gemini thought summaries requested' : 'Gemini summaries not requested') : profileDraftOpenAIReasoningEffort === 'default' ? 'Default endpoint effort' : `${profileDraftOpenAIReasoningEffort} effort`}</span>
-                    </div>
-                    <div class="reasoning-actions">
-                      <button class="mini-toggle" class:active={profileDraftReasoningDisplay} type="button" on:click={() => (profileDraftReasoningDisplay = !profileDraftReasoningDisplay)}>
-                        {profileDraftReasoningDisplay ? 'Show' : 'Hide'}
-                      </button>
-                      <button class="mini-toggle" class:active={profileDraftReasoningOpen} type="button" on:click={() => (profileDraftReasoningOpen = !profileDraftReasoningOpen)}>
-                        {profileDraftReasoningOpen ? 'Open' : 'Fold'}
-                      </button>
                     </div>
                   </div>
 
                   {#if profileDraftProviderType === 'openai-compatible'}
-                    <div class="reasoning-field">
+                    <div class="thinking-field">
                       <span>Reasoning effort</span>
                       <div class="mini-segment seven" aria-label="OpenAI reasoning effort">
                         <button class:active={profileDraftOpenAIReasoningEffort === 'default'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'default')}>Auto</button>
@@ -3240,7 +3221,7 @@
                       </div>
                     </div>
                   {:else}
-                    <div class="reasoning-field">
+                    <div class="thinking-field">
                       <span>Visible thoughts</span>
                       <button class="toggle-pill profile-toggle" class:active={profileDraftGeminiIncludeThoughts} type="button" on:click={() => (profileDraftGeminiIncludeThoughts = !profileDraftGeminiIncludeThoughts)}>
                         {profileDraftGeminiIncludeThoughts ? 'Request thought summaries' : 'Do not request summaries'}
@@ -3248,7 +3229,7 @@
                     </div>
 
                     {#if draftModelUsesGeminiThinkingLevel}
-                      <div class="reasoning-field">
+                      <div class="thinking-field">
                         <span>Thinking level</span>
                         <div class="mini-segment five" aria-label="Gemini thinking level">
                           <button class:active={profileDraftGeminiThinkingMode === 'default'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'default')}>Auto</button>
@@ -3259,7 +3240,7 @@
                         </div>
                       </div>
                     {:else}
-                      <div class="reasoning-field">
+                      <div class="thinking-field">
                         <span>Thinking budget</span>
                         <div class="mini-segment three" aria-label="Gemini thinking budget mode">
                           <button class:active={profileDraftGeminiThinkingMode === 'default'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'default')}>Auto</button>
@@ -4065,7 +4046,7 @@
     text-transform: none;
   }
 
-  .native-thinking {
+  .thinking-block {
     overflow: hidden;
     margin: 2px 0 10px;
     border: 1px solid #d9e1db;
@@ -4073,11 +4054,11 @@
     background: #f6f8f5;
   }
 
-  .native-thinking[open] {
+  .thinking-block[open] {
     background: #fbfcfa;
   }
 
-  .native-thinking summary {
+  .thinking-block summary {
     display: flex;
     min-height: 36px;
     align-items: center;
@@ -4091,17 +4072,11 @@
     list-style: none;
   }
 
-  .native-thinking summary::-webkit-details-marker {
+  .thinking-block summary::-webkit-details-marker {
     display: none;
   }
 
-  .native-thinking small {
-    color: #748078;
-    font-size: 11px;
-    font-weight: 600;
-  }
-
-  .native-thinking-content {
+  .thinking-block-content {
     border-top: 1px solid #e2e6e0;
     padding: 10px 12px 12px;
     color: #4b5a51;
@@ -4109,16 +4084,16 @@
     line-height: 1.65;
   }
 
-  .native-thinking-content.rich :global(p) {
+  .thinking-block-content.rich :global(p) {
     margin: 0 0 0.6em;
   }
 
-  .native-thinking-content.rich :global(p:last-child) {
+  .thinking-block-content.rich :global(p:last-child) {
     margin-bottom: 0;
   }
 
-  .native-thinking-content.rich :global(ul),
-  .native-thinking-content.rich :global(ol) {
+  .thinking-block-content.rich :global(ul),
+  .thinking-block-content.rich :global(ol) {
     margin: 0.35em 0 0.65em;
     padding-left: 1.25em;
   }
@@ -5635,7 +5610,7 @@
     box-shadow: 0 1px 3px rgb(29 39 33 / 8%);
   }
 
-  .reasoning-panel {
+  .thinking-panel {
     display: grid;
     gap: 10px;
     border: 1px solid #e1e6df;
@@ -5644,32 +5619,26 @@
     padding: 10px;
   }
 
-  .reasoning-panel-header {
+  .thinking-panel-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
   }
 
-  .reasoning-panel-header div,
-  .reasoning-field {
+  .thinking-panel-header div,
+  .thinking-field {
     display: grid;
     min-width: 0;
     gap: 5px;
   }
 
-  .reasoning-actions {
-    display: flex !important;
-    flex: 0 0 auto;
-    gap: 6px !important;
-  }
-
-  .reasoning-panel-header strong {
+  .thinking-panel-header strong {
     color: #26302a;
     font-size: 13px;
   }
 
-  .reasoning-field {
+  .thinking-field {
     gap: 7px;
   }
 

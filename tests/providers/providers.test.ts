@@ -53,9 +53,7 @@ describe('provider request mapping', () => {
   it('maps OpenAI-compatible reasoning effort when configured', () => {
     const profile = createDefaultGenerationProfile({
       provider: { type: 'openai-compatible', model: 'test-model', endpoint: 'http://localhost:1234/v1', compatibility: 'strict-openai' },
-      reasoning: {
-        display: true,
-        openByDefault: false,
+      thinking: {
         openai: { effort: 'high' },
         gemini: { includeThoughts: false, mode: 'default', level: 'medium' }
       }
@@ -112,9 +110,7 @@ describe('provider request mapping', () => {
   it('maps Gemini thinking config into generationConfig', () => {
     const profile = createDefaultGenerationProfile({
       provider: { type: 'gemini', model: 'gemini-2.5-pro' },
-      reasoning: {
-        display: true,
-        openByDefault: false,
+      thinking: {
         openai: { effort: 'default' },
         gemini: { includeThoughts: true, mode: 'budget', budget: 1024, level: 'medium' }
       }
@@ -129,9 +125,7 @@ describe('provider request mapping', () => {
   it('maps Gemini 3 thinking level into generationConfig', () => {
     const profile = createDefaultGenerationProfile({
       provider: { type: 'gemini', model: 'gemini-3-pro' },
-      reasoning: {
-        display: true,
-        openByDefault: false,
+      thinking: {
         openai: { effort: 'default' },
         gemini: { includeThoughts: true, mode: 'level', level: 'low' }
       }
@@ -263,7 +257,7 @@ describe('provider request mapping', () => {
     expect(geminiChunks[0]).toEqual(expect.objectContaining({ type: 'text', text: 'gemini ok' }));
   });
 
-  it('normalizes native reasoning chunks from OpenAI-compatible and Gemini providers', async () => {
+  it('normalizes native thinking chunks from OpenAI-compatible and Gemini providers', async () => {
     const openAIProfile = createDefaultGenerationProfile({
       provider: { type: 'openai-compatible', model: 'test-model', endpoint: 'https://api.openai.com/v1', compatibility: 'strict-openai' }
     });
@@ -276,9 +270,9 @@ describe('provider request mapping', () => {
     const geminiStream = 'data: {"candidates":[{"content":{"parts":[{"text":"thinking ","thought":true},{"text":"answer"}]}}]}\n\n';
     const geminiChunks = await collect(createGeminiAdapter(async () => new Response(geminiStream)).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, geminiProfile));
 
-    expect(openAIChunks[0]).toEqual(expect.objectContaining({ type: 'reasoning', text: 'thinking ' }));
+    expect(openAIChunks[0]).toEqual(expect.objectContaining({ type: 'thinking', text: 'thinking ' }));
     expect(openAIChunks[1]).toEqual(expect.objectContaining({ type: 'text', text: 'answer' }));
-    expect(geminiChunks[0]).toEqual(expect.objectContaining({ type: 'reasoning', text: 'thinking ' }));
+    expect(geminiChunks[0]).toEqual(expect.objectContaining({ type: 'thinking', text: 'thinking ' }));
     expect(geminiChunks[1]).toEqual(expect.objectContaining({ type: 'text', text: 'answer' }));
   });
 

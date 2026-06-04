@@ -8,7 +8,7 @@ import {
   type GenerationProfile,
   type PromptSlot,
   type ProviderProfile,
-  type ReasoningProfile,
+  type ThinkingProfile,
   type SamplerProfile
 } from '$lib/schemas/profile';
 import { regexScriptSchema, type RegexPlacement, type RegexScript } from '$lib/schemas/regex';
@@ -340,7 +340,7 @@ function samplerFromOpenAiPreset(preset: RecordValue): SamplerProfile {
   };
 }
 
-function reasoningFromOpenAiPreset(preset: RecordValue, provider: ProviderProfile): ReasoningProfile {
+function thinkingFromOpenAiPreset(preset: RecordValue, provider: ProviderProfile): ThinkingProfile {
   const effort = stringValue(preset.reasoning_effort);
   const openAiEffort =
     effort === 'none' || effort === 'minimal' || effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'xhigh' ? effort : 'default';
@@ -352,8 +352,6 @@ function reasoningFromOpenAiPreset(preset: RecordValue, provider: ProviderProfil
   };
 
   return {
-    display: showThoughts !== false,
-    openByDefault: false,
     openai: { effort: openAiEffort },
     gemini
   };
@@ -478,7 +476,7 @@ export function importSillyTavernPreset(
       provider,
       sampler: samplerFromOpenAiPreset(preset),
       request: { stream: booleanValue(preset.stream_openai) ?? true },
-      reasoning: reasoningFromOpenAiPreset(preset, provider),
+      thinking: thinkingFromOpenAiPreset(preset, provider),
       prompt: {
         mode: 'chat',
         slots,

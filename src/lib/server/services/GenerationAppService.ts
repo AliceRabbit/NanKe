@@ -19,7 +19,7 @@ export type GenerateInput = {
 };
 
 export type GenerationStreamEvent =
-  | { type: 'text' | 'reasoning'; text: string }
+  | { type: 'text' | 'thinking'; text: string }
   | { type: 'inspector'; text: string }
   | { type: 'done'; text: '' };
 
@@ -149,8 +149,8 @@ export class GenerationAppService {
     });
     for await (const chunk of adapter.stream(providerRequest, profile, signal)) {
       if (chunk.type === 'error') throw new AppError(chunk.text, 502, 'provider_error');
-      if (chunk.type === 'reasoning' && profile.reasoning.display !== false) {
-        yield { type: 'reasoning', text: chunk.text };
+      if (chunk.type === 'thinking') {
+        yield { type: 'thinking', text: chunk.text };
       }
       if (chunk.type === 'text') {
         assistantText += chunk.text;

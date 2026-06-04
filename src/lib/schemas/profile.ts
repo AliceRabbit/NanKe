@@ -131,10 +131,8 @@ export const requestProfileSchema = z
 
 export type RequestProfile = z.infer<typeof requestProfileSchema>;
 
-export const reasoningProfileSchema = z
+export const thinkingProfileSchema = z
   .object({
-    display: z.boolean().default(true),
-    openByDefault: z.boolean().default(false),
     openai: z
       .object({
         effort: z.enum(['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh']).default('default')
@@ -150,40 +148,49 @@ export const reasoningProfileSchema = z
       .default(() => ({ includeThoughts: false, mode: 'default' as const, level: 'medium' as const }))
   })
   .default(() => ({
-    display: true,
-    openByDefault: false,
     openai: { effort: 'default' as const },
     gemini: { includeThoughts: false, mode: 'default' as const, level: 'medium' as const }
   }));
 
-export type ReasoningProfile = z.infer<typeof reasoningProfileSchema>;
+export type ThinkingProfile = z.infer<typeof thinkingProfileSchema>;
 
-export const generationProfileSchema = z.object({
-  id: z.string(),
-  name: z.string().min(1),
-  provider: providerProfileSchema,
-  sampler: samplerProfileSchema.default({}),
-  request: requestProfileSchema,
-  reasoning: reasoningProfileSchema,
-  prompt: z.object({
-    mode: z.enum(['chat', 'text']).default('chat'),
-    slots: z.array(promptSlotSchema),
-    instruct: instructionTemplateSchema.optional(),
-    macroMode: z.enum(['none', 'sillytavern']).default('none'),
-    squashSystemMessages: z.boolean().default(false)
-  }),
-  regex: regexProfileSchema,
-  metadata: z.record(z.string(), z.unknown()).default({}),
-  legacy: z
-    .object({
-      source: z.literal('sillytavern'),
-      raw: z.unknown(),
-      report: z.unknown()
-    })
-    .optional(),
-  createdAt: z.number(),
-  updatedAt: z.number()
-});
+export const generationProfileSchema = z.preprocess(
+  (value) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      if (!('thinking' in record) && 'reasoning' in record) {
+        return { ...record, thinking: record.reasoning };
+      }
+    }
+    return value;
+  },
+  z.object({
+    id: z.string(),
+    name: z.string().min(1),
+    provider: providerProfileSchema,
+    sampler: samplerProfileSchema.default({}),
+    request: requestProfileSchema,
+    thinking: thinkingProfileSchema,
+    prompt: z.object({
+      mode: z.enum(['chat', 'text']).default('chat'),
+      slots: z.array(promptSlotSchema),
+      instruct: instructionTemplateSchema.optional(),
+      macroMode: z.enum(['none', 'sillytavern']).default('none'),
+      squashSystemMessages: z.boolean().default(false)
+    }),
+    regex: regexProfileSchema,
+    metadata: z.record(z.string(), z.unknown()).default({}),
+    legacy: z
+      .object({
+        source: z.literal('sillytavern'),
+        raw: z.unknown(),
+        report: z.unknown()
+      })
+      .optional(),
+    createdAt: z.number(),
+    updatedAt: z.number()
+  })
+);
 
 export type GenerationProfile = z.infer<typeof generationProfileSchema>;
 
@@ -205,9 +212,7 @@ export function createDefaultGenerationProfile(input: Partial<GenerationProfile>
       contextTokens: 8192
     },
     request: input.request ?? { stream: true },
-    reasoning: input.reasoning ?? {
-      display: true,
-      openByDefault: false,
+    thinking: input.thinking ?? {
       openai: { effort: 'default' },
       gemini: { includeThoughts: false, mode: 'default', level: 'medium' }
     },

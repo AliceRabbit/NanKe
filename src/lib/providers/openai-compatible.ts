@@ -90,7 +90,7 @@ export function buildOpenAICompatibleRequest(request: ProviderRequest, profile: 
     seed: request.seed ?? profile.sampler.seed,
     n: request.n ?? profile.sampler.n,
     stop,
-    reasoning_effort: profile.reasoning?.openai?.effort && profile.reasoning.openai.effort !== 'default' ? profile.reasoning.openai.effort : undefined
+    reasoning_effort: profile.thinking?.openai?.effort && profile.thinking.openai.effort !== 'default' ? profile.thinking.openai.effort : undefined
   };
 
   if (profile.provider.compatibility === 'extended') {
@@ -157,9 +157,9 @@ export function createOpenAICompatibleAdapter(fetchImpl: ProviderFetch = fetch):
       if (!streaming) {
         const payload = (await response.json()) as OpenAIChunk;
         const message = payload.choices?.[0]?.message;
-        const reasoning = openAIReasoningText(message?.reasoning_content, message?.reasoning, message?.reasoning_summary);
+        const thinking = openAIReasoningText(message?.reasoning_content, message?.reasoning, message?.reasoning_summary);
         const text = openAIContentText(message?.content) || payload.choices?.[0]?.text || '';
-        if (reasoning) yield { type: 'reasoning', text: reasoning, raw: payload };
+        if (thinking) yield { type: 'thinking', text: thinking, raw: payload };
         if (text) yield { type: 'text', text, raw: payload };
         yield { type: 'done', text: '' };
         return;
@@ -168,9 +168,9 @@ export function createOpenAICompatibleAdapter(fetchImpl: ProviderFetch = fetch):
       for await (const payload of parseSseStream(response)) {
         const chunk = payload as OpenAIChunk;
         const delta = chunk.choices?.[0]?.delta;
-        const reasoning = openAIReasoningText(delta?.reasoning_content, delta?.reasoning, delta?.reasoning_summary);
+        const thinking = openAIReasoningText(delta?.reasoning_content, delta?.reasoning, delta?.reasoning_summary);
         const text = openAIContentText(delta?.content) || chunk.choices?.[0]?.text || '';
-        if (reasoning) yield { type: 'reasoning', text: reasoning, raw: payload };
+        if (thinking) yield { type: 'thinking', text: thinking, raw: payload };
         if (text) yield { type: 'text', text, raw: payload };
       }
 

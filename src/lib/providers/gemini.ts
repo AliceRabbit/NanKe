@@ -47,13 +47,13 @@ function geminiRole(role: string): 'user' | 'model' {
 }
 
 export function buildGeminiThinkingConfig(profile: GenerationProfile) {
-  const reasoning = profile.reasoning?.gemini;
-  if (!reasoning) return undefined;
+  const thinking = profile.thinking?.gemini;
+  if (!thinking) return undefined;
 
   const config = withDefinedValues({
-    includeThoughts: reasoning.includeThoughts ? true : undefined,
-    thinkingBudget: reasoning.mode === 'off' ? 0 : reasoning.mode === 'budget' ? optionalNonNegativeInteger(reasoning.budget) : undefined,
-    thinkingLevel: reasoning.mode === 'level' ? reasoning.level : undefined
+    includeThoughts: thinking.includeThoughts ? true : undefined,
+    thinkingBudget: thinking.mode === 'off' ? 0 : thinking.mode === 'budget' ? optionalNonNegativeInteger(thinking.budget) : undefined,
+    thinkingLevel: thinking.mode === 'level' ? thinking.level : undefined
   });
 
   return Object.keys(config).length ? config : undefined;
@@ -179,19 +179,19 @@ function emptyGeminiResultError(payload: GeminiChunk): string | undefined {
 function splitGeminiCandidateText(payload: GeminiChunk) {
   const parts = payload.candidates?.[0]?.content?.parts ?? [];
   let text = '';
-  let reasoning = '';
+  let thinking = '';
 
   for (const part of parts) {
     const partText = part.text ?? '';
     if (!partText) continue;
     if (part.thought === true) {
-      reasoning += partText;
+      thinking += partText;
     } else {
       text += partText;
     }
   }
 
-  return { text, reasoning };
+  return { text, thinking };
 }
 
 export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderAdapter {
@@ -220,8 +220,8 @@ export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderA
 
       if (!streaming) {
         const payload = (await response.json()) as GeminiChunk;
-        const { text, reasoning } = splitGeminiCandidateText(payload);
-        if (reasoning) yield { type: 'reasoning', text: reasoning, raw: payload };
+        const { text, thinking } = splitGeminiCandidateText(payload);
+        if (thinking) yield { type: 'thinking', text: thinking, raw: payload };
         if (text) yield { type: 'text', text, raw: payload };
         yield { type: 'done', text: '' };
         return;
@@ -231,10 +231,10 @@ export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderA
       let emptyResultError: string | undefined;
       for await (const payload of parseSseStream(response)) {
         const chunk = payload as GeminiChunk;
-        const { text, reasoning } = splitGeminiCandidateText(chunk);
-        if (reasoning) {
+        const { text, thinking } = splitGeminiCandidateText(chunk);
+        if (thinking) {
           sawOutput = true;
-          yield { type: 'reasoning', text: reasoning, raw: payload };
+          yield { type: 'thinking', text: thinking, raw: payload };
         }
         if (text) {
           sawOutput = true;

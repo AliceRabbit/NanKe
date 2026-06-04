@@ -51,7 +51,9 @@ export async function PATCH({ request }) {
       if (typeof body.conversationId !== 'string' || typeof body.leafId !== 'string') {
         throw new AppError('conversationId and leafId are required.', 400, 'conversation_leaf_required');
       }
-      const conversation = context.conversations.setActiveLeaf(body.conversationId, body.leafId);
+      const conversation = context.conversations.setActiveLeaf(body.conversationId, body.leafId, {
+        restoreSubtree: body.restoreSubtree !== false
+      });
       if (!conversation) throw new AppError('Conversation leaf not found.', 404, 'conversation_leaf_not_found');
       return json(conversation);
     }

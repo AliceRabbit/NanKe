@@ -63,6 +63,10 @@ export type ConversationListOptions = {
   characterId?: string;
 };
 
+export type ActiveLeafOptions = {
+  restoreSubtree?: boolean;
+};
+
 export class ConversationRepository {
   constructor(
     private readonly db: DrizzleDatabase = getDatabase(),
@@ -223,12 +227,12 @@ export class ConversationRepository {
     return this.toMessage(node, true);
   }
 
-  setActiveLeaf(conversationId: string, leafId: string): ConversationWithMessages | undefined {
+  setActiveLeaf(conversationId: string, leafId: string, options: ActiveLeafOptions = {}): ConversationWithMessages | undefined {
     const conversation = this.get(conversationId);
     const node = this.getMessageNode(leafId);
     if (!conversation || !node || node.conversationId !== conversationId) return undefined;
 
-    const leaf = this.resolveRestoredLeaf(node) ?? node;
+    const leaf = options.restoreSubtree === false ? node : this.resolveRestoredLeaf(node) ?? node;
     const updated = conversationSchema.parse({
       ...conversation,
       activeLeafId: leaf.id,

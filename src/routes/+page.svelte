@@ -18,6 +18,7 @@
     Copy,
     Download,
     FileInput,
+    GitBranch,
     GripHorizontal,
     Image,
     MessageCircle,
@@ -1848,6 +1849,25 @@
     rememberConversation(conversation);
   }
 
+  async function continueFromMessage(message: ChatMessage) {
+    const nodeId = message.branch?.nodeId ?? message.id;
+    const conversationId = message.conversationId ?? activeConversationId;
+    if (!nodeId || !conversationId || isGenerating) return;
+    const conversation = await fetchJson<Conversation>('/api/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'set-active-leaf',
+        conversationId,
+        leafId: nodeId,
+        restoreSubtree: false
+      })
+    });
+    activeConversationId = conversation.id;
+    messages = conversation.messages ?? [];
+    rememberConversation(conversation);
+  }
+
   async function regenerateAssistantSibling(message: ChatMessage) {
     const nodeId = message.branch?.nodeId ?? message.id;
     if (!nodeId || !activeConversationId || isGenerating) return;
@@ -2477,8 +2497,19 @@
               {#if message.content.trim() || !message.thinking?.trim()}
                 <div class="message-content rich">{@html messageDisplayContent(message, index)}</div>
               {/if}
-              {#if message.branch && (message.branch.total > 1 || (message.role === 'assistant' && message.branch.isLatest))}
+              {#if message.branch && (message.branch.total > 1 || !message.branch.isLatest || (message.role === 'assistant' && message.branch.isLatest))}
                 <div class="branch-controls" aria-label="Message branches">
+                  {#if !message.branch.isLatest}
+                    <button
+                      type="button"
+                      title="Continue from here"
+                      aria-label="Continue from here"
+                      disabled={isGenerating}
+                      on:click={() => continueFromMessage(message)}
+                    >
+                      <GitBranch size={15} />
+                    </button>
+                  {/if}
                   <button
                     type="button"
                     title="Previous branch"

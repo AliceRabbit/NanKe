@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { eq } from 'drizzle-orm';
 import {
+  createConversation,
   conversationSchema,
   conversationSnapshotSchema,
   type Conversation,
@@ -113,6 +114,10 @@ export type ConversationSnapshotOptions = {
 export type ConversationSnapshotImportOptions = {
   title?: string;
   source?: 'import' | 'clone';
+};
+
+export type ConversationPathForkOptions = {
+  title?: string;
 };
 
 export class ConversationRepository {
@@ -312,6 +317,87 @@ export class ConversationRepository {
       title: title?.trim() || `Copy of ${snapshot.conversation.title}`,
       source: 'clone'
     });
+  }
+
+  forkPathToConversation(conversationId: string, nodeId: string, options: ConversationPathForkOptions = {}): ConversationWithMessages | undefined {
+    const sourceConversation = this.get(conversationId);
+    const sourceNode = this.getMessageNode(nodeId);
+    if (!sourceConversation || !sourceNode || sourceNode.conversationId !== conversationId || sourceNode.kind !== 'message' || sourceNode.status === 'deleted') {
+      return undefined;
+    }
+
+    const path = this.getPathNodesTo(conversationId, nodeId);
+    if (!path.length) return undefined;
+
+    const now = Date.now();
+    const fork = createConversation({
+      title: options.title?.trim() || `Fork of ${sourceConversation.title}`,
+      characterId: sourceConversation.characterId,
+      personaId: sourceConversation.personaId,
+      profileId: sourceConversation.profileId,
+      worldBookIds: sourceConversation.worldBookIds,
+      metadata: {
+        ...sourceConversation.metadata,
+        forkedFrom: {
+          conversationId: sourceConversation.id,
+          nodeId,
+          forkedAt: now
+        }
+      },
+      createdAt: now,
+      updatedAt: now
+    });
+
+    let parentId = fork.rootNodeId!;
+    const forkNodes = path.map((node, index) => {
+      const forkNode = createMessageNode({
+        conversationId: fork.id,
+        parentId,
+        role: node.role,
+        speakerId: node.speakerId,
+        speakerName: node.speakerName,
+        speakerAvatarAssetId: node.speakerAvatarAssetId,
+        content: node.content,
+        thinking: node.thinking,
+        siblingOrder: 0,
+        depth: index + 1,
+        tokenEstimate: node.tokenEstimate ?? estimateStoredNodeTokens(node),
+        metadata: {
+          ...node.metadata,
+          forkedFromNodeId: node.id
+        },
+        createdAt: node.createdAt,
+        updatedAt: now
+      });
+      parentId = forkNode.id;
+      return forkNode;
+    });
+    const activeLeaf = forkNodes.at(-1);
+    if (!activeLeaf) return undefined;
+
+    const transaction = this.sqlite.transaction(() => {
+      this.persistConversation(fork);
+      this.ensureRootNode(fork);
+      for (const node of forkNodes) {
+        this.insertNode(node);
+        if (node.parentId) this.updateAncestorsLastLeaf(node.parentId, node.id, now);
+      }
+      this.persistConversation(
+        conversationSchema.parse({
+          ...fork,
+          activeLeafId: activeLeaf.id,
+          nodeCount: forkNodes.length,
+          branchCount: 0,
+          activeDepth: activeLeaf.depth,
+          lastPreview: previewText(activeLeaf.content),
+          revision: 0,
+          updatedAt: now
+        })
+      );
+    });
+    transaction();
+
+    return this.getWithMessages(fork.id);
   }
 
   save(conversation: Conversation): Conversation {
@@ -998,6 +1084,11 @@ export class ConversationRepository {
 
 function estimateStoredTokens(message: NankeMessage): number {
   const contentLength = `${message.thinking ?? ''}${message.content}`.length;
+  return Math.max(1, Math.ceil(contentLength / 4));
+}
+
+function estimateStoredNodeTokens(node: MessageNode): number {
+  const contentLength = `${node.thinking ?? ''}${node.content}`.length;
   return Math.max(1, Math.ceil(contentLength / 4));
 }
 

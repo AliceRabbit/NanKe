@@ -1977,6 +1977,28 @@
     if (activeDrawer === 'chats') await refreshConversationTree(conversation.id);
   }
 
+  async function forkMessagePathToConversation(message: ChatMessage) {
+    const nodeId = message.branch?.nodeId ?? message.id;
+    const conversationId = message.conversationId ?? activeConversationId;
+    if (!nodeId || !conversationId || isGenerating) return;
+    status = 'Forking';
+    const conversation = await fetchJson<Conversation>('/api/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'fork-path',
+        conversationId,
+        nodeId
+      })
+    });
+    activeConversationId = conversation.id;
+    messages = conversation.messages ?? [];
+    rememberConversation(conversation);
+    activeView = 'chat';
+    if (activeDrawer === 'chats') await refreshConversationTree(conversation.id);
+    status = 'Ready';
+  }
+
   async function focusConversationTreeNode(node: ConversationTreeNode, restoreSubtree = true) {
     if (!activeConversationId || isGenerating) return;
     const conversation = await fetchJson<Conversation>('/api/conversations', {
@@ -2658,6 +2680,15 @@
                     on:click={() => editMessageAsBranch(message)}
                   >
                     <Pencil size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    title="Save path as chat"
+                    aria-label="Save path as chat"
+                    disabled={isGenerating}
+                    on:click={() => forkMessagePathToConversation(message)}
+                  >
+                    <MessageSquare size={14} />
                   </button>
                   {#if !message.branch.isLatest}
                     <button

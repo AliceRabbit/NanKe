@@ -188,6 +188,17 @@ describe('storage repositories', () => {
     });
     expect(clonedSnapshot?.nodes.find((node) => node.id === second.id)).toBeUndefined();
 
+    const forked = repository.forkPathToConversation(conversation.id, first.id);
+    expect(forked?.id).not.toBe(conversation.id);
+    expect(forked?.title).toBe('Fork of Snapshot chat');
+    expect(forked?.messages.map((message) => message.content)).toEqual(['Pick one.', 'Option A.']);
+    expect(forked?.branchCount).toBe(0);
+    expect(forked?.metadata.forkedFrom).toMatchObject({ conversationId: conversation.id, nodeId: first.id });
+
+    const forkedSnapshot = forked ? repository.exportSnapshot(forked.id) : undefined;
+    expect(forkedSnapshot?.nodes.find((node) => node.content === 'Option B.')).toBeUndefined();
+    expect(forkedSnapshot?.nodes.find((node) => node.id === first.id)).toBeUndefined();
+
     sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });

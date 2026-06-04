@@ -83,6 +83,17 @@ export async function PATCH({ request }) {
       return json(conversation, { status: 201 });
     }
 
+    if (body?.action === 'fork-path') {
+      if (typeof body.conversationId !== 'string' || typeof body.nodeId !== 'string') {
+        throw new AppError('conversationId and nodeId are required.', 400, 'conversation_fork_required');
+      }
+      const conversation = context.conversations.forkPathToConversation(body.conversationId, body.nodeId, {
+        title: typeof body.title === 'string' ? body.title : undefined
+      });
+      if (!conversation) throw new AppError('Conversation node not found.', 404, 'conversation_node_not_found');
+      return json(conversation, { status: 201 });
+    }
+
     if (body?.action === 'set-active-leaf') {
       if (typeof body.conversationId !== 'string' || typeof body.leafId !== 'string') {
         throw new AppError('conversationId and leafId are required.', 400, 'conversation_leaf_required');

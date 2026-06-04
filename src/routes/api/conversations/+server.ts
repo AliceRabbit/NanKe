@@ -9,6 +9,18 @@ export function GET({ url }) {
     const id = url.searchParams.get('id');
     const characterId = url.searchParams.get('characterId') ?? undefined;
     const includeArchived = url.searchParams.get('includeArchived') === 'true';
+    if (id && url.searchParams.get('export') === 'true') {
+      const snapshot = context.conversations.exportSnapshot(id, {
+        includeDeleted: url.searchParams.get('includeDeleted') === 'true'
+      });
+      if (!snapshot) throw new AppError('Conversation not found.', 404, 'conversation_not_found');
+      return new Response(JSON.stringify(snapshot, null, 2), {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${downloadFilename(snapshot.conversation.title)}.nanke-conversation.json"`
+        }
+      });
+    }
     if (id && url.searchParams.get('tree') === 'true') {
       const tree = context.conversations.getTree(id);
       if (!tree) throw new AppError('Conversation not found.', 404, 'conversation_not_found');
@@ -18,6 +30,16 @@ export function GET({ url }) {
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+function downloadFilename(title: string): string {
+  return (
+    title
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, '_')
+      .replace(/\s+/g, ' ')
+      .slice(0, 80) || 'conversation'
+  );
 }
 
 export async function POST({ request }) {

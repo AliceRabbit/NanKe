@@ -56,6 +56,16 @@ type MessageNodeRow = {
   updated_at: number;
 };
 
+type MessageAssetRow = {
+  id: string;
+  message_node_id: string;
+  asset_id: string;
+  kind: string;
+  sort_order: number;
+  data: string;
+  created_at: number;
+};
+
 export type SwitchSiblingDirection = 'left' | 'right';
 
 export type ConversationListOptions = {
@@ -87,6 +97,30 @@ export type ConversationTreeNode = {
 export type ConversationTreeSummary = {
   conversation: Conversation;
   nodes: ConversationTreeNode[];
+};
+
+export type ConversationSnapshotAsset = {
+  id: string;
+  messageNodeId: string;
+  assetId: string;
+  kind: string;
+  sortOrder: number;
+  data: Record<string, unknown>;
+  createdAt: number;
+};
+
+export type ConversationSnapshot = {
+  format: 'nanke.conversation.snapshot';
+  version: 1;
+  exportedAt: number;
+  conversation: Conversation;
+  nodes: MessageNode[];
+  activePathNodeIds: string[];
+  assets: ConversationSnapshotAsset[];
+};
+
+export type ConversationSnapshotOptions = {
+  includeDeleted?: boolean;
 };
 
 export class ConversationRepository {
@@ -174,6 +208,39 @@ export class ConversationRepository {
           updatedAt: node.updatedAt
         };
       })
+    };
+  }
+
+  exportSnapshot(id: string, options: ConversationSnapshotOptions = {}): ConversationSnapshot | undefined {
+    const conversation = this.get(id);
+    if (!conversation) return undefined;
+
+    const rows = this.sqlite
+      .prepare(
+        `
+        SELECT *
+        FROM message_nodes
+        WHERE conversation_id = @id
+          ${options.includeDeleted ? '' : "AND status != 'deleted'"}
+        ORDER BY depth ASC, sibling_order ASC, created_at ASC
+      `
+      )
+      .all({ id }) as MessageNodeRow[];
+    const nodes = rows.map((row) => this.hydrateMessageNode(row));
+    const activePathNodeIds = conversation.activeLeafId
+      ? this.pathNodes(conversation.id, conversation.activeLeafId)
+          .filter((node) => options.includeDeleted || node.status !== 'deleted')
+          .map((node) => node.id)
+      : [];
+
+    return {
+      format: 'nanke.conversation.snapshot',
+      version: 1,
+      exportedAt: Date.now(),
+      conversation,
+      nodes,
+      activePathNodeIds,
+      assets: this.snapshotAssets(nodes.map((node) => node.id))
     };
   }
 
@@ -535,6 +602,30 @@ export class ConversationRepository {
     const existing = this.getMessageNode(conversation.rootNodeId);
     if (existing) return;
     this.insertNode(createRootMessageNode(conversation.id, conversation.rootNodeId));
+  }
+
+  private snapshotAssets(messageNodeIds: string[]): ConversationSnapshotAsset[] {
+    if (!messageNodeIds.length) return [];
+    const params = Object.fromEntries(messageNodeIds.map((id, index) => [`id${index}`, id]));
+    const rows = this.sqlite
+      .prepare(
+        `
+        SELECT *
+        FROM message_assets
+        WHERE message_node_id IN (${messageNodeIds.map((_, index) => `@id${index}`).join(', ')})
+        ORDER BY message_node_id ASC, sort_order ASC, created_at ASC
+      `
+      )
+      .all(params) as MessageAssetRow[];
+    return rows.map((row) => ({
+      id: row.id,
+      messageNodeId: row.message_node_id,
+      assetId: row.asset_id,
+      kind: row.kind,
+      sortOrder: row.sort_order,
+      data: JSON.parse(row.data) as Record<string, unknown>,
+      createdAt: row.created_at
+    }));
   }
 
   private pathMessages(conversationId: string, leafId: string): NankeMessage[] {

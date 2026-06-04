@@ -1704,6 +1704,35 @@
     }
   }
 
+  async function exportConversation(event: MouseEvent, conversation: Conversation) {
+    event.stopPropagation();
+    status = 'Exporting';
+    try {
+      const response = await fetch(`/api/conversations?id=${encodeURIComponent(conversation.id)}&export=true`);
+      if (!response.ok) throw new Error(await response.text());
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = conversationSnapshotFilename(conversation.title);
+      link.click();
+      URL.revokeObjectURL(url);
+      status = 'Ready';
+    } catch {
+      status = 'Export failed';
+    }
+  }
+
+  function conversationSnapshotFilename(title: string): string {
+    const name =
+      title
+        .trim()
+        .replace(/[\\/:*?"<>|]+/g, '_')
+        .replace(/\s+/g, ' ')
+        .slice(0, 80) || 'conversation';
+    return `${name}.nanke-conversation.json`;
+  }
+
   async function sendMessage() {
     if (isGenerating) {
       stopGeneration();
@@ -2806,6 +2835,9 @@
                     <div class="conversation-row-actions">
                       <button type="button" title="Rename chat" aria-label="Rename chat" on:click={(event) => renameConversation(event, conversation)}>
                         <Pencil size={14} />
+                      </button>
+                      <button type="button" title="Export chat" aria-label="Export chat" on:click={(event) => exportConversation(event, conversation)}>
+                        <Download size={14} />
                       </button>
                       <button
                         type="button"

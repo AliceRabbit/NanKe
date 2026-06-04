@@ -139,6 +139,33 @@ describe('storage repositories', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('exports a native conversation snapshot with the full active graph', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const repository = new ConversationRepository(db, sqlite);
+
+    const conversation = repository.save(createConversation({ title: 'Snapshot chat' }));
+    const user = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Pick one.' }));
+    const first = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'Option A.' }));
+    const second = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'Option B.' }), user.id);
+
+    const snapshot = repository.exportSnapshot(conversation.id);
+    expect(snapshot?.format).toBe('nanke.conversation.snapshot');
+    expect(snapshot?.version).toBe(1);
+    expect(snapshot?.conversation.id).toBe(conversation.id);
+    expect(snapshot?.nodes.map((node) => node.id)).toContain(conversation.rootNodeId);
+    expect(snapshot?.nodes.map((node) => node.id)).toContain(first.id);
+    expect(snapshot?.nodes.map((node) => node.id)).toContain(second.id);
+    expect(snapshot?.activePathNodeIds).toEqual([conversation.rootNodeId, user.id, second.id]);
+    expect(snapshot?.nodes.find((node) => node.id === first.id)?.content).toBe('Option A.');
+    expect(snapshot?.assets).toEqual([]);
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('soft-deletes a node subtree and falls back from an active deleted branch', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
     const sqlite = new Database(path.join(dir, 'test.db'));

@@ -1,6 +1,7 @@
 import { GenerationPipeline, inspectPrompt } from '$lib/core';
 import { applyRegexScripts, hasRegexScriptForPlacement, REGEX_PLACEMENT } from '$lib/core/regex';
 import { renderPromptTemplate } from '$lib/core/prompt/PromptCompiler';
+import { createConversation } from '$lib/schemas/conversation';
 import { createMessage } from '$lib/schemas/message';
 import type { NankeMessage } from '$lib/schemas/message';
 import type { ProviderRequest } from '$lib/schemas/provider';
@@ -14,14 +15,15 @@ export type GenerateInput = {
   profileId?: string;
   characterId?: string;
   personaId?: string;
-  message: string;
+  message?: string;
+  regenerateNodeId?: string;
   dryRun?: boolean;
 };
 
 export type GenerationStreamEvent =
   | { type: 'text' | 'thinking'; text: string }
   | { type: 'inspector'; text: string }
-  | { type: 'done'; text: '' };
+  | { type: 'done'; text: ''; conversationId?: string; activeLeafId?: string };
 
 export class GenerationAppService {
   private readonly pipeline = new GenerationPipeline();
@@ -36,6 +38,17 @@ export class GenerationAppService {
     if (!profile) throw new AppError('Generation profile not found.', 404, 'profile_not_found');
 
     const existingConversation = input.conversationId ? this.context.conversations.get(input.conversationId) : undefined;
+    const regenerateNode = input.regenerateNodeId ? this.context.conversations.getMessageNode(input.regenerateNodeId) : undefined;
+    if (input.regenerateNodeId && (!regenerateNode || regenerateNode.kind !== 'message' || regenerateNode.role !== 'assistant')) {
+      throw new AppError('Regeneration target must be an assistant message.', 400, 'regenerate_target_invalid');
+    }
+    if (regenerateNode && regenerateNode.conversationId !== input.conversationId) {
+      throw new AppError('Regeneration target does not belong to the requested conversation.', 400, 'regenerate_conversation_mismatch');
+    }
+    const userInput = input.message?.trim() ?? '';
+    if (!regenerateNode && !userInput) {
+      throw new AppError('Message is required for generation.', 400, 'message_required');
+    }
     const defaultPersona = this.context.personas.getDefault();
     const personaId = input.personaId ?? existingConversation?.personaId ?? defaultPersona?.id;
     const conversation =
@@ -43,15 +56,13 @@ export class GenerationAppService {
       (input.dryRun
         ? undefined
         : this.context.conversations.save({
-            id: crypto.randomUUID(),
-            title: input.message.slice(0, 40) || 'New Chat',
-            characterId: input.characterId,
-            personaId,
-            profileId: profile.id,
-            worldBookIds: [],
-            metadata: {},
-            createdAt: Date.now(),
-            updatedAt: Date.now()
+            ...createConversation({
+              title: userInput.slice(0, 40) || 'New Chat',
+              characterId: input.characterId,
+              personaId,
+              profileId: profile.id,
+              worldBookIds: []
+            })
           }));
 
     const conversationId = conversation?.id ?? input.conversationId;
@@ -63,24 +74,30 @@ export class GenerationAppService {
       charIfNotGroup: character?.name ?? 'Assistant',
       user: persona?.name ?? 'User'
     };
-    const userContent = applyRegexScripts(input.message, regexScripts, {
-      placement: REGEX_PLACEMENT.USER_INPUT,
-      macros: regexMacros
-    });
 
     if (!input.dryRun && conversation && input.personaId && input.personaId !== conversation.personaId) {
       this.context.conversations.save({ ...conversation, personaId: input.personaId });
     }
 
-    const userMessage = createMessage({
-      conversationId,
-      role: 'user',
-      content: userContent,
-      name: persona?.name
-    });
-    const existingMessages = conversationId ? this.context.conversations.listMessages(conversationId) : [];
+    const existingMessages =
+      conversationId && regenerateNode?.parentId
+        ? this.context.conversations.getPathNodesTo(conversationId, regenerateNode.parentId).map((node) =>
+            createMessage({
+              id: node.id,
+              conversationId: node.conversationId,
+              role: node.role ?? 'system',
+              name: node.speakerName,
+              content: node.content,
+              thinking: node.thinking,
+              createdAt: node.createdAt,
+              metadata: node.metadata
+            })
+          )
+        : conversationId
+          ? this.context.conversations.listMessages(conversationId)
+          : [];
     const openingMessage =
-      character?.firstMessage && existingMessages.length === 0
+      !regenerateNode && character?.firstMessage && existingMessages.length === 0
         ? createMessage({
             conversationId,
             role: 'assistant',
@@ -92,11 +109,22 @@ export class GenerationAppService {
             name: character.name
           })
         : undefined;
-    const messages = [...existingMessages, ...(openingMessage ? [openingMessage] : []), userMessage];
+    const userMessage = regenerateNode
+      ? undefined
+      : createMessage({
+          conversationId,
+          role: 'user',
+          content: applyRegexScripts(userInput, regexScripts, {
+            placement: REGEX_PLACEMENT.USER_INPUT,
+            macros: regexMacros
+          }),
+          name: persona?.name
+        });
+    const messages = [...existingMessages, ...(openingMessage ? [openingMessage] : []), ...(userMessage ? [userMessage] : [])];
     if (!input.dryRun) {
       if (!conversationId) throw new AppError('Could not create conversation.', 500, 'conversation_create_failed');
       if (openingMessage) this.context.conversations.appendMessage(openingMessage);
-      this.context.conversations.appendMessage(userMessage);
+      if (userMessage) this.context.conversations.appendMessage(userMessage);
     }
 
     const worldBooksById = new Map(
@@ -143,6 +171,7 @@ export class GenerationAppService {
 
     const adapter = this.providers.resolve(profile);
     let assistantText = '';
+    let assistantThinking = '';
     const shouldBufferOutput = hasRegexScriptForPlacement(regexScripts, {
       placement: REGEX_PLACEMENT.AI_OUTPUT,
       macros: regexMacros
@@ -150,6 +179,7 @@ export class GenerationAppService {
     for await (const chunk of adapter.stream(providerRequest, profile, signal)) {
       if (chunk.type === 'error') throw new AppError(chunk.text, 502, 'provider_error');
       if (chunk.type === 'thinking') {
+        assistantThinking += chunk.text;
         yield { type: 'thinking', text: chunk.text };
       }
       if (chunk.type === 'text') {
@@ -166,12 +196,16 @@ export class GenerationAppService {
       if (shouldBufferOutput) yield { type: 'text', text: assistantText };
     }
 
-    if (assistantText) {
+    if (assistantText || assistantThinking) {
       if (!conversationId) throw new AppError('Assistant response has no conversation target.', 500, 'conversation_missing');
-      this.context.conversations.appendMessage(createMessage({ conversationId, role: 'assistant', name: character?.name, content: assistantText }));
+      this.context.conversations.appendMessage(
+        createMessage({ conversationId, role: 'assistant', name: character?.name, content: assistantText, thinking: assistantThinking || undefined }),
+        regenerateNode?.parentId ?? undefined
+      );
     }
 
-    yield { type: 'done', text: '' };
+    const savedConversation = conversationId ? this.context.conversations.get(conversationId) : undefined;
+    yield { type: 'done', text: '', conversationId, activeLeafId: savedConversation?.activeLeafId };
   }
 }
 

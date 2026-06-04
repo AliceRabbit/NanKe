@@ -1,7 +1,7 @@
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type { Character } from '$lib/schemas/character';
 import type { Conversation } from '$lib/schemas/conversation';
-import type { NankeMessage } from '$lib/schemas/message';
+import type { MessageNode, NankeMessage } from '$lib/schemas/message';
 import type { GenerationProfile } from '$lib/schemas/profile';
 import type { UserPersona } from '$lib/schemas/user-persona';
 import type { WorldBook } from '$lib/schemas/worldbook';
@@ -21,7 +21,36 @@ export const conversations = sqliteTable('conversations', {
   characterId: text('character_id'),
   personaId: text('persona_id'),
   profileId: text('profile_id'),
+  rootNodeId: text('root_node_id'),
+  activeLeafId: text('active_leaf_id'),
+  nodeCount: integer('node_count').notNull().default(0),
+  branchCount: integer('branch_count').notNull().default(0),
+  activeDepth: integer('active_depth').notNull().default(0),
+  lastPreview: text('last_preview'),
+  revision: integer('revision').notNull().default(0),
+  archivedAt: integer('archived_at'),
   data: text('data', { mode: 'json' }).$type<Conversation>().notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+});
+
+export const messageNodes = sqliteTable('message_nodes', {
+  id: text('id').primaryKey(),
+  conversationId: text('conversation_id').notNull(),
+  parentId: text('parent_id'),
+  kind: text('kind').notNull(),
+  role: text('role'),
+  speakerId: text('speaker_id'),
+  speakerName: text('speaker_name'),
+  speakerAvatarAssetId: text('speaker_avatar_asset_id'),
+  content: text('content').notNull().default(''),
+  thinking: text('thinking'),
+  siblingOrder: integer('sibling_order').notNull(),
+  depth: integer('depth').notNull(),
+  status: text('status').notNull(),
+  lastActiveLeafId: text('last_active_leaf_id'),
+  tokenEstimate: integer('token_estimate'),
+  data: text('data', { mode: 'json' }).$type<MessageNode>().notNull(),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull()
 });
@@ -31,6 +60,16 @@ export const messages = sqliteTable('messages', {
   conversationId: text('conversation_id').notNull(),
   role: text('role').notNull(),
   data: text('data', { mode: 'json' }).$type<NankeMessage>().notNull(),
+  createdAt: integer('created_at').notNull()
+});
+
+export const messageAssets = sqliteTable('message_assets', {
+  id: text('id').primaryKey(),
+  messageNodeId: text('message_node_id').notNull(),
+  assetId: text('asset_id').notNull(),
+  kind: text('kind').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  data: text('data', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
   createdAt: integer('created_at').notNull()
 });
 

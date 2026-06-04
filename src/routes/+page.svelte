@@ -10,6 +10,8 @@
     ArrowUp,
     Bot,
     BookOpen,
+    ChevronLeft,
+    ChevronRight,
     CircleStop,
     Copy,
     Download,
@@ -165,10 +167,41 @@
     createdAt: number;
     updatedAt: number;
   };
-  type Conversation = { id: string; title: string; characterId?: string; personaId?: string; profileId?: string; messages?: ChatMessage[] };
-  type ChatMessage = { role: 'user' | 'assistant' | 'system'; name?: string; content: string; thinking?: string };
+  type MessageBranch = {
+    nodeId: string;
+    parentId: string | null;
+    current: number;
+    total: number;
+    siblingNodeIds?: string[];
+    isLatest?: boolean;
+  };
+  type Conversation = {
+    id: string;
+    title: string;
+    characterId?: string;
+    personaId?: string;
+    profileId?: string;
+    rootNodeId?: string;
+    activeLeafId?: string;
+    nodeCount?: number;
+    branchCount?: number;
+    activeDepth?: number;
+    lastPreview?: string;
+    revision?: number;
+    messages?: ChatMessage[];
+    updatedAt?: number;
+  };
+  type ChatMessage = {
+    id?: string;
+    conversationId?: string;
+    role: 'user' | 'assistant' | 'system';
+    name?: string;
+    content: string;
+    thinking?: string;
+    branch?: MessageBranch;
+  };
   type ZoomedAvatar = { key: string; name: string; role: ChatMessage['role']; src: string; initials: string };
-  type GenerationStreamEvent = { type: 'text' | 'thinking' | 'inspector' | 'done' | 'error'; text?: string };
+  type GenerationStreamEvent = { type: 'text' | 'thinking' | 'inspector' | 'done' | 'error'; text?: string; conversationId?: string; activeLeafId?: string };
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
@@ -511,6 +544,22 @@
     const response = await fetch(url, init);
     if (!response.ok) throw new Error(await response.text());
     return (await response.json()) as T;
+  }
+
+  function rememberConversation(conversation: Conversation) {
+    conversations = [conversation, ...conversations.filter((item) => item.id !== conversation.id)].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  }
+
+  async function refreshConversationState(id: string, options: { close?: boolean } = {}) {
+    const conversation = await fetchJson<Conversation>(`/api/conversations?id=${encodeURIComponent(id)}`);
+    activeConversationId = conversation.id;
+    messages = conversation.messages ?? [];
+    activeCharacterId = conversation.characterId ?? activeCharacterId;
+    activePersonaId = conversation.personaId ?? activePersonaId;
+    activeProfileId = conversation.profileId ?? activeProfileId;
+    rememberConversation(conversation);
+    if (options.close) closeDrawer();
+    return conversation;
   }
 
   async function refreshAll() {
@@ -1483,7 +1532,7 @@
       })
     });
     activeConversationId = conversation.id;
-    conversations = [conversation, ...conversations];
+    rememberConversation(conversation);
     if (activeCharacter?.firstMessage && messages.length === 0) {
       messages = [{ role: 'assistant', name: activeCharacter.name, content: renderCharacterTemplate(activeCharacter.firstMessage) }];
     }
@@ -1491,15 +1540,9 @@
   }
 
   async function loadConversation(id: string) {
-    activeConversationId = id;
     openingPreviewCharacterId = '';
     activeView = 'chat';
-    const conversation = await fetchJson<Conversation>(`/api/conversations?id=${encodeURIComponent(id)}`);
-    messages = conversation.messages ?? [];
-    activeCharacterId = conversation.characterId ?? activeCharacterId;
-    activePersonaId = conversation.personaId ?? activePersonaId;
-    activeProfileId = conversation.profileId ?? activeProfileId;
-    closeDrawer();
+    await refreshConversationState(id, { close: true });
   }
 
   async function sendMessage() {
@@ -1518,22 +1561,27 @@
       { role: 'user', name: activePersona?.name, content },
       { role: 'assistant', name: activeCharacter?.name, content: '' }
     ];
+    await streamGeneration({
+      conversationId,
+      profileId: activeProfileId || undefined,
+      characterId: activeCharacterId || undefined,
+      personaId: activePersonaId || undefined,
+      message: content
+    });
+  }
+
+  async function streamGeneration(body: Record<string, unknown>) {
     status = 'Generating';
     const controller = new AbortController();
     generationAbortController = controller;
+    let completedConversationId = typeof body.conversationId === 'string' ? body.conversationId : '';
 
     try {
       const response = await fetch('/api/generate', {
         method: 'POST',
         signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          conversationId,
-          profileId: activeProfileId || undefined,
-          characterId: activeCharacterId || undefined,
-          personaId: activePersonaId || undefined,
-          message: content
-        })
+        body: JSON.stringify(body)
       });
 
       if (!response.body || !response.ok) {
@@ -1550,6 +1598,7 @@
         const event = parseGenerationStreamLine(line);
         if (event.type === 'thinking') appendAssistantDraftThinking(event.text ?? '');
         if (event.type === 'text') appendAssistantDraftText(event.text ?? '');
+        if (event.type === 'done') completedConversationId = event.conversationId ?? completedConversationId;
         if (event.type === 'error') {
           replaceAssistantDraft(`Generation error: ${event.text ?? 'Unknown error'}`);
           status = 'Generation error';
@@ -1570,6 +1619,9 @@
         consumeLine(buffer);
       }
       status = controller.signal.aborted ? 'Stopped' : 'Ready';
+      if (!controller.signal.aborted && completedConversationId) {
+        await refreshConversationState(completedConversationId);
+      }
     } catch (error) {
       if (controller.signal.aborted) {
         removeEmptyAssistantDraft();
@@ -1656,6 +1708,51 @@
   function stopGeneration() {
     generationAbortController?.abort();
     status = 'Stopping';
+  }
+
+  async function switchMessageSibling(message: ChatMessage, direction: 'left' | 'right') {
+    const nodeId = message.branch?.nodeId ?? message.id;
+    if (!nodeId || isGenerating) return;
+    const conversation = await fetchJson<Conversation>('/api/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'switch-sibling',
+        messageId: nodeId,
+        direction
+      })
+    });
+    activeConversationId = conversation.id;
+    messages = conversation.messages ?? [];
+    rememberConversation(conversation);
+  }
+
+  async function regenerateAssistantSibling(message: ChatMessage) {
+    const nodeId = message.branch?.nodeId ?? message.id;
+    if (!nodeId || !activeConversationId || isGenerating) return;
+    const lastIndex = messages.findIndex((item) => (item.branch?.nodeId ?? item.id) === nodeId);
+    if (lastIndex >= 0) {
+      messages = [...messages.slice(0, lastIndex), { role: 'assistant', name: activeCharacter?.name, content: '' }];
+    }
+    await streamGeneration({
+      conversationId: activeConversationId,
+      profileId: activeProfileId || undefined,
+      characterId: activeCharacterId || undefined,
+      personaId: activePersonaId || undefined,
+      regenerateNodeId: nodeId
+    });
+  }
+
+  async function nextMessageBranch(message: ChatMessage) {
+    const branch = message.branch;
+    if (!branch) return;
+    if (branch.current < branch.total) {
+      await switchMessageSibling(message, 'right');
+      return;
+    }
+    if (message.role === 'assistant' && branch.isLatest) {
+      await regenerateAssistantSibling(message);
+    }
   }
 
   async function inspectCurrentPrompt() {
@@ -2258,6 +2355,29 @@
               {/if}
               {#if message.content.trim() || !message.thinking?.trim()}
                 <div class="message-content rich">{@html messageDisplayContent(message, index)}</div>
+              {/if}
+              {#if message.branch && (message.branch.total > 1 || (message.role === 'assistant' && message.branch.isLatest))}
+                <div class="branch-controls" aria-label="Message branches">
+                  <button
+                    type="button"
+                    title="Previous branch"
+                    aria-label="Previous branch"
+                    disabled={isGenerating || message.branch.current <= 1}
+                    on:click={() => switchMessageSibling(message, 'left')}
+                  >
+                    <ChevronLeft size={15} />
+                  </button>
+                  <span>{message.branch.current}/{message.branch.total}</span>
+                  <button
+                    type="button"
+                    title={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
+                    aria-label={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
+                    disabled={isGenerating || (message.branch.current >= message.branch.total && !(message.role === 'assistant' && message.branch.isLatest))}
+                    on:click={() => nextMessageBranch(message)}
+                  >
+                    <ChevronRight size={15} />
+                  </button>
+                </div>
               {/if}
             </div>
           </article>
@@ -4119,6 +4239,52 @@
 
   .message-content.rich :global(p:last-child) {
     margin-bottom: 0;
+  }
+
+  .branch-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 10px;
+    min-height: 28px;
+    border: 1px solid #d9dfd8;
+    border-radius: 8px;
+    background: #f7f9f6;
+    padding: 2px;
+    color: #53615a;
+    font-size: 12px;
+  }
+
+  .message-row.user .branch-controls {
+    background: #eef8f1;
+  }
+
+  .branch-controls button {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+
+  .branch-controls button:not(:disabled):hover {
+    background: #e3ebe4;
+    color: #1f3b2b;
+  }
+
+  .branch-controls button:disabled {
+    cursor: default;
+    opacity: 0.36;
+  }
+
+  .branch-controls span {
+    min-width: 38px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
   }
 
   .message-content.rich :global(ul),

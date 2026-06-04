@@ -18,7 +18,7 @@ describe('storage repositories', () => {
     initializeDatabase(sqlite);
     const db = drizzle(sqlite, { schema });
     const personas = new UserPersonaRepository(db);
-    const repository = new ConversationRepository(db);
+    const repository = new ConversationRepository(db, sqlite);
 
     const persona = personas.save(createUserPersona({ name: 'Mira', description: 'Careful archivist.', isDefault: true }));
     const conversation = repository.save(createConversation({ title: 'Test chat', personaId: persona.id }));
@@ -29,6 +29,34 @@ describe('storage repositories', () => {
     expect(loaded?.personaId).toBe(persona.id);
     expect(loaded?.messages[0].content).toBe('Hello');
     expect(personas.getDefault()?.name).toBe('Mira');
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('stores assistant alternatives as sibling nodes on the active path', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const repository = new ConversationRepository(db, sqlite);
+
+    const conversation = repository.save(createConversation({ title: 'Branching chat' }));
+    const user = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Try again.' }));
+    const first = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'First answer.' }));
+    const second = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'Second answer.' }), user.id);
+
+    let loaded = repository.getWithMessages(conversation.id);
+    expect(loaded?.activeLeafId).toBe(second.id);
+    expect(loaded?.branchCount).toBe(1);
+    expect(loaded?.messages.at(-1)?.content).toBe('Second answer.');
+    expect(loaded?.messages.at(-1)?.branch?.current).toBe(2);
+    expect(loaded?.messages.at(-1)?.branch?.total).toBe(2);
+
+    loaded = repository.switchSibling(first.id, 'left');
+    expect(loaded?.activeLeafId).toBe(first.id);
+    expect(loaded?.messages.at(-1)?.content).toBe('First answer.');
+    expect(loaded?.messages.at(-1)?.branch?.current).toBe(1);
 
     sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });

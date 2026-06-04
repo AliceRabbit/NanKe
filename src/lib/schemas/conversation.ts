@@ -8,6 +8,14 @@ export const conversationSchema = z.object({
   personaId: z.string().optional(),
   worldBookIds: z.array(z.string()).default([]),
   profileId: z.string().optional(),
+  rootNodeId: z.string().optional(),
+  activeLeafId: z.string().optional(),
+  nodeCount: z.number().int().nonnegative().default(0),
+  branchCount: z.number().int().nonnegative().default(0),
+  activeDepth: z.number().int().nonnegative().default(0),
+  lastPreview: z.string().optional(),
+  revision: z.number().int().nonnegative().default(0),
+  archivedAt: z.number().optional(),
   metadata: z.record(z.string(), z.unknown()).default({}),
   createdAt: z.number(),
   updatedAt: z.number()
@@ -23,13 +31,23 @@ export type ConversationWithMessages = z.infer<typeof conversationWithMessagesSc
 
 export function createConversation(input: Partial<Conversation> & Pick<Conversation, 'title'>): Conversation {
   const now = Date.now();
+  const id = input.id ?? crypto.randomUUID();
+  const rootNodeId = input.rootNodeId ?? crypto.randomUUID();
   return conversationSchema.parse({
-    id: input.id ?? crypto.randomUUID(),
+    id,
     title: input.title,
     characterId: input.characterId,
     personaId: input.personaId,
     worldBookIds: input.worldBookIds ?? [],
     profileId: input.profileId,
+    rootNodeId,
+    activeLeafId: input.activeLeafId ?? rootNodeId,
+    nodeCount: input.nodeCount ?? 0,
+    branchCount: input.branchCount ?? 0,
+    activeDepth: input.activeDepth ?? 0,
+    lastPreview: input.lastPreview,
+    revision: input.revision ?? 0,
+    archivedAt: input.archivedAt,
     metadata: input.metadata ?? {},
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now

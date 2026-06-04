@@ -18,6 +18,11 @@ export type GenerateInput = {
   dryRun?: boolean;
 };
 
+export type GenerationStreamEvent =
+  | { type: 'text' | 'reasoning'; text: string }
+  | { type: 'inspector'; text: string }
+  | { type: 'done'; text: '' };
+
 export class GenerationAppService {
   private readonly pipeline = new GenerationPipeline();
 
@@ -26,7 +31,7 @@ export class GenerationAppService {
     private readonly providers: ProviderRegistry = createDefaultProviderRegistry()
   ) {}
 
-  async *generate(input: GenerateInput, signal?: AbortSignal): AsyncIterable<string> {
+  async *generate(input: GenerateInput, signal?: AbortSignal): AsyncIterable<GenerationStreamEvent> {
     const profile = input.profileId ? this.context.profiles.get(input.profileId) : this.context.profiles.ensureDefault();
     if (!profile) throw new AppError('Generation profile not found.', 404, 'profile_not_found');
 
@@ -114,7 +119,7 @@ export class GenerationAppService {
     });
 
     if (input.dryRun) {
-      yield JSON.stringify({ conversationId, inspector: inspectPrompt(compiled) });
+      yield { type: 'inspector', text: JSON.stringify({ conversationId, inspector: inspectPrompt(compiled) }) };
       return;
     }
 
@@ -144,9 +149,12 @@ export class GenerationAppService {
     });
     for await (const chunk of adapter.stream(providerRequest, profile, signal)) {
       if (chunk.type === 'error') throw new AppError(chunk.text, 502, 'provider_error');
+      if (chunk.type === 'reasoning' && profile.reasoning.display !== false) {
+        yield { type: 'reasoning', text: chunk.text };
+      }
       if (chunk.type === 'text') {
         assistantText += chunk.text;
-        if (!shouldBufferOutput) yield chunk.text;
+        if (!shouldBufferOutput) yield { type: 'text', text: chunk.text };
       }
     }
 
@@ -155,13 +163,15 @@ export class GenerationAppService {
         placement: REGEX_PLACEMENT.AI_OUTPUT,
         macros: regexMacros
       });
-      if (shouldBufferOutput) yield assistantText;
+      if (shouldBufferOutput) yield { type: 'text', text: assistantText };
     }
 
     if (assistantText) {
       if (!conversationId) throw new AppError('Assistant response has no conversation target.', 500, 'conversation_missing');
       this.context.conversations.appendMessage(createMessage({ conversationId, role: 'assistant', name: character?.name, content: assistantText }));
     }
+
+    yield { type: 'done', text: '' };
   }
 }
 

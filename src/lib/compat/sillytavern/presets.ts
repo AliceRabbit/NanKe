@@ -3,7 +3,14 @@ import {
   sillyTavernInstructPresetSchema,
   sillyTavernOpenAiPresetSchema
 } from '$lib/schemas/legacy-sillytavern';
-import { createDefaultGenerationProfile, type GenerationProfile, type PromptSlot, type ProviderProfile, type SamplerProfile } from '$lib/schemas/profile';
+import {
+  createDefaultGenerationProfile,
+  type GenerationProfile,
+  type PromptSlot,
+  type ProviderProfile,
+  type ReasoningProfile,
+  type SamplerProfile
+} from '$lib/schemas/profile';
 import { regexScriptSchema, type RegexPlacement, type RegexScript } from '$lib/schemas/regex';
 import { createCompatReport } from './report';
 
@@ -333,6 +340,25 @@ function samplerFromOpenAiPreset(preset: RecordValue): SamplerProfile {
   };
 }
 
+function reasoningFromOpenAiPreset(preset: RecordValue, provider: ProviderProfile): ReasoningProfile {
+  const effort = stringValue(preset.reasoning_effort);
+  const openAiEffort =
+    effort === 'none' || effort === 'minimal' || effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'xhigh' ? effort : 'default';
+  const showThoughts = booleanValue(preset.show_thoughts);
+  const gemini = {
+    includeThoughts: provider.type === 'gemini' ? showThoughts === true : false,
+    mode: 'default' as const,
+    level: 'medium' as const
+  };
+
+  return {
+    display: showThoughts !== false,
+    openByDefault: false,
+    openai: { effort: openAiEffort },
+    gemini
+  };
+}
+
 export function importSillyTavernRegexScripts(value: unknown): RegexScript[] {
   return arrayOfRecords(value).map((script, index) => {
     const placements = Array.isArray(script.placement) ? script.placement : [script.placement];
@@ -400,6 +426,8 @@ function reportOpenAiPreset(preset: RecordValue, report: ReturnType<typeof creat
     'personality_format',
     'squash_system_messages',
     'stream_openai',
+    'show_thoughts',
+    'reasoning_effort',
     'chat_completion_source',
     'model',
     'vertexai_auth_mode',
@@ -444,11 +472,13 @@ export function importSillyTavernPreset(
     const preset = asRecord(parsed);
     const slots = slotsFromOpenAiPreset(preset, report);
     const regexScripts = regexScriptsFromOpenAiPreset(preset);
+    const provider = providerFromOpenAiPreset(preset, report);
     const profile = createDefaultGenerationProfile({
       name: stringValue(preset.name) ?? fallbackName ?? 'Imported ST OpenAI Preset',
-      provider: providerFromOpenAiPreset(preset, report),
+      provider,
       sampler: samplerFromOpenAiPreset(preset),
       request: { stream: booleanValue(preset.stream_openai) ?? true },
+      reasoning: reasoningFromOpenAiPreset(preset, provider),
       prompt: {
         mode: 'chat',
         slots,

@@ -131,12 +131,40 @@ export const requestProfileSchema = z
 
 export type RequestProfile = z.infer<typeof requestProfileSchema>;
 
+export const reasoningProfileSchema = z
+  .object({
+    display: z.boolean().default(true),
+    openByDefault: z.boolean().default(false),
+    openai: z
+      .object({
+        effort: z.enum(['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh']).default('default')
+      })
+      .default(() => ({ effort: 'default' as const })),
+    gemini: z
+      .object({
+        includeThoughts: z.boolean().default(false),
+        mode: z.enum(['default', 'off', 'budget', 'level']).default('default'),
+        budget: z.number().int().min(0).optional(),
+        level: z.enum(['minimal', 'low', 'medium', 'high']).default('medium')
+      })
+      .default(() => ({ includeThoughts: false, mode: 'default' as const, level: 'medium' as const }))
+  })
+  .default(() => ({
+    display: true,
+    openByDefault: false,
+    openai: { effort: 'default' as const },
+    gemini: { includeThoughts: false, mode: 'default' as const, level: 'medium' as const }
+  }));
+
+export type ReasoningProfile = z.infer<typeof reasoningProfileSchema>;
+
 export const generationProfileSchema = z.object({
   id: z.string(),
   name: z.string().min(1),
   provider: providerProfileSchema,
   sampler: samplerProfileSchema.default({}),
   request: requestProfileSchema,
+  reasoning: reasoningProfileSchema,
   prompt: z.object({
     mode: z.enum(['chat', 'text']).default('chat'),
     slots: z.array(promptSlotSchema),
@@ -177,6 +205,12 @@ export function createDefaultGenerationProfile(input: Partial<GenerationProfile>
       contextTokens: 8192
     },
     request: input.request ?? { stream: true },
+    reasoning: input.reasoning ?? {
+      display: true,
+      openByDefault: false,
+      openai: { effort: 'default' },
+      gemini: { includeThoughts: false, mode: 'default', level: 'medium' }
+    },
     prompt: input.prompt ?? {
       mode: 'chat',
       macroMode: 'none',

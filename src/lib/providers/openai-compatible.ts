@@ -4,8 +4,8 @@ import { parseSseStream, type ProviderAdapter, type ProviderFetch } from './Prov
 
 type OpenAIChunk = {
   choices?: Array<{
-    delta?: { content?: string };
-    message?: { content?: unknown };
+    delta?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown; reasoning_summary?: unknown };
+    message?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown; reasoning_summary?: unknown };
     text?: string;
   }>;
 };
@@ -38,6 +38,34 @@ function openAIContentText(content: unknown): string {
   return '';
 }
 
+function openAIReasoningText(...values: unknown[]): string {
+  return values
+    .map((value) => {
+      if (typeof value === 'string') return value;
+      if (Array.isArray(value)) {
+        return value
+          .map((part) => {
+            if (typeof part === 'string') return part;
+            if (!part || typeof part !== 'object') return '';
+            const record = part as Record<string, unknown>;
+            if (typeof record.text === 'string') return record.text;
+            if (typeof record.content === 'string') return record.content;
+            if (typeof record.summary_text === 'string') return record.summary_text;
+            return '';
+          })
+          .join('');
+      }
+      if (value && typeof value === 'object') {
+        const record = value as Record<string, unknown>;
+        if (typeof record.text === 'string') return record.text;
+        if (typeof record.content === 'string') return record.content;
+        if (Array.isArray(record.summary)) return openAIReasoningText(record.summary);
+      }
+      return '';
+    })
+    .join('');
+}
+
 export function buildOpenAICompatibleRequest(request: ProviderRequest, profile: GenerationProfile) {
   if (profile.provider.type !== 'openai-compatible') {
     throw new Error('Invalid profile for OpenAI-compatible request.');
@@ -61,7 +89,8 @@ export function buildOpenAICompatibleRequest(request: ProviderRequest, profile: 
     presence_penalty: request.presencePenalty ?? profile.sampler.presencePenalty,
     seed: request.seed ?? profile.sampler.seed,
     n: request.n ?? profile.sampler.n,
-    stop
+    stop,
+    reasoning_effort: profile.reasoning?.openai?.effort && profile.reasoning.openai.effort !== 'default' ? profile.reasoning.openai.effort : undefined
   };
 
   if (profile.provider.compatibility === 'extended') {
@@ -127,7 +156,10 @@ export function createOpenAICompatibleAdapter(fetchImpl: ProviderFetch = fetch):
 
       if (!streaming) {
         const payload = (await response.json()) as OpenAIChunk;
-        const text = openAIContentText(payload.choices?.[0]?.message?.content) || payload.choices?.[0]?.text || '';
+        const message = payload.choices?.[0]?.message;
+        const reasoning = openAIReasoningText(message?.reasoning_content, message?.reasoning, message?.reasoning_summary);
+        const text = openAIContentText(message?.content) || payload.choices?.[0]?.text || '';
+        if (reasoning) yield { type: 'reasoning', text: reasoning, raw: payload };
         if (text) yield { type: 'text', text, raw: payload };
         yield { type: 'done', text: '' };
         return;
@@ -135,7 +167,10 @@ export function createOpenAICompatibleAdapter(fetchImpl: ProviderFetch = fetch):
 
       for await (const payload of parseSseStream(response)) {
         const chunk = payload as OpenAIChunk;
-        const text = chunk.choices?.[0]?.delta?.content ?? chunk.choices?.[0]?.text ?? '';
+        const delta = chunk.choices?.[0]?.delta;
+        const reasoning = openAIReasoningText(delta?.reasoning_content, delta?.reasoning, delta?.reasoning_summary);
+        const text = openAIContentText(delta?.content) || chunk.choices?.[0]?.text || '';
+        if (reasoning) yield { type: 'reasoning', text: reasoning, raw: payload };
         if (text) yield { type: 'text', text, raw: payload };
       }
 

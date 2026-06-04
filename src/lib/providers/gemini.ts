@@ -5,7 +5,7 @@ import { parseSseStream, type ProviderAdapter, type ProviderFetch } from './Prov
 type GeminiChunk = {
   candidates?: Array<{
     content?: {
-      parts?: Array<{ text?: string }>;
+      parts?: Array<{ text?: string; thought?: boolean; thoughtSignature?: string }>;
     };
     finishReason?: string;
     finishMessage?: string;
@@ -37,8 +37,26 @@ function optionalInteger(value: number | undefined, options: { skipOne?: boolean
   return value;
 }
 
+function optionalNonNegativeInteger(value: number | undefined): number | undefined {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return undefined;
+  return value;
+}
+
 function geminiRole(role: string): 'user' | 'model' {
   return role === 'assistant' ? 'model' : 'user';
+}
+
+export function buildGeminiThinkingConfig(profile: GenerationProfile) {
+  const reasoning = profile.reasoning?.gemini;
+  if (!reasoning) return undefined;
+
+  const config = withDefinedValues({
+    includeThoughts: reasoning.includeThoughts ? true : undefined,
+    thinkingBudget: reasoning.mode === 'off' ? 0 : reasoning.mode === 'budget' ? optionalNonNegativeInteger(reasoning.budget) : undefined,
+    thinkingLevel: reasoning.mode === 'level' ? reasoning.level : undefined
+  });
+
+  return Object.keys(config).length ? config : undefined;
 }
 
 export function buildGeminiRequest(request: ProviderRequest, profile: GenerationProfile) {
@@ -64,7 +82,8 @@ export function buildGeminiRequest(request: ProviderRequest, profile: Generation
     frequencyPenalty: optionalNumber(request.frequencyPenalty ?? profile.sampler.frequencyPenalty),
     presencePenalty: optionalNumber(request.presencePenalty ?? profile.sampler.presencePenalty),
     seed: request.seed ?? profile.sampler.seed,
-    candidateCount: optionalInteger(request.n ?? profile.sampler.n, { skipOne: true })
+    candidateCount: optionalInteger(request.n ?? profile.sampler.n, { skipOne: true }),
+    thinkingConfig: buildGeminiThinkingConfig(profile)
   });
 
   return withDefinedValues({
@@ -157,6 +176,24 @@ function emptyGeminiResultError(payload: GeminiChunk): string | undefined {
   return `Gemini returned no text. Finish reason: ${finishReason}.${message}`;
 }
 
+function splitGeminiCandidateText(payload: GeminiChunk) {
+  const parts = payload.candidates?.[0]?.content?.parts ?? [];
+  let text = '';
+  let reasoning = '';
+
+  for (const part of parts) {
+    const partText = part.text ?? '';
+    if (!partText) continue;
+    if (part.thought === true) {
+      reasoning += partText;
+    } else {
+      text += partText;
+    }
+  }
+
+  return { text, reasoning };
+}
+
 export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderAdapter {
   return {
     type: 'gemini',
@@ -183,26 +220,31 @@ export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderA
 
       if (!streaming) {
         const payload = (await response.json()) as GeminiChunk;
-        const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
+        const { text, reasoning } = splitGeminiCandidateText(payload);
+        if (reasoning) yield { type: 'reasoning', text: reasoning, raw: payload };
         if (text) yield { type: 'text', text, raw: payload };
         yield { type: 'done', text: '' };
         return;
       }
 
-      let sawText = false;
+      let sawOutput = false;
       let emptyResultError: string | undefined;
       for await (const payload of parseSseStream(response)) {
         const chunk = payload as GeminiChunk;
-        const text = chunk.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
+        const { text, reasoning } = splitGeminiCandidateText(chunk);
+        if (reasoning) {
+          sawOutput = true;
+          yield { type: 'reasoning', text: reasoning, raw: payload };
+        }
         if (text) {
-          sawText = true;
+          sawOutput = true;
           yield { type: 'text', text, raw: payload };
         } else {
           emptyResultError = emptyGeminiResultError(chunk) ?? emptyResultError;
         }
       }
 
-      if (!sawText && emptyResultError) {
+      if (!sawOutput && emptyResultError) {
         yield { type: 'error', text: emptyResultError };
         return;
       }

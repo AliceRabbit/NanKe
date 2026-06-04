@@ -50,6 +50,22 @@ describe('provider request mapping', () => {
     expect(body).not.toHaveProperty('stream_options');
   });
 
+  it('maps OpenAI-compatible reasoning effort when configured', () => {
+    const profile = createDefaultGenerationProfile({
+      provider: { type: 'openai-compatible', model: 'test-model', endpoint: 'http://localhost:1234/v1', compatibility: 'strict-openai' },
+      reasoning: {
+        display: true,
+        openByDefault: false,
+        openai: { effort: 'high' },
+        gemini: { includeThoughts: false, mode: 'default', level: 'medium' }
+      }
+    });
+
+    const body = buildOpenAICompatibleRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile) as Record<string, unknown>;
+
+    expect(body.reasoning_effort).toBe('high');
+  });
+
   it('keeps extended sampler fields for custom OpenAI-compatible endpoints', () => {
     const profile = createDefaultGenerationProfile({
       provider: { type: 'openai-compatible', model: 'test-model', endpoint: 'http://localhost:1234/v1/chat/completions', compatibility: 'extended' },
@@ -91,6 +107,40 @@ describe('provider request mapping', () => {
     expect(generationConfig.maxOutputTokens).toBe(512);
     expect(geminiUrl(profile)).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse');
     expect(geminiUrl(profile, false)).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent');
+  });
+
+  it('maps Gemini thinking config into generationConfig', () => {
+    const profile = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'gemini-2.5-pro' },
+      reasoning: {
+        display: true,
+        openByDefault: false,
+        openai: { effort: 'default' },
+        gemini: { includeThoughts: true, mode: 'budget', budget: 1024, level: 'medium' }
+      }
+    });
+
+    const body = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile) as Record<string, unknown>;
+    const generationConfig = body.generationConfig as Record<string, unknown>;
+
+    expect(generationConfig.thinkingConfig).toEqual({ includeThoughts: true, thinkingBudget: 1024 });
+  });
+
+  it('maps Gemini 3 thinking level into generationConfig', () => {
+    const profile = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'gemini-3-pro' },
+      reasoning: {
+        display: true,
+        openByDefault: false,
+        openai: { effort: 'default' },
+        gemini: { includeThoughts: true, mode: 'level', level: 'low' }
+      }
+    });
+
+    const body = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile) as Record<string, unknown>;
+    const generationConfig = body.generationConfig as Record<string, unknown>;
+
+    expect(generationConfig.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: 'low' });
   });
 
   it('filters disabled SillyTavern sampler defaults from Gemini request bodies', () => {
@@ -211,6 +261,25 @@ describe('provider request mapping', () => {
 
     expect(openAIChunks[0]).toEqual(expect.objectContaining({ type: 'text', text: 'openai ok' }));
     expect(geminiChunks[0]).toEqual(expect.objectContaining({ type: 'text', text: 'gemini ok' }));
+  });
+
+  it('normalizes native reasoning chunks from OpenAI-compatible and Gemini providers', async () => {
+    const openAIProfile = createDefaultGenerationProfile({
+      provider: { type: 'openai-compatible', model: 'test-model', endpoint: 'https://api.openai.com/v1', compatibility: 'strict-openai' }
+    });
+    const openAIStream = 'data: {"choices":[{"delta":{"reasoning_content":"thinking ","content":"answer"}}]}\n\n';
+    const openAIChunks = await collect(createOpenAICompatibleAdapter(async () => new Response(openAIStream)).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, openAIProfile));
+
+    const geminiProfile = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'gemini-2.5-pro' }
+    });
+    const geminiStream = 'data: {"candidates":[{"content":{"parts":[{"text":"thinking ","thought":true},{"text":"answer"}]}}]}\n\n';
+    const geminiChunks = await collect(createGeminiAdapter(async () => new Response(geminiStream)).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, geminiProfile));
+
+    expect(openAIChunks[0]).toEqual(expect.objectContaining({ type: 'reasoning', text: 'thinking ' }));
+    expect(openAIChunks[1]).toEqual(expect.objectContaining({ type: 'text', text: 'answer' }));
+    expect(geminiChunks[0]).toEqual(expect.objectContaining({ type: 'reasoning', text: 'thinking ' }));
+    expect(geminiChunks[1]).toEqual(expect.objectContaining({ type: 'text', text: 'answer' }));
   });
 
   it('normalizes Gemini JSON array stream responses', async () => {

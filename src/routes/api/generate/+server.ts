@@ -1,6 +1,7 @@
 import { GenerationAppService } from '$lib/server/services';
 import { createRequestContext } from '$lib/server/request-context';
 import { errorResponse } from '$lib/server/errors';
+import type { GenerationStreamEvent } from '$lib/server/services/GenerationAppService';
 
 function streamErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unknown generation error';
@@ -10,13 +11,17 @@ function isAbortError(error: unknown) {
   return error instanceof Error && error.name === 'AbortError';
 }
 
+function encodeEvent(encoder: TextEncoder, event: GenerationStreamEvent | { type: 'error'; text: string }) {
+  return encoder.encode(`${JSON.stringify(event)}\n`);
+}
+
 export async function POST({ request }) {
   try {
     const body = await request.json();
     const service = new GenerationAppService(createRequestContext());
     const encoder = new TextEncoder();
     const iterator = service.generate(body, request.signal)[Symbol.asyncIterator]();
-    let first: IteratorResult<string>;
+    let first: IteratorResult<GenerationStreamEvent>;
 
     try {
       first = await iterator.next();
@@ -27,14 +32,14 @@ export async function POST({ request }) {
     const stream = new ReadableStream({
       async start(controller) {
         if (!first.done) {
-          controller.enqueue(encoder.encode(first.value));
+          controller.enqueue(encodeEvent(encoder, first.value));
         }
 
         try {
           while (true) {
             const next = await iterator.next();
             if (next.done) break;
-            controller.enqueue(encoder.encode(next.value));
+            controller.enqueue(encodeEvent(encoder, next.value));
           }
           controller.close();
         } catch (error) {
@@ -42,7 +47,7 @@ export async function POST({ request }) {
             controller.close();
             return;
           }
-          controller.enqueue(encoder.encode(`\n\n[Generation error] ${streamErrorMessage(error)}`));
+          controller.enqueue(encodeEvent(encoder, { type: 'error', text: streamErrorMessage(error) }));
           controller.close();
         }
       }
@@ -50,7 +55,7 @@ export async function POST({ request }) {
 
     return new Response(stream, {
       headers: {
-        'Content-Type': 'text/plain; charset=utf-8'
+        'Content-Type': 'application/x-ndjson; charset=utf-8'
       }
     });
   } catch (error) {

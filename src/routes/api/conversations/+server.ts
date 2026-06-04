@@ -9,6 +9,11 @@ export function GET({ url }) {
     const id = url.searchParams.get('id');
     const characterId = url.searchParams.get('characterId') ?? undefined;
     const includeArchived = url.searchParams.get('includeArchived') === 'true';
+    if (id && url.searchParams.get('tree') === 'true') {
+      const tree = context.conversations.getTree(id);
+      if (!tree) throw new AppError('Conversation not found.', 404, 'conversation_not_found');
+      return json(tree);
+    }
     return json(id ? context.conversations.getWithMessages(id) : context.conversations.list({ characterId, includeArchived }));
   } catch (error) {
     return errorResponse(error);

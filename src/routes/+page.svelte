@@ -207,6 +207,23 @@
   type ZoomedAvatar = { key: string; name: string; role: ChatMessage['role']; src: string; initials: string };
   type GenerationStreamEvent = { type: 'text' | 'thinking' | 'inspector' | 'done' | 'error'; text?: string; conversationId?: string; activeLeafId?: string };
   type ConversationGroup = { key: string; label: string; avatarUrl: string; count: number; conversations: Conversation[] };
+  type ConversationTreeNode = {
+    id: string;
+    parentId: string | null;
+    role: string;
+    speakerName?: string;
+    preview: string;
+    depth: number;
+    siblingOrder: number;
+    status: string;
+    isActivePath: boolean;
+    isActiveLeaf: boolean;
+    childCount: number;
+    branchCount: number;
+    createdAt: number;
+    updatedAt: number;
+  };
+  type ConversationTreeSummary = { conversation: Conversation; nodes: ConversationTreeNode[] };
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
@@ -301,6 +318,8 @@
   let conversations: Conversation[] = [];
   let conversationQuery = '';
   let showArchivedConversations = false;
+  let conversationTree: ConversationTreeNode[] = [];
+  let conversationTreeConversationId = '';
   let activeView: View = 'chat';
   let activeDrawer: Drawer = null;
   let activeProfileId = '';
@@ -529,6 +548,9 @@
 
   function openDrawer(drawer: Exclude<Drawer, null>) {
     activeDrawer = activeDrawer === drawer ? null : drawer;
+    if (activeDrawer === 'chats') {
+      void refreshConversationTree();
+    }
   }
 
   function openPresetImport() {
@@ -570,8 +592,23 @@
     activePersonaId = conversation.personaId ?? activePersonaId;
     activeProfileId = conversation.profileId ?? activeProfileId;
     rememberConversation(conversation);
+    if (activeDrawer === 'chats') {
+      await refreshConversationTree(conversation.id);
+    }
     if (options.close) closeDrawer();
     return conversation;
+  }
+
+  async function refreshConversationTree(id = activeConversationId) {
+    if (!id) {
+      conversationTree = [];
+      conversationTreeConversationId = '';
+      return;
+    }
+    const summary = await fetchJson<ConversationTreeSummary>(`/api/conversations?id=${encodeURIComponent(id)}&tree=true`);
+    conversationTree = summary.nodes;
+    conversationTreeConversationId = summary.conversation.id;
+    rememberConversation(summary.conversation);
   }
 
   function conversationListUrl() {
@@ -1847,6 +1884,7 @@
     activeConversationId = conversation.id;
     messages = conversation.messages ?? [];
     rememberConversation(conversation);
+    if (activeDrawer === 'chats') await refreshConversationTree(conversation.id);
   }
 
   async function continueFromMessage(message: ChatMessage) {
@@ -1866,6 +1904,25 @@
     activeConversationId = conversation.id;
     messages = conversation.messages ?? [];
     rememberConversation(conversation);
+    if (activeDrawer === 'chats') await refreshConversationTree(conversation.id);
+  }
+
+  async function focusConversationTreeNode(node: ConversationTreeNode, restoreSubtree = true) {
+    if (!activeConversationId || isGenerating) return;
+    const conversation = await fetchJson<Conversation>('/api/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'set-active-leaf',
+        conversationId: activeConversationId,
+        leafId: node.id,
+        restoreSubtree
+      })
+    });
+    activeConversationId = conversation.id;
+    messages = conversation.messages ?? [];
+    rememberConversation(conversation);
+    await refreshConversationTree(conversation.id);
   }
 
   async function regenerateAssistantSibling(message: ChatMessage) {
@@ -2608,6 +2665,54 @@
             <span>Show archived chats</span>
           </label>
         </div>
+        {#if activeConversationId}
+          <section class="branch-map" aria-label="Current conversation branch map">
+            <header>
+              <span>
+                <GitBranch size={15} />
+                <strong>Branch Map</strong>
+              </span>
+              <button type="button" title="Refresh branch map" aria-label="Refresh branch map" on:click={() => refreshConversationTree()}>
+                <RefreshCw size={14} />
+              </button>
+            </header>
+            {#if conversationTreeConversationId !== activeConversationId}
+              <div class="drawer-empty compact">Loading branches.</div>
+            {:else if conversationTree.length === 0}
+              <div class="drawer-empty compact">No persisted messages.</div>
+            {:else}
+              <div class="branch-map-list">
+                {#each conversationTree as node}
+                  <article
+                    class="branch-node"
+                    class:active={node.isActivePath}
+                    class:leaf={node.isActiveLeaf}
+                    style={`--branch-depth: ${Math.min(Math.max(node.depth - 1, 0), 10)}`}
+                  >
+                    <button class="branch-node-main" type="button" on:click={() => focusConversationTreeNode(node, true)}>
+                      <span class="branch-role {node.role}"></span>
+                      <span class="branch-node-copy">
+                        <strong>{node.speakerName ?? node.role}</strong>
+                        <span>{node.preview || '(empty)'}</span>
+                      </span>
+                      <small>{node.childCount ? `${node.childCount} child${node.childCount > 1 ? 'ren' : ''}` : ''}</small>
+                    </button>
+                    <button
+                      class="branch-node-fork"
+                      type="button"
+                      title="Continue from here"
+                      aria-label="Continue from here"
+                      disabled={isGenerating}
+                      on:click={() => focusConversationTreeNode(node, false)}
+                    >
+                      <GitBranch size={14} />
+                    </button>
+                  </article>
+                {/each}
+              </div>
+            {/if}
+          </section>
+        {/if}
         <div class="conversation-list">
           {#if conversationGroups.length === 0}
             <div class="drawer-empty compact">No chats found.</div>
@@ -5136,6 +5241,134 @@
     border-color: #e6b8b4;
     background: #fff5f4;
     color: #9b2d25;
+  }
+
+  .branch-map {
+    display: grid;
+    gap: 8px;
+    border-top: 1px solid #edf0eb;
+    border-bottom: 1px solid #edf0eb;
+    background: #fbfcfa;
+    padding: 10px 16px 12px;
+  }
+
+  .branch-map > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: #39453e;
+    font-size: 13px;
+  }
+
+  .branch-map > header span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .branch-map > header button,
+  .branch-node-fork {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: #66736c;
+    padding: 0;
+  }
+
+  .branch-map > header button:hover,
+  .branch-node-fork:hover {
+    border-color: #cbd8ce;
+    background: #fff;
+    color: #214433;
+  }
+
+  .branch-map-list {
+    display: grid;
+    gap: 5px;
+    max-height: min(36vh, 360px);
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .branch-node {
+    --branch-depth: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 5px;
+    margin-left: calc(var(--branch-depth) * 10px);
+    border: 1px solid #e2e6df;
+    border-radius: 8px;
+    background: #fff;
+    padding: 5px;
+  }
+
+  .branch-node.active {
+    border-color: #b9d5c1;
+    background: #f0f8f2;
+  }
+
+  .branch-node.leaf {
+    border-color: #83b894;
+    box-shadow: inset 3px 0 0 #378b57;
+  }
+
+  .branch-node-main {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    text-align: left;
+  }
+
+  .branch-role {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #97a19a;
+  }
+
+  .branch-role.user {
+    background: #328653;
+  }
+
+  .branch-role.assistant {
+    background: #4e6fa9;
+  }
+
+  .branch-node-copy {
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+  }
+
+  .branch-node-copy strong,
+  .branch-node-copy span,
+  .branch-node-main small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .branch-node-copy strong {
+    color: #2d3831;
+    font-size: 12px;
+  }
+
+  .branch-node-copy span,
+  .branch-node-main small {
+    color: #69746d;
+    font-size: 11px;
   }
 
   .drawer-empty.compact {

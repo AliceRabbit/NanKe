@@ -86,6 +86,29 @@ describe('storage repositories', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('returns a compact tree summary with active path markers', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const repository = new ConversationRepository(db, sqlite);
+
+    const conversation = repository.save(createConversation({ title: 'Tree map chat' }));
+    const user = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Pick a route.' }));
+    const first = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'Route A.' }));
+    const second = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'Route B.' }), user.id);
+
+    const summary = repository.getTree(conversation.id);
+    expect(summary?.nodes).toHaveLength(3);
+    expect(summary?.nodes.find((node) => node.id === user.id)?.childCount).toBe(2);
+    expect(summary?.nodes.find((node) => node.id === first.id)?.isActivePath).toBe(false);
+    expect(summary?.nodes.find((node) => node.id === second.id)?.isActiveLeaf).toBe(true);
+    expect(summary?.nodes.find((node) => node.id === second.id)?.preview).toBe('Route B.');
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('renames, archives, restores, and deletes conversations', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
     const sqlite = new Database(path.join(dir, 'test.db'));

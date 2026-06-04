@@ -67,6 +67,28 @@ export type ActiveLeafOptions = {
   restoreSubtree?: boolean;
 };
 
+export type ConversationTreeNode = {
+  id: string;
+  parentId: string | null;
+  role: string;
+  speakerName?: string;
+  preview: string;
+  depth: number;
+  siblingOrder: number;
+  status: string;
+  isActivePath: boolean;
+  isActiveLeaf: boolean;
+  childCount: number;
+  branchCount: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ConversationTreeSummary = {
+  conversation: Conversation;
+  nodes: ConversationTreeNode[];
+};
+
 export class ConversationRepository {
   constructor(
     private readonly db: DrizzleDatabase = getDatabase(),
@@ -104,6 +126,55 @@ export class ConversationRepository {
     const conversation = this.get(id);
     if (!conversation) return undefined;
     return { ...conversation, messages: this.listMessages(id) };
+  }
+
+  getTree(id: string): ConversationTreeSummary | undefined {
+    const conversation = this.get(id);
+    if (!conversation) return undefined;
+
+    const rows = this.sqlite
+      .prepare(
+        `
+        SELECT *
+        FROM message_nodes
+        WHERE conversation_id = ? AND kind = 'message' AND status != 'deleted'
+        ORDER BY depth ASC, sibling_order ASC, created_at ASC
+      `
+      )
+      .all(id) as MessageNodeRow[];
+    const nodes = rows.map((row) => this.hydrateMessageNode(row));
+    const childCounts = new Map<string, number>();
+    for (const node of nodes) {
+      if (!node.parentId) continue;
+      childCounts.set(node.parentId, (childCounts.get(node.parentId) ?? 0) + 1);
+    }
+
+    const activePathIds = new Set(
+      conversation.activeLeafId ? this.pathNodes(conversation.id, conversation.activeLeafId).map((node) => node.id) : []
+    );
+
+    return {
+      conversation,
+      nodes: nodes.map((node) => {
+        const childCount = childCounts.get(node.id) ?? 0;
+        return {
+          id: node.id,
+          parentId: node.parentId,
+          role: node.role ?? 'system',
+          speakerName: node.speakerName,
+          preview: previewText(node.content || node.thinking || ''),
+          depth: node.depth,
+          siblingOrder: node.siblingOrder,
+          status: node.status,
+          isActivePath: activePathIds.has(node.id),
+          isActiveLeaf: node.id === conversation.activeLeafId,
+          childCount,
+          branchCount: Math.max(0, childCount - 1),
+          createdAt: node.createdAt,
+          updatedAt: node.updatedAt
+        };
+      })
+    };
   }
 
   save(conversation: Conversation): Conversation {

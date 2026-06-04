@@ -7,11 +7,34 @@ type GeminiChunk = {
     content?: {
       parts?: Array<{ text?: string }>;
     };
+    finishReason?: string;
+    finishMessage?: string;
   }>;
+  promptFeedback?: {
+    blockReason?: string;
+    blockReasonMessage?: string;
+  };
 };
 
 function withDefinedValues<T extends Record<string, unknown>>(value: T): Partial<T> {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== '')) as Partial<T>;
+}
+
+function optionalNumber(value: number | undefined, options: { allowZero?: boolean } = {}): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  if (!options.allowZero && value === 0) return undefined;
+  return value;
+}
+
+function positiveNumber(value: number | undefined): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
+  return value;
+}
+
+function optionalInteger(value: number | undefined, options: { skipOne?: boolean } = {}): number | undefined {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) return undefined;
+  if (options.skipOne && value === 1) return undefined;
+  return value;
 }
 
 function geminiRole(role: string): 'user' | 'model' {
@@ -33,15 +56,15 @@ export function buildGeminiRequest(request: ProviderRequest, profile: Generation
 
   const stop = request.stop.length ? request.stop : profile.sampler.stop;
   const generationConfig = withDefinedValues({
-    temperature: request.temperature ?? profile.sampler.temperature,
-    topP: request.topP ?? profile.sampler.topP,
-    topK: request.topK ?? profile.sampler.topK,
-    maxOutputTokens: request.maxTokens ?? profile.sampler.maxTokens,
+    temperature: optionalNumber(request.temperature ?? profile.sampler.temperature, { allowZero: true }),
+    topP: positiveNumber(request.topP ?? profile.sampler.topP),
+    topK: optionalInteger(request.topK ?? profile.sampler.topK),
+    maxOutputTokens: positiveNumber(request.maxTokens ?? profile.sampler.maxTokens),
     stopSequences: stop?.length ? stop : undefined,
-    frequencyPenalty: request.frequencyPenalty ?? profile.sampler.frequencyPenalty,
-    presencePenalty: request.presencePenalty ?? profile.sampler.presencePenalty,
+    frequencyPenalty: optionalNumber(request.frequencyPenalty ?? profile.sampler.frequencyPenalty),
+    presencePenalty: optionalNumber(request.presencePenalty ?? profile.sampler.presencePenalty),
     seed: request.seed ?? profile.sampler.seed,
-    candidateCount: request.n ?? profile.sampler.n
+    candidateCount: optionalInteger(request.n ?? profile.sampler.n, { skipOne: true })
   });
 
   return withDefinedValues({
@@ -108,12 +131,30 @@ function geminiHeaders(profile: GenerationProfile, apiKey?: string, vertexToken?
 async function readProviderError(response: Response): Promise<string> {
   const text = await response.text();
   if (!text) return `${response.status} ${response.statusText}`;
+  const sseData = text
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trim())
+    .join('\n');
   try {
-    const parsed = JSON.parse(text) as { error?: { message?: string }; message?: string };
+    const parsed = JSON.parse(sseData || text) as { error?: { message?: string }; message?: string };
     return parsed.error?.message ?? parsed.message ?? text;
   } catch {
     return text;
   }
+}
+
+function emptyGeminiResultError(payload: GeminiChunk): string | undefined {
+  const feedback = payload.promptFeedback;
+  if (feedback?.blockReason) {
+    return feedback.blockReasonMessage ?? `Gemini blocked the prompt: ${feedback.blockReason}`;
+  }
+
+  const candidate = payload.candidates?.[0];
+  const finishReason = candidate?.finishReason;
+  if (!finishReason || finishReason === 'STOP') return undefined;
+  const message = candidate.finishMessage ? ` ${candidate.finishMessage}` : '';
+  return `Gemini returned no text. Finish reason: ${finishReason}.${message}`;
 }
 
 export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderAdapter {
@@ -148,10 +189,22 @@ export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderA
         return;
       }
 
+      let sawText = false;
+      let emptyResultError: string | undefined;
       for await (const payload of parseSseStream(response)) {
         const chunk = payload as GeminiChunk;
         const text = chunk.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
-        if (text) yield { type: 'text', text, raw: payload };
+        if (text) {
+          sawText = true;
+          yield { type: 'text', text, raw: payload };
+        } else {
+          emptyResultError = emptyGeminiResultError(chunk) ?? emptyResultError;
+        }
+      }
+
+      if (!sawText && emptyResultError) {
+        yield { type: 'error', text: emptyResultError };
+        return;
       }
 
       yield { type: 'done', text: '' };

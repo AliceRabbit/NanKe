@@ -156,6 +156,7 @@
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
+  type SamplerField = Exclude<keyof NonNullable<Profile['sampler']>, 'stop'>;
 
   const promptSources: PromptSlotSource[] = [
     'system',
@@ -195,6 +196,49 @@
     { value: 'tokens-desc', label: 'Most tokens' }
   ];
   const maxContextTokens = 2_000_000;
+  const maxOutputTokenRange = 65_536;
+  const openAIStrictSamplerFields = new Set<SamplerField>([
+    'temperature',
+    'topP',
+    'frequencyPenalty',
+    'presencePenalty',
+    'maxTokens',
+    'contextTokens',
+    'seed',
+    'n'
+  ]);
+  const openAIExtendedSamplerFields = new Set<SamplerField>([
+    ...openAIStrictSamplerFields,
+    'topK',
+    'topA',
+    'minP',
+    'repetitionPenalty'
+  ]);
+  const geminiSamplerFields = new Set<SamplerField>([
+    'temperature',
+    'topP',
+    'topK',
+    'frequencyPenalty',
+    'presencePenalty',
+    'maxTokens',
+    'contextTokens',
+    'seed',
+    'n'
+  ]);
+  const samplerFieldList: SamplerField[] = [
+    'temperature',
+    'topP',
+    'topK',
+    'topA',
+    'minP',
+    'frequencyPenalty',
+    'presencePenalty',
+    'repetitionPenalty',
+    'maxTokens',
+    'contextTokens',
+    'seed',
+    'n'
+  ];
 
   let profiles: Profile[] = [];
   let characters: Character[] = [];
@@ -301,6 +345,11 @@
   let profileDraftMode: PromptMode = 'chat';
   let profileDraftMacroMode: MacroMode = 'none';
   let profileDraftSquashSystemMessages = false;
+  let activeSamplerFields = openAIStrictSamplerFields;
+  let samplerVisible = samplerVisibility(activeSamplerFields);
+  let samplerPanelHeading = 'OpenAI Chat Parameters';
+  let maxTokensFieldLabel = 'Max Completion';
+  let candidateCountFieldLabel = 'N';
   let profileDraftRegexEnabled = true;
   let profileDraftRegexScripts: RegexScript[] = [];
   let profileDraftSlots: PromptSlot[] = [];
@@ -316,6 +365,30 @@
   $: filteredPromptSlots = filterPromptSlots(profileDraftSlots, promptSlotQuery);
   $: activePromptSlot = profileDraftSlots.find((slot) => slot.id === activePromptSlotId);
   $: promptEditorSlot = profileDraftSlots.find((slot) => slot.id === promptEditorSlotId);
+  $: activeSamplerFields =
+    profileDraftProviderType === 'gemini'
+      ? geminiSamplerFields
+      : profileDraftOpenAICompatibility === 'extended'
+        ? openAIExtendedSamplerFields
+        : openAIStrictSamplerFields;
+  $: samplerVisible = samplerVisibility(activeSamplerFields);
+  $: samplerPanelHeading =
+    profileDraftProviderType === 'gemini'
+      ? 'Gemini GenerationConfig'
+      : profileDraftOpenAICompatibility === 'extended'
+        ? 'Extended Chat Parameters'
+        : 'OpenAI Chat Parameters';
+  $: maxTokensFieldLabel =
+    profileDraftProviderType === 'gemini' ? 'Max Output' : profileDraftOpenAICompatibility === 'extended' ? 'Max Tokens' : 'Max Completion';
+  $: candidateCountFieldLabel = profileDraftProviderType === 'gemini' ? 'Candidates' : 'N';
+  $: showAdvancedSampler =
+    samplerVisible.topA ||
+    samplerVisible.minP ||
+    samplerVisible.frequencyPenalty ||
+    samplerVisible.presencePenalty ||
+    samplerVisible.repetitionPenalty ||
+    samplerVisible.seed ||
+    samplerVisible.n;
   $: activeCharacter = characters.find((character) => character.id === activeCharacterId);
   $: activeCharacterWorldBooks = boundWorldBooksForCharacter(activeCharacter);
   $: filteredCharacters = filterCharacters(characters, characterQuery, characterSortMode);
@@ -833,6 +906,46 @@
     return parsed === undefined ? undefined : Math.trunc(parsed);
   }
 
+  function samplerVisibility(fields: Set<SamplerField>) {
+    return Object.fromEntries(samplerFieldList.map((field) => [field, fields.has(field)])) as Record<SamplerField, boolean>;
+  }
+
+  function samplerFieldsForDraft(): Set<SamplerField> {
+    if (profileDraftProviderType === 'gemini') return geminiSamplerFields;
+    return profileDraftOpenAICompatibility === 'extended' ? openAIExtendedSamplerFields : openAIStrictSamplerFields;
+  }
+
+  function samplerFieldVisible(field: SamplerField) {
+    return samplerFieldsForDraft().has(field);
+  }
+
+  function positiveDraftNumber(value: string, options: { allowZero?: boolean; skipOne?: boolean } = {}) {
+    const parsed = optionalNumber(value);
+    if (parsed === undefined) return undefined;
+    if (parsed < 0) return undefined;
+    if (!options.allowZero && parsed === 0) return undefined;
+    if (options.skipOne && parsed === 1) return undefined;
+    return parsed;
+  }
+
+  function samplerDraftNumber(field: SamplerField, value: string) {
+    if (!samplerFieldVisible(field)) return undefined;
+    if (field === 'temperature') return positiveDraftNumber(value, { allowZero: true });
+    if (field === 'topP') return positiveDraftNumber(value, { allowZero: true });
+    if (field === 'frequencyPenalty' || field === 'presencePenalty') {
+      const parsed = optionalNumber(value);
+      return parsed === undefined || parsed === 0 ? undefined : parsed;
+    }
+    if (field === 'repetitionPenalty') return positiveDraftNumber(value, { skipOne: true });
+    if (field === 'seed') return optionalInteger(value);
+    if (field === 'topK' || field === 'n') {
+      const parsed = optionalInteger(value);
+      if (parsed === undefined || parsed <= 0 || (field === 'n' && parsed === 1)) return undefined;
+      return parsed;
+    }
+    return positiveDraftNumber(value);
+  }
+
   function clonePromptSlots(slots: PromptSlot[] | undefined): PromptSlot[] {
     return structuredClone(slots ?? []);
   }
@@ -936,18 +1049,18 @@
   function profileDraftSampler(): Profile['sampler'] {
     const sampler: NonNullable<Profile['sampler']> = {};
     const numbers: Array<[keyof NonNullable<Profile['sampler']>, number | undefined]> = [
-      ['temperature', optionalNumber(profileDraftTemperature)],
-      ['topP', optionalNumber(profileDraftTopP)],
-      ['topK', optionalNumber(profileDraftTopK)],
-      ['topA', optionalNumber(profileDraftTopA)],
-      ['minP', optionalNumber(profileDraftMinP)],
-      ['frequencyPenalty', optionalNumber(profileDraftFrequencyPenalty)],
-      ['presencePenalty', optionalNumber(profileDraftPresencePenalty)],
-      ['repetitionPenalty', optionalNumber(profileDraftRepetitionPenalty)],
-      ['maxTokens', optionalNumber(profileDraftMaxTokens)],
-      ['contextTokens', optionalNumber(profileDraftContextTokens)],
-      ['seed', optionalInteger(profileDraftSeed)],
-      ['n', optionalInteger(profileDraftN)]
+      ['temperature', samplerDraftNumber('temperature', profileDraftTemperature)],
+      ['topP', samplerDraftNumber('topP', profileDraftTopP)],
+      ['topK', samplerDraftNumber('topK', profileDraftTopK)],
+      ['topA', samplerDraftNumber('topA', profileDraftTopA)],
+      ['minP', samplerDraftNumber('minP', profileDraftMinP)],
+      ['frequencyPenalty', samplerDraftNumber('frequencyPenalty', profileDraftFrequencyPenalty)],
+      ['presencePenalty', samplerDraftNumber('presencePenalty', profileDraftPresencePenalty)],
+      ['repetitionPenalty', samplerDraftNumber('repetitionPenalty', profileDraftRepetitionPenalty)],
+      ['maxTokens', samplerDraftNumber('maxTokens', profileDraftMaxTokens)],
+      ['contextTokens', samplerDraftNumber('contextTokens', profileDraftContextTokens)],
+      ['seed', samplerDraftNumber('seed', profileDraftSeed)],
+      ['n', samplerDraftNumber('n', profileDraftN)]
     ];
 
     for (const [key, value] of numbers) {
@@ -1370,8 +1483,9 @@
       });
 
       if (!response.body || !response.ok) {
-        removeEmptyAssistantDraft();
-        status = 'Error';
+        const errorMessage = await responseErrorMessage(response);
+        replaceAssistantDraft(`Provider error: ${errorMessage}`);
+        status = 'Provider error';
         return;
       }
 
@@ -1393,14 +1507,42 @@
         messages = next;
       }
       status = controller.signal.aborted ? 'Stopped' : 'Ready';
-    } catch {
-      removeEmptyAssistantDraft();
-      status = controller.signal.aborted ? 'Stopped' : 'Error';
+    } catch (error) {
+      if (controller.signal.aborted) {
+        removeEmptyAssistantDraft();
+        status = 'Stopped';
+      } else {
+        replaceAssistantDraft(`Generation error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        status = 'Generation error';
+      }
     } finally {
       if (generationAbortController === controller) {
         generationAbortController = null;
       }
     }
+  }
+
+  async function responseErrorMessage(response: Response) {
+    const fallback = `${response.status} ${response.statusText}`.trim();
+    const text = await response.text();
+    if (!text) return fallback;
+    try {
+      const parsed = JSON.parse(text) as { error?: { message?: string }; message?: string };
+      return parsed.error?.message ?? parsed.message ?? text;
+    } catch {
+      return text;
+    }
+  }
+
+  function replaceAssistantDraft(content: string) {
+    const last = messages[messages.length - 1];
+    if (last?.role === 'assistant') {
+      const next = [...messages];
+      next[next.length - 1] = { ...last, content };
+      messages = next;
+      return;
+    }
+    messages = [...messages, { role: 'assistant', name: activeCharacter?.name, content }];
   }
 
   function removeEmptyAssistantDraft() {
@@ -2931,7 +3073,7 @@
 
               <section class="request-panel" aria-label="Request parameters">
                 <div class="request-panel-header">
-                  <strong>Request Parameters</strong>
+                  <strong>{samplerPanelHeading}</strong>
                   <span>{profileDraftMaxTokens || '512'} out · {profileDraftContextTokens || '8192'} ctx · {profileDraftStream ? 'stream' : 'single'}</span>
                 </div>
 
@@ -2947,49 +3089,57 @@
                 </div>
 
                 <div class="sampler-control-list">
-                  <label class="sampler-control">
-                    <span class="sampler-control-head">
-                      <span>Temperature</span>
-                      <output>{profileDraftTemperature || '1'}</output>
-                    </span>
-                    <span class="sampler-control-body">
-                      <input class="sampler-range" type="range" min="0" max="2" step="0.01" value={profileDraftTemperature || '1'} on:input={(event) => (profileDraftTemperature = (event.currentTarget as HTMLInputElement).value)} />
-                      <input class="sampler-number" value={profileDraftTemperature} inputmode="decimal" placeholder="1" on:input={(event) => (profileDraftTemperature = (event.currentTarget as HTMLInputElement).value)} />
-                    </span>
-                  </label>
+                  {#if samplerVisible.temperature}
+                    <label class="sampler-control">
+                      <span class="sampler-control-head">
+                        <span>Temperature</span>
+                        <output>{profileDraftTemperature || '1'}</output>
+                      </span>
+                      <span class="sampler-control-body">
+                        <input class="sampler-range" type="range" min="0" max="2" step="0.01" value={profileDraftTemperature || '1'} on:input={(event) => (profileDraftTemperature = (event.currentTarget as HTMLInputElement).value)} />
+                        <input class="sampler-number" value={profileDraftTemperature} inputmode="decimal" placeholder="1" on:input={(event) => (profileDraftTemperature = (event.currentTarget as HTMLInputElement).value)} />
+                      </span>
+                    </label>
+                  {/if}
 
-                  <label class="sampler-control">
-                    <span class="sampler-control-head">
-                      <span>Top P</span>
-                      <output>{profileDraftTopP || '1'}</output>
-                    </span>
-                    <span class="sampler-control-body">
-                      <input class="sampler-range" type="range" min="0" max="1" step="0.01" value={profileDraftTopP || '1'} on:input={(event) => (profileDraftTopP = (event.currentTarget as HTMLInputElement).value)} />
-                      <input class="sampler-number" value={profileDraftTopP} inputmode="decimal" placeholder="1" on:input={(event) => (profileDraftTopP = (event.currentTarget as HTMLInputElement).value)} />
-                    </span>
-                  </label>
+                  {#if samplerVisible.topP}
+                    <label class="sampler-control">
+                      <span class="sampler-control-head">
+                        <span>Top P</span>
+                        <output>{profileDraftTopP || '1'}</output>
+                      </span>
+                      <span class="sampler-control-body">
+                        <input class="sampler-range" type="range" min="0" max="1" step="0.01" value={profileDraftTopP || '1'} on:input={(event) => (profileDraftTopP = (event.currentTarget as HTMLInputElement).value)} />
+                        <input class="sampler-number" value={profileDraftTopP} inputmode="decimal" placeholder="1" on:input={(event) => (profileDraftTopP = (event.currentTarget as HTMLInputElement).value)} />
+                      </span>
+                    </label>
+                  {/if}
 
-                  <label class="sampler-control">
-                    <span class="sampler-control-head">
-                      <span>Top K</span>
-                      <output>{profileDraftTopK || '0'}</output>
-                    </span>
-                    <span class="sampler-control-body">
-                      <input class="sampler-range" type="range" min="0" max="200" step="1" value={profileDraftTopK || '0'} on:input={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
-                      <input class="sampler-number" value={profileDraftTopK} inputmode="numeric" placeholder="0" on:input={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
-                    </span>
-                  </label>
+                  {#if samplerVisible.topK}
+                    <label class="sampler-control">
+                      <span class="sampler-control-head">
+                        <span>Top K</span>
+                        <output>{profileDraftTopK || 'auto'}</output>
+                      </span>
+                      <span class="sampler-control-body">
+                        <input class="sampler-range" type="range" min="1" max="200" step="1" value={profileDraftTopK || '40'} on:input={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
+                        <input class="sampler-number" value={profileDraftTopK} inputmode="numeric" placeholder="auto" on:input={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
+                      </span>
+                    </label>
+                  {/if}
 
-                  <label class="sampler-control">
-                    <span class="sampler-control-head">
-                      <span>Max Tokens</span>
-                      <output>{profileDraftMaxTokens || '512'}</output>
-                    </span>
-                    <span class="sampler-control-body">
-                      <input class="sampler-range" type="range" min="16" max="4096" step="16" value={profileDraftMaxTokens || '512'} on:input={(event) => (profileDraftMaxTokens = (event.currentTarget as HTMLInputElement).value)} />
-                      <input class="sampler-number" value={profileDraftMaxTokens} inputmode="numeric" placeholder="512" on:input={(event) => (profileDraftMaxTokens = (event.currentTarget as HTMLInputElement).value)} />
-                    </span>
-                  </label>
+                  {#if samplerVisible.maxTokens}
+                    <label class="sampler-control">
+                      <span class="sampler-control-head">
+                        <span>{maxTokensFieldLabel}</span>
+                        <output>{profileDraftMaxTokens || '512'}</output>
+                      </span>
+                      <span class="sampler-control-body">
+                        <input class="sampler-range" type="range" min="16" max={maxOutputTokenRange} step="16" value={profileDraftMaxTokens || '512'} on:input={(event) => (profileDraftMaxTokens = (event.currentTarget as HTMLInputElement).value)} />
+                        <input class="sampler-number" value={profileDraftMaxTokens} inputmode="numeric" placeholder="512" on:input={(event) => (profileDraftMaxTokens = (event.currentTarget as HTMLInputElement).value)} />
+                      </span>
+                    </label>
+                  {/if}
 
                   <label class="sampler-control">
                     <span class="sampler-control-head">
@@ -3019,39 +3169,55 @@
                   </label>
                 </div>
 
-                <details class="advanced-sampler">
-                  <summary>Advanced</summary>
-                  <div class="advanced-sampler-grid">
-                    <label>
-                      <span>Top A</span>
-                      <input bind:value={profileDraftTopA} inputmode="decimal" />
-                    </label>
-                    <label>
-                      <span>Min P</span>
-                      <input bind:value={profileDraftMinP} inputmode="decimal" />
-                    </label>
-                    <label>
-                      <span>Freq Penalty</span>
-                      <input bind:value={profileDraftFrequencyPenalty} inputmode="decimal" />
-                    </label>
-                    <label>
-                      <span>Presence</span>
-                      <input bind:value={profileDraftPresencePenalty} inputmode="decimal" />
-                    </label>
-                    <label>
-                      <span>Rep Penalty</span>
-                      <input bind:value={profileDraftRepetitionPenalty} inputmode="decimal" />
-                    </label>
-                    <label>
-                      <span>Seed</span>
-                      <input bind:value={profileDraftSeed} inputmode="numeric" />
-                    </label>
-                    <label>
-                      <span>N</span>
-                      <input bind:value={profileDraftN} inputmode="numeric" />
-                    </label>
-                  </div>
-                </details>
+                {#if showAdvancedSampler}
+                  <details class="advanced-sampler">
+                    <summary>Advanced</summary>
+                    <div class="advanced-sampler-grid">
+                      {#if samplerVisible.topA}
+                        <label>
+                          <span>Top A</span>
+                          <input bind:value={profileDraftTopA} inputmode="decimal" />
+                        </label>
+                      {/if}
+                      {#if samplerVisible.minP}
+                        <label>
+                          <span>Min P</span>
+                          <input bind:value={profileDraftMinP} inputmode="decimal" />
+                        </label>
+                      {/if}
+                      {#if samplerVisible.frequencyPenalty}
+                        <label>
+                          <span>Freq Penalty</span>
+                          <input bind:value={profileDraftFrequencyPenalty} inputmode="decimal" />
+                        </label>
+                      {/if}
+                      {#if samplerVisible.presencePenalty}
+                        <label>
+                          <span>Presence</span>
+                          <input bind:value={profileDraftPresencePenalty} inputmode="decimal" />
+                        </label>
+                      {/if}
+                      {#if samplerVisible.repetitionPenalty}
+                        <label>
+                          <span>Rep Penalty</span>
+                          <input bind:value={profileDraftRepetitionPenalty} inputmode="decimal" />
+                        </label>
+                      {/if}
+                      {#if samplerVisible.seed}
+                        <label>
+                          <span>Seed</span>
+                          <input bind:value={profileDraftSeed} inputmode="numeric" />
+                        </label>
+                      {/if}
+                      {#if samplerVisible.n}
+                        <label>
+                          <span>{candidateCountFieldLabel}</span>
+                          <input bind:value={profileDraftN} inputmode="numeric" />
+                        </label>
+                      {/if}
+                    </div>
+                  </details>
+                {/if}
 
                 <label class="profile-textarea-label">
                   <span>Stop strings</span>

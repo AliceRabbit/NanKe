@@ -93,6 +93,39 @@ describe('provider request mapping', () => {
     expect(geminiUrl(profile, false)).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent');
   });
 
+  it('filters disabled SillyTavern sampler defaults from Gemini request bodies', () => {
+    const profile = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'gemini-2.5-pro' },
+      sampler: {
+        temperature: 1,
+        topP: 0.99,
+        topK: 0,
+        topA: 0,
+        minP: 0,
+        frequencyPenalty: 0,
+        presencePenalty: 0,
+        repetitionPenalty: 1,
+        maxTokens: 30000,
+        contextTokens: 2000000,
+        n: 1
+      }
+    });
+
+    const body = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile) as Record<string, unknown>;
+    const generationConfig = body.generationConfig as Record<string, unknown>;
+
+    expect(generationConfig.temperature).toBe(1);
+    expect(generationConfig.topP).toBe(0.99);
+    expect(generationConfig.maxOutputTokens).toBe(30000);
+    expect(generationConfig).not.toHaveProperty('topK');
+    expect(generationConfig).not.toHaveProperty('topA');
+    expect(generationConfig).not.toHaveProperty('minP');
+    expect(generationConfig).not.toHaveProperty('frequencyPenalty');
+    expect(generationConfig).not.toHaveProperty('presencePenalty');
+    expect(generationConfig).not.toHaveProperty('repetitionPenalty');
+    expect(generationConfig).not.toHaveProperty('candidateCount');
+  });
+
   it('adds SSE mode to custom Gemini streaming endpoints', () => {
     const profile = createDefaultGenerationProfile({
       provider: {
@@ -195,6 +228,18 @@ describe('provider request mapping', () => {
     const chunks = await collect(createGeminiAdapter(geminiFetch).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, geminiProfile));
 
     expect(chunks.filter((chunk) => chunk.type === 'text').map((chunk) => chunk.text).join('')).toBe('first second');
+  });
+
+  it('surfaces Gemini stream events that finish without text', async () => {
+    const geminiProfile = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'gemini-2.5-pro' }
+    });
+    const geminiFetch = async () => new Response('data: {"candidates":[{"content":{"role":"model"},"finishReason":"MAX_TOKENS"}]}\n\n');
+
+    const chunks = await collect(createGeminiAdapter(geminiFetch).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, geminiProfile));
+
+    expect(chunks[0]).toEqual(expect.objectContaining({ type: 'error' }));
+    expect(chunks[0].text).toContain('MAX_TOKENS');
   });
 
   it('uses x-goog-api-key for Gemini AI Studio, key query for Vertex Express, and bearer auth for Vertex OAuth', async () => {

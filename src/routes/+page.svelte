@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { applyRegexScripts, hasRegexScriptForPlacement, REGEX_PLACEMENT } from '$lib/core/regex';
+  import type { Character } from '$lib/schemas/character';
   import type { RegexPlacement, RegexScript } from '$lib/schemas/regex';
   import type { WorldBook, WorldBookEntry } from '$lib/schemas/worldbook';
   import {
@@ -10,7 +11,10 @@
     BookOpen,
     Copy,
     Download,
+    FileInput,
     GripHorizontal,
+    Image,
+    MessageCircle,
     MessageSquare,
     Pencil,
     Plus,
@@ -20,6 +24,7 @@
     Send,
     Save,
     Settings2,
+    Star,
     Trash2,
     Upload,
     UserRound,
@@ -33,6 +38,8 @@
   type PromptRole = 'system' | 'user' | 'assistant';
   type PromptMode = 'chat' | 'text';
   type MacroMode = 'none' | 'sillytavern';
+  type CharacterSortMode = 'favorite' | 'name-asc' | 'name-desc' | 'newest' | 'oldest' | 'tokens-desc';
+  type CharacterEditorTab = 'core' | 'prompt' | 'lore' | 'metadata';
   type PromptSlotSource =
     | 'system'
     | 'character-system'
@@ -132,14 +139,6 @@
     createdAt: number;
     updatedAt: number;
   };
-  type Character = {
-    id: string;
-    name: string;
-    firstMessage?: string;
-    avatarAssetId?: string;
-    worldBookIds?: string[];
-    characterBook?: WorldBook;
-  };
   type UserPersona = {
     id: string;
     name: string;
@@ -185,6 +184,14 @@
     { value: 'depth-asc', label: 'Depth asc' },
     { value: 'probability-desc', label: 'Trigger desc' }
   ];
+  const characterSortModes: Array<{ value: CharacterSortMode; label: string }> = [
+    { value: 'favorite', label: 'Favorites' },
+    { value: 'name-asc', label: 'A-Z' },
+    { value: 'name-desc', label: 'Z-A' },
+    { value: 'newest', label: 'Newest' },
+    { value: 'oldest', label: 'Oldest' },
+    { value: 'tokens-desc', label: 'Most tokens' }
+  ];
   const maxContextTokens = 2_000_000;
 
   let profiles: Profile[] = [];
@@ -209,6 +216,25 @@
   let inspector = '';
   let newCharacterName = '';
   let newCharacterDescription = '';
+  let characterQuery = '';
+  let characterSortMode: CharacterSortMode = 'favorite';
+  let characterEditorTab: CharacterEditorTab = 'core';
+  let characterDraftId = '';
+  let characterDraftName = '';
+  let characterDraftDescription = '';
+  let characterDraftPersonality = '';
+  let characterDraftScenario = '';
+  let characterDraftFirstMessage = '';
+  let characterDraftAlternateGreetings = '';
+  let characterDraftExampleMessages = '';
+  let characterDraftSystemPrompt = '';
+  let characterDraftPostHistoryInstructions = '';
+  let characterDraftCreatorNotes = '';
+  let characterDraftTags = '';
+  let characterDraftCreator = '';
+  let characterDraftCharacterVersion = '';
+  let characterDraftTalkativeness = '';
+  let characterDraftFavorite = false;
   let newPersonaName = '';
   let newPersonaDescription = '';
   let newPersonaDefault = false;
@@ -274,6 +300,8 @@
   $: promptEditorSlot = profileDraftSlots.find((slot) => slot.id === promptEditorSlotId);
   $: activeCharacter = characters.find((character) => character.id === activeCharacterId);
   $: activeCharacterWorldBooks = boundWorldBooksForCharacter(activeCharacter);
+  $: filteredCharacters = filterCharacters(characters, characterQuery, characterSortMode);
+  $: activeCharacterStats = characterStats(activeCharacter);
   $: activeWorldBook = worldBooks.find((worldBook) => worldBook.id === activeWorldBookId);
   $: filteredWorldBookEntries = filterWorldBookEntries(worldBookDraftEntries, worldBookEntryQuery, worldBookSortMode);
   $: activeWorldBookEntry = worldBookDraftEntries.find((entry) => entry.id === activeWorldBookEntryId);
@@ -305,6 +333,9 @@
   $: if (promptEditorSlotId && !profileDraftSlots.some((slot) => slot.id === promptEditorSlotId)) {
     promptEditorSlotId = '';
     promptEditorInitialSlot = null;
+  }
+  $: if (activeCharacterId !== characterDraftId) {
+    loadCharacterDraft(activeCharacter);
   }
   $: if (activePersonaId !== personaDraftId) {
     personaDraftId = activePersonaId;
@@ -415,6 +446,126 @@
     const ids = new Set(character.worldBookIds ?? []);
     if (character.characterBook?.id) ids.add(character.characterBook.id);
     return worldBooks.filter((worldBook) => ids.has(worldBook.id) || worldBook.metadata?.characterId === character.id);
+  }
+
+  function characterAvatarUrl(character?: Character): string {
+    return character?.avatarAssetId ? `/api/assets/${character.avatarAssetId}` : '';
+  }
+
+  function characterInitials(character?: Character): string {
+    const name = character?.name?.trim() || '?';
+    return Array.from(name)[0]?.toUpperCase() ?? '?';
+  }
+
+  function characterTextFields(character?: Character) {
+    if (!character) return [];
+    return [
+      character.name,
+      character.description,
+      character.personality,
+      character.scenario,
+      character.firstMessage,
+      character.exampleMessages,
+      character.systemPrompt,
+      character.postHistoryInstructions,
+      character.creatorNotes,
+      character.alternateGreetings.join('\n')
+    ];
+  }
+
+  function characterTokenEstimate(character?: Character) {
+    const totalLength = characterTextFields(character).join('\n').length;
+    return Math.max(0, Math.ceil(totalLength / 4));
+  }
+
+  function characterStats(character?: Character) {
+    const worldBookCount = boundWorldBooksForCharacter(character).length;
+    const overrideCount = [character?.systemPrompt, character?.postHistoryInstructions, character?.depthPrompt?.prompt].filter((value) => value?.trim()).length;
+    return {
+      tokens: characterTokenEstimate(character),
+      worldBooks: worldBookCount,
+      tags: character?.tags?.length ?? 0,
+      greetings: 1 + (character?.alternateGreetings?.length ?? 0),
+      overrides: overrideCount
+    };
+  }
+
+  function characterOrigin(character?: Character) {
+    if (!character) return 'No character';
+    if (character.legacy?.source === 'sillytavern') return 'SillyTavern card';
+    return 'NanKe native';
+  }
+
+  function characterListLine(character: Character) {
+    const stats = characterStats(character);
+    const parts = [
+      `${stats.tokens} tokens`,
+      stats.worldBooks ? `${stats.worldBooks} lore` : '',
+      stats.tags ? `${stats.tags} tags` : '',
+      character.favorite ? 'favorite' : '',
+      characterOrigin(character)
+    ].filter(Boolean);
+    return parts.join(' · ');
+  }
+
+  function filterCharacters(items: Character[], query: string, sortMode: CharacterSortMode) {
+    const text = query.trim().toLowerCase();
+    const filtered = text
+      ? items.filter((character) =>
+          [
+            character.name,
+            character.description,
+            character.personality,
+            character.scenario,
+            character.creator,
+            character.characterVersion,
+            character.tags.join(' '),
+            characterOrigin(character)
+          ]
+            .join(' ')
+            .toLowerCase()
+            .includes(text)
+        )
+      : items;
+
+    return [...filtered].sort((a, b) => {
+      if (sortMode === 'name-asc') return a.name.localeCompare(b.name);
+      if (sortMode === 'name-desc') return b.name.localeCompare(a.name);
+      if (sortMode === 'newest') return b.createdAt - a.createdAt || a.name.localeCompare(b.name);
+      if (sortMode === 'oldest') return a.createdAt - b.createdAt || a.name.localeCompare(b.name);
+      if (sortMode === 'tokens-desc') return characterTokenEstimate(b) - characterTokenEstimate(a) || a.name.localeCompare(b.name);
+      return Number(b.favorite) - Number(a.favorite) || a.name.localeCompare(b.name);
+    });
+  }
+
+  function sectionText(values: string[] | undefined) {
+    return (values ?? []).join('\n---\n');
+  }
+
+  function parseSectionText(value: string) {
+    return value
+      .split(/\n-{3,}\n/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  function loadCharacterDraft(character?: Character) {
+    characterDraftId = character?.id ?? '';
+    characterDraftName = character?.name ?? '';
+    characterDraftDescription = character?.description ?? '';
+    characterDraftPersonality = character?.personality ?? '';
+    characterDraftScenario = character?.scenario ?? '';
+    characterDraftFirstMessage = character?.firstMessage ?? '';
+    characterDraftAlternateGreetings = sectionText(character?.alternateGreetings);
+    characterDraftExampleMessages = character?.exampleMessages ?? '';
+    characterDraftSystemPrompt = character?.systemPrompt ?? '';
+    characterDraftPostHistoryInstructions = character?.postHistoryInstructions ?? '';
+    characterDraftCreatorNotes = character?.creatorNotes ?? '';
+    characterDraftTags = keywordText(character?.tags ?? []);
+    characterDraftCreator = character?.creator ?? '';
+    characterDraftCharacterVersion = character?.characterVersion ?? '';
+    characterDraftTalkativeness = numberToDraft(character?.talkativeness);
+    characterDraftFavorite = character?.favorite ?? false;
   }
 
   function worldBookLine(worldBook: WorldBook) {
@@ -1276,6 +1427,51 @@
     };
   }
 
+  function openCharacterAvatar(character: Character | undefined = activeCharacter) {
+    if (!character) return;
+    const src = characterAvatarUrl(character);
+    const key = `character:${character.id}:${src}`;
+    if (zoomedAvatar?.key === key) {
+      zoomedAvatar = null;
+      return;
+    }
+    zoomedAvatar = {
+      key,
+      name: character.name,
+      role: 'assistant',
+      src,
+      initials: characterInitials(character)
+    };
+  }
+
+  function openCharacterImport() {
+    importKind = 'character-card-png';
+    importName = '';
+    importText = '';
+    importFileName = '';
+    importFileBase64 = '';
+    activeDrawer = 'import';
+  }
+
+  function startChatWithCharacter(character: Character | undefined = activeCharacter) {
+    if (!character) return;
+    activeCharacterId = character.id;
+    activeConversationId = '';
+    openingPreviewCharacterId = '';
+    messages = [];
+    activeView = 'chat';
+    closeDrawer();
+  }
+
+  function openCharacterWorldBooks(character: Character | undefined = activeCharacter) {
+    const firstWorldBook = boundWorldBooksForCharacter(character)[0];
+    if (firstWorldBook) {
+      activeWorldBookId = firstWorldBook.id;
+    }
+    activeView = 'worldbooks';
+    activeDrawer = 'worldbooks';
+  }
+
   async function readImportFile(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
@@ -1344,6 +1540,104 @@
     activeCharacterId = character.id;
     newCharacterName = '';
     newCharacterDescription = '';
+    status = 'Ready';
+  }
+
+  async function saveActiveCharacter() {
+    if (!activeCharacter) return;
+    const name = characterDraftName.trim();
+    if (!name) return;
+    status = 'Saving';
+    const character = await fetchJson<Character>('/api/characters', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...activeCharacter,
+        name,
+        description: characterDraftDescription.trim(),
+        personality: characterDraftPersonality.trim(),
+        scenario: characterDraftScenario.trim(),
+        firstMessage: characterDraftFirstMessage.trim(),
+        alternateGreetings: parseSectionText(characterDraftAlternateGreetings),
+        exampleMessages: characterDraftExampleMessages.trim(),
+        systemPrompt: characterDraftSystemPrompt.trim(),
+        postHistoryInstructions: characterDraftPostHistoryInstructions.trim(),
+        creatorNotes: characterDraftCreatorNotes.trim(),
+        tags: parseKeywordText(characterDraftTags),
+        creator: characterDraftCreator.trim(),
+        characterVersion: characterDraftCharacterVersion.trim(),
+        talkativeness: optionalNumber(characterDraftTalkativeness),
+        favorite: characterDraftFavorite,
+        updatedAt: Date.now()
+      })
+    });
+    characters = characters.map((item) => (item.id === character.id ? character : item));
+    activeCharacterId = character.id;
+    loadCharacterDraft(character);
+    status = 'Ready';
+  }
+
+  async function toggleCharacterFavorite(character: Character | undefined = activeCharacter) {
+    if (!character) return;
+    status = 'Saving';
+    const saved = await fetchJson<Character>('/api/characters', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...character,
+        favorite: !character.favorite,
+        updatedAt: Date.now()
+      })
+    });
+    characters = characters.map((item) => (item.id === saved.id ? saved : item));
+    if (activeCharacterId === saved.id) {
+      loadCharacterDraft(saved);
+    }
+    status = 'Ready';
+  }
+
+  async function duplicateActiveCharacter() {
+    if (!activeCharacter) return;
+    status = 'Saving';
+    const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, characterBook: _characterBook, ...rest } = structuredClone(activeCharacter);
+    const character = await fetchJson<Character>('/api/characters', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...rest,
+        name: `${activeCharacter.name} Copy`,
+        favorite: false,
+        worldBookIds: boundWorldBooksForCharacter(activeCharacter).map((worldBook) => worldBook.id)
+      })
+    });
+    characters = [...characters, character];
+    activeCharacterId = character.id;
+    loadCharacterDraft(character);
+    status = 'Ready';
+  }
+
+  async function deleteActiveCharacter() {
+    if (!activeCharacter) return;
+    const character = activeCharacter;
+    if (!confirm(`Delete character "${character.name}"?`)) return;
+    status = 'Deleting';
+    await fetchJson<{ deleted: boolean }>('/api/characters', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: character.id })
+    });
+    const index = characters.findIndex((item) => item.id === character.id);
+    const remaining = characters.filter((item) => item.id !== character.id);
+    characters = remaining;
+    activeCharacterId = remaining[Math.min(index, remaining.length - 1)]?.id ?? '';
+    if (openingPreviewCharacterId === character.id) {
+      openingPreviewCharacterId = '';
+      messages = [];
+    }
+    if (zoomedAvatar?.key.startsWith(`character:${character.id}:`)) {
+      zoomedAvatar = null;
+    }
+    loadCharacterDraft(characters.find((item) => item.id === activeCharacterId));
     status = 'Ready';
   }
 
@@ -1619,7 +1913,14 @@
 
   {#if activeDrawer}
     <button class="scrim" type="button" aria-label="Close drawer" on:click={closeDrawer}></button>
-    <aside class="drawer" class:right={drawerIsRight} class:profiles={activeDrawer === 'profiles'} class:worldbooks={activeDrawer === 'worldbooks'} aria-label={drawerTitle}>
+    <aside
+      class="drawer"
+      class:right={drawerIsRight}
+      class:characters={activeDrawer === 'characters'}
+      class:profiles={activeDrawer === 'profiles'}
+      class:worldbooks={activeDrawer === 'worldbooks'}
+      aria-label={drawerTitle}
+    >
       <header class="drawer-header">
         <h2>{drawerTitle}</h2>
         <button class="tool-button" type="button" title="Close" aria-label="Close" on:click={closeDrawer}>
@@ -1647,45 +1948,238 @@
           {/each}
         </div>
       {:else if activeDrawer === 'characters'}
-        <form class="editor" on:submit|preventDefault={createCharacter}>
-          <input bind:value={newCharacterName} placeholder="Name" />
-          <textarea bind:value={newCharacterDescription} rows="5" placeholder="Description"></textarea>
-          <button class="primary full" type="submit"><Bot size={16} />Create</button>
-        </form>
+        <div class="character-workspace">
+          <section class="character-library" aria-label="Character library">
+            <form class="character-create" on:submit|preventDefault={createCharacter}>
+              <input bind:value={newCharacterName} placeholder="New character name" />
+              <button class="primary" type="submit"><Bot size={16} />Create</button>
+            </form>
 
-        {#if activeCharacter}
-          <section class="bound-worldbooks">
-            <div>
-              <strong>{activeCharacter.name}</strong>
-              <span>{activeCharacterWorldBooks.length} bound world book{activeCharacterWorldBooks.length === 1 ? '' : 's'}</span>
-            </div>
-            {#if activeCharacterWorldBooks.length}
-              <div class="bound-worldbook-list">
-                {#each activeCharacterWorldBooks as worldBook}
-                  <article>
-                    <strong>{worldBook.name}</strong>
-                    <span>{worldBook.entries.length} entries</span>
-                  </article>
+            <textarea class="character-quick-description" bind:value={newCharacterDescription} rows="3" placeholder="Optional starter description"></textarea>
+
+            <div class="character-toolbar">
+              <button class="tool-button" type="button" on:click={openCharacterImport} title="Import character card" aria-label="Import character card">
+                <FileInput size={16} />
+              </button>
+              <input class="profile-search" bind:value={characterQuery} placeholder="Search characters" aria-label="Search characters" />
+              <select bind:value={characterSortMode} aria-label="Sort characters">
+                {#each characterSortModes as option}
+                  <option value={option.value}>{option.label}</option>
                 {/each}
-              </div>
-            {:else}
-              <span class="drawer-empty compact">No character-bound world book</span>
-            {/if}
-          </section>
-        {/if}
+              </select>
+            </div>
 
-        <div class="item-list">
-          {#each characters as character}
-            <button
-              class="drawer-item"
-              class:active={character.id === activeCharacterId}
-              type="button"
-              on:click={() => (activeCharacterId = character.id)}
-            >
-              <strong>{character.name}</strong>
-              <span>{((character.worldBookIds?.length ?? 0) || (character.characterBook ? 1 : 0)) ? 'has character book' : character.id}</span>
-            </button>
-          {/each}
+            <div class="character-list" aria-label="Characters">
+              {#each filteredCharacters as character}
+                <article class="character-row" class:active={character.id === activeCharacterId}>
+                  <button class="character-row-main" type="button" on:click={() => (activeCharacterId = character.id)}>
+                    <span class="character-avatar-small">
+                      {#if characterAvatarUrl(character)}
+                        <img src={characterAvatarUrl(character)} alt={`${character.name} avatar`} />
+                      {:else}
+                        <span>{characterInitials(character)}</span>
+                      {/if}
+                    </span>
+                    <span class="character-row-copy">
+                      <strong>{character.name}</strong>
+                      <small>{characterListLine(character)}</small>
+                    </span>
+                  </button>
+                  <button
+                    class="favorite-button"
+                    class:active={character.favorite}
+                    type="button"
+                    on:click={() => toggleCharacterFavorite(character)}
+                    title={character.favorite ? 'Unfavorite' : 'Favorite'}
+                    aria-label={`${character.favorite ? 'Unfavorite' : 'Favorite'} ${character.name}`}
+                  >
+                    <Star size={15} fill={character.favorite ? 'currentColor' : 'none'} />
+                  </button>
+                </article>
+              {:else}
+                <div class="drawer-empty compact">No matching characters</div>
+              {/each}
+            </div>
+          </section>
+
+          {#if activeCharacter}
+            <form class="character-editor" on:submit|preventDefault={saveActiveCharacter}>
+              <header class="character-editor-hero">
+                <button class="character-avatar-large" type="button" on:click={() => openCharacterAvatar(activeCharacter)} title="Open avatar preview" aria-label={`Open avatar for ${activeCharacter.name}`}>
+                  {#if characterAvatarUrl(activeCharacter)}
+                    <img src={characterAvatarUrl(activeCharacter)} alt={`${activeCharacter.name} avatar`} />
+                  {:else}
+                    <span>{characterInitials(activeCharacter)}</span>
+                  {/if}
+                </button>
+
+                <div class="character-hero-copy">
+                  <div class="character-hero-title">
+                    <div>
+                      <strong>{activeCharacter.name}</strong>
+                      <span>{characterOrigin(activeCharacter)}</span>
+                    </div>
+                    <button
+                      class="favorite-button hero-favorite"
+                      class:active={characterDraftFavorite}
+                      type="button"
+                      on:click={() => (characterDraftFavorite = !characterDraftFavorite)}
+                      title={characterDraftFavorite ? 'Unfavorite on save' : 'Favorite on save'}
+                      aria-label="Toggle favorite in draft"
+                    >
+                      <Star size={16} fill={characterDraftFavorite ? 'currentColor' : 'none'} />
+                    </button>
+                  </div>
+
+                  <div class="character-chips" aria-label="Character statistics">
+                    <span>{activeCharacterStats.tokens} tokens</span>
+                    <span>{activeCharacterStats.greetings} greetings</span>
+                    <span>{activeCharacterStats.worldBooks} lorebooks</span>
+                    <span>{activeCharacterStats.tags} tags</span>
+                    {#if activeCharacterStats.overrides}
+                      <span>{activeCharacterStats.overrides} overrides</span>
+                    {/if}
+                  </div>
+                </div>
+
+                <div class="character-actions">
+                  <button class="tool-button" type="button" on:click={() => startChatWithCharacter(activeCharacter)} title="Start chat" aria-label="Start chat">
+                    <MessageCircle size={16} />
+                  </button>
+                  <button class="tool-button" type="button" on:click={openCharacterImport} title="Import character card" aria-label="Import character card">
+                    <FileInput size={16} />
+                  </button>
+                  <button class="tool-button" type="button" on:click={duplicateActiveCharacter} title="Duplicate character" aria-label="Duplicate character">
+                    <Copy size={16} />
+                  </button>
+                  <button class="tool-button danger" type="button" on:click={deleteActiveCharacter} title="Delete character" aria-label="Delete character">
+                    <Trash2 size={16} />
+                  </button>
+                  <button class="tool-button" type="submit" title="Save character" aria-label="Save character">
+                    <Save size={16} />
+                  </button>
+                </div>
+              </header>
+
+              <nav class="character-tabs" aria-label="Character editor sections">
+                <button class:active={characterEditorTab === 'core'} type="button" on:click={() => (characterEditorTab = 'core')}>Core</button>
+                <button class:active={characterEditorTab === 'prompt'} type="button" on:click={() => (characterEditorTab = 'prompt')}>Prompt</button>
+                <button class:active={characterEditorTab === 'lore'} type="button" on:click={() => (characterEditorTab = 'lore')}>Lore</button>
+                <button class:active={characterEditorTab === 'metadata'} type="button" on:click={() => (characterEditorTab = 'metadata')}>Metadata</button>
+              </nav>
+
+              {#if characterEditorTab === 'core'}
+                <section class="character-editor-section">
+                  <div class="character-field-grid">
+                    <label>
+                      <span>Name</span>
+                      <input bind:value={characterDraftName} placeholder="Character name" />
+                    </label>
+                    <label>
+                      <span>Tags</span>
+                      <input bind:value={characterDraftTags} placeholder="Comma or newline separated" />
+                    </label>
+                    <label class="span-2">
+                      <span>Description</span>
+                      <textarea bind:value={characterDraftDescription} rows="8" placeholder="Physical and mental traits"></textarea>
+                    </label>
+                    <label>
+                      <span>Personality</span>
+                      <textarea bind:value={characterDraftPersonality} rows="5" placeholder="Personality notes"></textarea>
+                    </label>
+                    <label>
+                      <span>Scenario</span>
+                      <textarea bind:value={characterDraftScenario} rows="5" placeholder="Scene and relationship context"></textarea>
+                    </label>
+                    <label class="span-2">
+                      <span>First Message</span>
+                      <textarea bind:value={characterDraftFirstMessage} rows="6" placeholder="Opening message"></textarea>
+                    </label>
+                    <label class="span-2">
+                      <span>Alternate Greetings</span>
+                      <textarea bind:value={characterDraftAlternateGreetings} rows="5" placeholder="Separate greetings with a line containing ---"></textarea>
+                    </label>
+                  </div>
+                </section>
+              {:else if characterEditorTab === 'prompt'}
+                <section class="character-editor-section">
+                  <div class="character-field-grid">
+                    <label class="span-2">
+                      <span>System Prompt Override</span>
+                      <textarea bind:value={characterDraftSystemPrompt} rows="7" placeholder="Character-level system prompt"></textarea>
+                    </label>
+                    <label class="span-2">
+                      <span>Post-History Instructions</span>
+                      <textarea bind:value={characterDraftPostHistoryInstructions} rows="7" placeholder="Instructions injected after chat history"></textarea>
+                    </label>
+                    <label class="span-2">
+                      <span>Example Messages</span>
+                      <textarea bind:value={characterDraftExampleMessages} rows="9" placeholder="Example dialogue"></textarea>
+                    </label>
+                  </div>
+                </section>
+              {:else if characterEditorTab === 'lore'}
+                <section class="character-editor-section">
+                  <div class="character-lore-header">
+                    <div>
+                      <strong>Character Lore</strong>
+                      <span>{activeCharacterWorldBooks.length} bound world book{activeCharacterWorldBooks.length === 1 ? '' : 's'}</span>
+                    </div>
+                    <button class="secondary" type="button" on:click={() => openCharacterWorldBooks(activeCharacter)}>
+                      <BookOpen size={16} />Open
+                    </button>
+                  </div>
+                  {#if activeCharacterWorldBooks.length}
+                    <div class="character-lore-list">
+                      {#each activeCharacterWorldBooks as worldBook}
+                        <button type="button" on:click={() => { activeWorldBookId = worldBook.id; activeView = 'worldbooks'; activeDrawer = 'worldbooks'; }}>
+                          <BookOpen size={16} />
+                          <span>
+                            <strong>{worldBook.name}</strong>
+                            <small>{worldBook.entries.length} entries · {worldBook.metadata?.source ?? 'native'}</small>
+                          </span>
+                        </button>
+                      {/each}
+                    </div>
+                  {:else}
+                    <div class="drawer-empty compact">No character-bound world book</div>
+                  {/if}
+
+                  <label class="character-textarea-label">
+                    <span>Creator Notes</span>
+                    <textarea bind:value={characterDraftCreatorNotes} rows="8" placeholder="Private author notes and card usage notes"></textarea>
+                  </label>
+                </section>
+              {:else}
+                <section class="character-editor-section">
+                  <div class="character-field-grid">
+                    <label>
+                      <span>Creator</span>
+                      <input bind:value={characterDraftCreator} placeholder="Creator" />
+                    </label>
+                    <label>
+                      <span>Version</span>
+                      <input bind:value={characterDraftCharacterVersion} placeholder="Character version" />
+                    </label>
+                    <label>
+                      <span>Talkativeness</span>
+                      <input bind:value={characterDraftTalkativeness} inputmode="decimal" placeholder="Optional" />
+                    </label>
+                    <div class="character-source-panel">
+                      <span>Card Source</span>
+                      <strong>{characterOrigin(activeCharacter)}</strong>
+                      <small>{activeCharacter.id}</small>
+                    </div>
+                  </div>
+                </section>
+              {/if}
+            </form>
+          {:else}
+            <section class="character-editor empty">
+              <Image size={28} />
+              <strong>Select or create a character</strong>
+            </section>
+          {/if}
         </div>
       {:else if activeDrawer === 'personas'}
         <form class="editor" on:submit|preventDefault={createPersona}>
@@ -2674,6 +3168,16 @@
     background: #edf6f0;
   }
 
+  .tool-button.danger {
+    border-color: #e4c3bd;
+    color: #9b2f24;
+  }
+
+  .tool-button.danger:hover {
+    border-color: #d89a91;
+    background: #fff1ef;
+  }
+
   .tool-button:disabled {
     cursor: not-allowed;
     opacity: 0.42;
@@ -3106,6 +3610,10 @@
     width: min(720px, calc(100vw - 64px));
   }
 
+  .drawer.characters {
+    width: min(1040px, calc(100vw - 64px));
+  }
+
   .drawer.worldbooks {
     width: min(1040px, calc(100vw - 64px));
   }
@@ -3191,39 +3699,6 @@
     padding: 0 16px 16px;
   }
 
-  .bound-worldbooks {
-    display: grid;
-    gap: 10px;
-    border-top: 1px solid #eef0ec;
-    border-bottom: 1px solid #eef0ec;
-    background: #fbfcfa;
-    padding: 12px 16px;
-  }
-
-  .bound-worldbooks > div:first-child,
-  .bound-worldbook-list article {
-    display: grid;
-    gap: 3px;
-  }
-
-  .bound-worldbooks span,
-  .bound-worldbook-list span {
-    color: #66716a;
-    font-size: 12px;
-  }
-
-  .bound-worldbook-list {
-    display: grid;
-    gap: 6px;
-  }
-
-  .bound-worldbook-list article {
-    border: 1px solid #e0e4df;
-    border-radius: 7px;
-    background: #fff;
-    padding: 8px 10px;
-  }
-
   .drawer-item,
   .drawer-card {
     display: grid;
@@ -3255,6 +3730,361 @@
     background: #fff;
     padding: 9px 10px;
     text-align: center;
+  }
+
+  .character-workspace {
+    display: grid;
+    grid-template-columns: minmax(260px, 310px) minmax(0, 1fr);
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .character-library {
+    display: grid;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    gap: 10px;
+    min-height: 0;
+    border-right: 1px solid #e1e4df;
+    background: #fbfcfa;
+    padding: 14px;
+  }
+
+  .character-create {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .character-create input,
+  .character-quick-description,
+  .character-toolbar input,
+  .character-toolbar select,
+  .character-field-grid input,
+  .character-field-grid textarea,
+  .character-textarea-label textarea {
+    min-height: 36px;
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .character-create button {
+    min-height: 36px;
+    padding: 0 12px;
+  }
+
+  .character-quick-description {
+    resize: vertical;
+  }
+
+  .character-toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(118px, auto);
+    align-items: center;
+    gap: 8px;
+  }
+
+  .character-list {
+    display: grid;
+    align-content: start;
+    gap: 7px;
+    min-height: 0;
+    overflow: auto;
+    scrollbar-width: thin;
+  }
+
+  .character-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    border: 1px solid #dfe3dc;
+    border-radius: 8px;
+    background: #fff;
+    padding: 7px;
+  }
+
+  .character-row.active,
+  .character-row:hover {
+    border-color: #9dc7ad;
+    background: #edf6f0;
+  }
+
+  .character-row-main {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 9px;
+    border: 0;
+    background: transparent;
+    color: #202823;
+    padding: 0;
+    text-align: left;
+  }
+
+  .character-avatar-small,
+  .character-avatar-large {
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid #d9ddd7;
+    border-radius: 8px;
+    background: #203229;
+    color: #fff;
+    font-weight: 800;
+  }
+
+  .character-avatar-small {
+    width: 46px;
+    height: 56px;
+    font-size: 16px;
+  }
+
+  .character-avatar-small img,
+  .character-avatar-large img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .character-row-copy {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .character-row-copy strong,
+  .character-hero-title strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .character-row-copy small,
+  .character-hero-title span,
+  .character-field-grid span,
+  .character-textarea-label span,
+  .character-lore-header span,
+  .character-lore-list small,
+  .character-source-panel span,
+  .character-source-panel small {
+    color: #66716a;
+    font-size: 12px;
+  }
+
+  .favorite-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid #d6d8d3;
+    border-radius: 7px;
+    background: #fff;
+    color: #7a827d;
+    padding: 0;
+  }
+
+  .favorite-button.active {
+    border-color: #e5c36a;
+    background: #fff8df;
+    color: #9a6a0a;
+  }
+
+  .character-editor {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: 12px;
+    min-height: 0;
+    overflow: auto;
+    padding: 14px;
+  }
+
+  .character-editor.empty {
+    place-content: center;
+    justify-items: center;
+    color: #66716a;
+  }
+
+  .character-editor-hero {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 12px;
+    border: 1px solid #e0e4df;
+    border-radius: 8px;
+    background: #fbfcfa;
+    padding: 12px;
+  }
+
+  .character-avatar-large {
+    width: 104px;
+    height: 136px;
+    padding: 0;
+    cursor: zoom-in;
+  }
+
+  .character-avatar-large:hover,
+  .character-avatar-large:focus-visible {
+    border-color: #92bfa4;
+    box-shadow: 0 0 0 3px rgb(146 191 164 / 22%);
+    outline: 0;
+  }
+
+  .character-hero-copy,
+  .character-hero-title > div {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+  }
+
+  .character-hero-title {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .character-hero-title strong {
+    font-size: 20px;
+  }
+
+  .hero-favorite {
+    flex: 0 0 auto;
+  }
+
+  .character-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .character-chips span {
+    border: 1px solid #e0e4df;
+    border-radius: 999px;
+    background: #fff;
+    color: #2f3a34;
+    padding: 4px 8px;
+    font-size: 12px;
+    line-height: 1.1;
+  }
+
+  .character-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .character-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    border: 1px solid #dfe3dc;
+    border-radius: 8px;
+    background: #f1f3ef;
+    padding: 4px;
+  }
+
+  .character-tabs button {
+    min-height: 36px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: #314039;
+  }
+
+  .character-tabs button.active {
+    border-color: #a9c8b3;
+    background: #fff;
+    color: #174b32;
+    box-shadow: 0 1px 3px rgb(29 39 33 / 8%);
+  }
+
+  .character-editor-section {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    min-height: 0;
+  }
+
+  .character-field-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .character-field-grid label,
+  .character-textarea-label {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+  }
+
+  .character-field-grid .span-2 {
+    grid-column: 1 / -1;
+  }
+
+  .character-field-grid textarea,
+  .character-textarea-label textarea {
+    resize: vertical;
+    line-height: 1.45;
+  }
+
+  .character-lore-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid #e0e4df;
+    border-radius: 8px;
+    background: #fbfcfa;
+    padding: 10px 12px;
+  }
+
+  .character-lore-header > div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .character-lore-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .character-lore-list button {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 9px;
+    border: 1px solid #dfe3dc;
+    border-radius: 8px;
+    background: #fff;
+    color: #202823;
+    padding: 10px;
+    text-align: left;
+  }
+
+  .character-lore-list button:hover {
+    border-color: #9dc7ad;
+    background: #edf6f0;
+  }
+
+  .character-lore-list button span {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .character-source-panel {
+    display: grid;
+    align-content: center;
+    gap: 3px;
+    border: 1px solid #e0e4df;
+    border-radius: 8px;
+    background: #fbfcfa;
+    padding: 8px 10px;
   }
 
   .worldbook-workspace {
@@ -4479,12 +5309,52 @@
       width: calc(100vw - 56px);
     }
 
+    .drawer.characters {
+      width: calc(100vw - 56px);
+    }
+
     .drawer.worldbooks {
       width: calc(100vw - 56px);
     }
 
     .drawer.right {
       width: calc(100vw - 56px);
+    }
+
+    .character-workspace {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: auto;
+    }
+
+    .character-library {
+      border-right: 0;
+      border-bottom: 1px solid #e1e4df;
+    }
+
+    .character-list {
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(230px, 1fr);
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 2px;
+    }
+
+    .character-editor-hero {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .character-actions {
+      grid-column: 1 / -1;
+      justify-content: flex-end;
+    }
+
+    .character-field-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .character-tabs {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .worldbook-workspace,

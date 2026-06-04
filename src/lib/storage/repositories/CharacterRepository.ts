@@ -27,4 +27,9 @@ export class CharacterRepository {
       .run();
     return updated;
   }
+
+  delete(id: string): boolean {
+    const result = this.db.delete(characters).where(eq(characters.id, id)).run();
+    return result.changes > 0;
+  }
 }

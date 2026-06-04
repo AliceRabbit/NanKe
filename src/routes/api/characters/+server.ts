@@ -20,3 +20,15 @@ export async function POST({ request }) {
     return errorResponse(error);
   }
 }
+
+export async function DELETE({ request }) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const id = typeof body.id === 'string' ? body.id.trim() : '';
+    if (!id) throw new Error('Character id is required.');
+    const deleted = createRequestContext().characters.delete(id);
+    return json({ deleted });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}

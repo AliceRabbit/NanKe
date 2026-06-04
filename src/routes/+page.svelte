@@ -3941,6 +3941,105 @@
     cursor: pointer;
   }
 
+  .message-content.rich :global(.konata-thinking-wrapper) {
+    display: block;
+    margin: 10px 0 12px;
+    font-family:
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      sans-serif;
+  }
+
+  .message-content.rich :global(.konata-thinking-details) {
+    overflow: hidden;
+    border: 1px solid rgb(139 92 246 / 28%);
+    border-radius: 12px;
+    background: rgb(15 23 42 / 72%);
+    box-shadow: 0 8px 20px rgb(15 23 42 / 14%);
+    color: #cbd5e1;
+  }
+
+  .message-content.rich :global(.konata-thinking-details[open]) {
+    border-color: rgb(139 92 246 / 52%);
+    background: rgb(2 6 23 / 88%);
+    box-shadow: 0 12px 26px rgb(15 23 42 / 22%);
+  }
+
+  .message-content.rich :global(.konata-thinking-summary) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 42px;
+    padding: 10px 14px;
+    color: #dbeafe;
+    font-size: 13px;
+    font-weight: 700;
+    list-style: none;
+    user-select: none;
+  }
+
+  .message-content.rich :global(.konata-thinking-summary::-webkit-details-marker) {
+    display: none;
+  }
+
+  .message-content.rich :global(.konata-title-content) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .message-content.rich :global(.konata-icon) {
+    display: inline-block;
+    color: #a78bfa;
+    filter: drop-shadow(0 0 5px rgb(167 139 250 / 28%));
+    transition: transform 0.2s ease;
+  }
+
+  .message-content.rich :global(.konata-thinking-details[open] .konata-icon) {
+    transform: rotate(90deg);
+  }
+
+  .message-content.rich :global(.konata-arrow) {
+    position: relative;
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.82;
+    transition: transform 0.2s ease;
+  }
+
+  .message-content.rich :global(.konata-arrow::after) {
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    content: '';
+    transform: rotate(45deg) translate(-1px, -1px);
+  }
+
+  .message-content.rich :global(.konata-thinking-details[open] .konata-arrow) {
+    transform: rotate(180deg);
+  }
+
+  .message-content.rich :global(.konata-thinking-content) {
+    border-top: 1px solid rgb(255 255 255 / 8%);
+    padding: 12px 16px 14px;
+    color: #e2e8f0;
+  }
+
+  .message-content.rich :global(.konata-thinking-content p),
+  .message-content.rich :global(.konata-thinking-content ul),
+  .message-content.rich :global(.konata-thinking-content ol) {
+    margin-top: 0;
+  }
+
   .composer {
     display: grid;
     grid-template-columns: minmax(0, 820px) auto;

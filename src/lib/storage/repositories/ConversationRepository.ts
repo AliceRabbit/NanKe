@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { desc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { conversationSchema, type Conversation, type ConversationWithMessages } from '$lib/schemas/conversation';
 import {
   createMessageNode,
@@ -15,6 +15,25 @@ import { getDatabase, getDatabaseHandle } from '../db';
 type DrizzleDatabase = ReturnType<typeof getDatabase>;
 
 type ConversationRow = typeof conversations.$inferSelect;
+
+type ConversationSqlRow = {
+  id: string;
+  title: string;
+  character_id: string | null;
+  persona_id: string | null;
+  profile_id: string | null;
+  root_node_id: string | null;
+  active_leaf_id: string | null;
+  node_count: number;
+  branch_count: number;
+  active_depth: number;
+  last_preview: string | null;
+  revision: number;
+  archived_at: number | null;
+  data: string;
+  created_at: number;
+  updated_at: number;
+};
 
 type MessageNodeRow = {
   id: string;
@@ -39,19 +58,37 @@ type MessageNodeRow = {
 
 export type SwitchSiblingDirection = 'left' | 'right';
 
+export type ConversationListOptions = {
+  includeArchived?: boolean;
+  characterId?: string;
+};
+
 export class ConversationRepository {
   constructor(
     private readonly db: DrizzleDatabase = getDatabase(),
     private readonly sqlite: Database.Database = getDatabaseHandle().sqlite
   ) {}
 
-  list(): Conversation[] {
-    return this.db
-      .select()
-      .from(conversations)
-      .orderBy(desc(conversations.updatedAt))
-      .all()
-      .map((row) => this.hydrateConversation(row));
+  list(options: ConversationListOptions = {}): Conversation[] {
+    const where: string[] = [];
+    const params: Record<string, string> = {};
+    if (!options.includeArchived) where.push('archived_at IS NULL');
+    if (options.characterId) {
+      where.push('character_id = @characterId');
+      params.characterId = options.characterId;
+    }
+
+    const rows = this.sqlite
+      .prepare(
+        `
+        SELECT *
+        FROM conversations
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY updated_at DESC
+      `
+      )
+      .all(params) as ConversationSqlRow[];
+    return rows.map((row) => this.hydrateConversationSql(row));
   }
 
   get(id: string): Conversation | undefined {
@@ -82,6 +119,45 @@ export class ConversationRepository {
     transaction();
 
     return updated;
+  }
+
+  rename(id: string, title: string): Conversation | undefined {
+    const conversation = this.get(id);
+    const trimmed = title.trim();
+    if (!conversation || !trimmed) return undefined;
+    return this.save({
+      ...conversation,
+      title: trimmed,
+      revision: conversation.revision + 1
+    });
+  }
+
+  archive(id: string, archived = true): Conversation | undefined {
+    const conversation = this.get(id);
+    if (!conversation) return undefined;
+    const updated = conversationSchema.parse({
+      ...conversation,
+      archivedAt: archived ? Date.now() : undefined,
+      revision: conversation.revision + 1,
+      updatedAt: Date.now()
+    });
+    this.persistConversation(updated);
+    return updated;
+  }
+
+  delete(id: string): boolean {
+    const remove = this.sqlite.transaction(() => {
+      this.sqlite
+        .prepare(
+          `DELETE FROM message_assets
+           WHERE message_node_id IN (SELECT id FROM message_nodes WHERE conversation_id = ?)`
+        )
+        .run(id);
+      this.sqlite.prepare(`DELETE FROM message_nodes WHERE conversation_id = ?`).run(id);
+      this.sqlite.prepare(`DELETE FROM messages WHERE conversation_id = ?`).run(id);
+      return this.sqlite.prepare(`DELETE FROM conversations WHERE id = ?`).run(id).changes > 0;
+    });
+    return remove();
   }
 
   listMessages(conversationId: string): NankeMessage[] {
@@ -205,6 +281,28 @@ export class ConversationRepository {
     });
   }
 
+  private hydrateConversationSql(row: ConversationSqlRow): Conversation {
+    const data = conversationSchema.parse(JSON.parse(row.data));
+    return conversationSchema.parse({
+      ...data,
+      id: row.id,
+      title: row.title,
+      characterId: row.character_id ?? data.characterId,
+      personaId: row.persona_id ?? data.personaId,
+      profileId: row.profile_id ?? data.profileId,
+      rootNodeId: row.root_node_id ?? data.rootNodeId,
+      activeLeafId: row.active_leaf_id ?? data.activeLeafId,
+      nodeCount: row.node_count ?? data.nodeCount,
+      branchCount: row.branch_count ?? data.branchCount,
+      activeDepth: row.active_depth ?? data.activeDepth,
+      lastPreview: row.last_preview ?? data.lastPreview,
+      revision: row.revision ?? data.revision,
+      archivedAt: row.archived_at ?? undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    });
+  }
+
   private persistConversation(conversation: Conversation): void {
     this.db
       .insert(conversations)
@@ -221,7 +319,7 @@ export class ConversationRepository {
         activeDepth: conversation.activeDepth,
         lastPreview: conversation.lastPreview,
         revision: conversation.revision,
-        archivedAt: conversation.archivedAt,
+        archivedAt: conversation.archivedAt ?? null,
         data: conversation,
         createdAt: conversation.createdAt,
         updatedAt: conversation.updatedAt
@@ -240,7 +338,7 @@ export class ConversationRepository {
           activeDepth: conversation.activeDepth,
           lastPreview: conversation.lastPreview,
           revision: conversation.revision,
-          archivedAt: conversation.archivedAt,
+          archivedAt: conversation.archivedAt ?? null,
           data: conversation,
           updatedAt: conversation.updatedAt
         }

@@ -6,6 +6,8 @@
   import type { RegexPlacement, RegexScript } from '$lib/schemas/regex';
   import type { WorldBook, WorldBookEntry } from '$lib/schemas/worldbook';
   import {
+    Archive,
+    ArchiveRestore,
     ArrowDown,
     ArrowUp,
     Bot,
@@ -188,6 +190,7 @@
     activeDepth?: number;
     lastPreview?: string;
     revision?: number;
+    archivedAt?: number;
     messages?: ChatMessage[];
     updatedAt?: number;
   };
@@ -202,6 +205,7 @@
   };
   type ZoomedAvatar = { key: string; name: string; role: ChatMessage['role']; src: string; initials: string };
   type GenerationStreamEvent = { type: 'text' | 'thinking' | 'inspector' | 'done' | 'error'; text?: string; conversationId?: string; activeLeafId?: string };
+  type ConversationGroup = { key: string; label: string; avatarUrl: string; count: number; conversations: Conversation[] };
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
@@ -294,6 +298,8 @@
   let personas: UserPersona[] = [];
   let worldBooks: WorldBook[] = [];
   let conversations: Conversation[] = [];
+  let conversationQuery = '';
+  let showArchivedConversations = false;
   let activeView: View = 'chat';
   let activeDrawer: Drawer = null;
   let activeProfileId = '';
@@ -454,6 +460,7 @@
   $: activeWorldBookEntry = worldBookDraftEntries.find((entry) => entry.id === activeWorldBookEntryId);
   $: activePersona = personas.find((persona) => persona.id === activePersonaId);
   $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
+  $: conversationGroups = groupConversations(conversations, conversationQuery, showArchivedConversations);
   $: isGenerating = generationAbortController !== null;
   $: drawerTitle =
     activeDrawer === 'chats'
@@ -547,7 +554,11 @@
   }
 
   function rememberConversation(conversation: Conversation) {
-    conversations = [conversation, ...conversations.filter((item) => item.id !== conversation.id)].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+    const shouldKeep = showArchivedConversations || !conversation.archivedAt || conversation.id === activeConversationId;
+    conversations = [
+      ...(shouldKeep ? [conversation] : []),
+      ...conversations.filter((item) => item.id !== conversation.id)
+    ].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   }
 
   async function refreshConversationState(id: string, options: { close?: boolean } = {}) {
@@ -562,13 +573,77 @@
     return conversation;
   }
 
+  function conversationListUrl() {
+    const params = new URLSearchParams();
+    if (showArchivedConversations) params.set('includeArchived', 'true');
+    return `/api/conversations${params.size ? `?${params}` : ''}`;
+  }
+
+  async function refreshConversations() {
+    conversations = await fetchJson<Conversation[]>(conversationListUrl());
+  }
+
+  async function toggleArchivedConversations() {
+    showArchivedConversations = !showArchivedConversations;
+    await refreshConversations();
+  }
+
+  function groupConversations(items: Conversation[], query: string, includeArchived: boolean): ConversationGroup[] {
+    const needle = query.trim().toLowerCase();
+    const groups = new Map<string, ConversationGroup>();
+    for (const conversation of items) {
+      if (!includeArchived && conversation.archivedAt) continue;
+      const character = conversation.characterId ? characters.find((item) => item.id === conversation.characterId) : undefined;
+      const haystack = `${conversation.title} ${conversation.lastPreview ?? ''} ${character?.name ?? ''}`.toLowerCase();
+      if (needle && !haystack.includes(needle)) continue;
+
+      const key = conversation.characterId ?? 'none';
+      const group =
+        groups.get(key) ??
+        ({
+          key,
+          label: character?.name ?? 'No character',
+          avatarUrl: characterAvatarUrl(character),
+          count: 0,
+          conversations: []
+        } satisfies ConversationGroup);
+      group.count += 1;
+      group.conversations.push(conversation);
+      groups.set(key, group);
+    }
+    return [...groups.values()];
+  }
+
+  function conversationSummary(conversation: Conversation) {
+    const parts = [
+      `${conversation.nodeCount ?? 0} nodes`,
+      conversation.branchCount ? `${conversation.branchCount} branches` : '',
+      conversation.archivedAt ? 'archived' : ''
+    ].filter(Boolean);
+    return parts.join(' · ') || 'Empty chat';
+  }
+
+  function conversationPreview(conversation: Conversation) {
+    return conversation.lastPreview?.trim() || conversation.id;
+  }
+
+  function conversationUpdatedLabel(conversation: Conversation) {
+    if (!conversation.updatedAt) return '';
+    return new Date(conversation.updatedAt).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
   async function refreshAll() {
     status = 'Loading';
     profiles = await fetchJson<Profile[]>('/api/profiles');
     characters = await fetchJson<Character[]>('/api/characters');
     personas = await fetchJson<UserPersona[]>('/api/personas');
     worldBooks = await fetchJson<WorldBook[]>('/api/worldbooks');
-    conversations = await fetchJson<Conversation[]>('/api/conversations');
+    conversations = await fetchJson<Conversation[]>(conversationListUrl());
     activeProfileId ||= profiles[0]?.id ?? '';
     activeCharacterId ||= characters[0]?.id ?? '';
     activePersonaId ||= personas.find((persona) => persona.isDefault)?.id ?? personas[0]?.id ?? '';
@@ -1545,6 +1620,52 @@
     await refreshConversationState(id, { close: true });
   }
 
+  async function renameConversation(event: MouseEvent, conversation: Conversation) {
+    event.stopPropagation();
+    const title = window.prompt('Rename chat', conversation.title)?.trim();
+    if (!title || title === conversation.title) return;
+    const updated = await fetchJson<Conversation>('/api/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'rename',
+        conversationId: conversation.id,
+        title
+      })
+    });
+    rememberConversation(updated);
+  }
+
+  async function archiveConversation(event: MouseEvent, conversation: Conversation) {
+    event.stopPropagation();
+    const archived = !conversation.archivedAt;
+    const updated = await fetchJson<Conversation>('/api/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'archive',
+        conversationId: conversation.id,
+        archived
+      })
+    });
+    rememberConversation(updated);
+  }
+
+  async function deleteConversation(event: MouseEvent, conversation: Conversation) {
+    event.stopPropagation();
+    if (!window.confirm(`Delete "${conversation.title}"? This cannot be undone.`)) return;
+    await fetchJson<{ deleted: boolean; id: string }>(`/api/conversations?id=${encodeURIComponent(conversation.id)}`, {
+      method: 'DELETE'
+    });
+    conversations = conversations.filter((item) => item.id !== conversation.id);
+    if (activeConversationId === conversation.id) {
+      activeConversationId = '';
+      openingPreviewCharacterId = '';
+      messages = [];
+      activeView = 'chat';
+    }
+  }
+
   async function sendMessage() {
     if (isGenerating) {
       stopGeneration();
@@ -2447,18 +2568,67 @@
           <button class="secondary full" type="button" on:click={startNewConversation}>
             <MessageSquare size={16} />New Chat
           </button>
+          <label class="search-field">
+            <Search size={15} />
+            <input bind:value={conversationQuery} placeholder="Search chats" aria-label="Search chats" />
+          </label>
+          <label class="checkbox-row compact">
+            <input type="checkbox" checked={showArchivedConversations} on:change={toggleArchivedConversations} />
+            <span>Show archived chats</span>
+          </label>
         </div>
-        <div class="item-list">
-          {#each conversations as conversation}
-            <button
-              class="drawer-item"
-              class:active={conversation.id === activeConversationId}
-              type="button"
-              on:click={() => loadConversation(conversation.id)}
-            >
-              <strong>{conversation.title}</strong>
-              <span>{conversation.id}</span>
-            </button>
+        <div class="conversation-list">
+          {#if conversationGroups.length === 0}
+            <div class="drawer-empty compact">No chats found.</div>
+          {/if}
+          {#each conversationGroups as group}
+            <section class="conversation-group" aria-label={group.label}>
+              <header>
+                <span class="conversation-group-avatar">
+                  {#if group.avatarUrl}
+                    <img src={group.avatarUrl} alt="" />
+                  {:else}
+                    <Bot size={15} />
+                  {/if}
+                </span>
+                <strong>{group.label}</strong>
+                <small>{group.count}</small>
+              </header>
+              <div class="conversation-group-items">
+                {#each group.conversations as conversation}
+                  <article class="conversation-row" class:active={conversation.id === activeConversationId} class:archived={Boolean(conversation.archivedAt)}>
+                    <button class="conversation-row-main" type="button" on:click={() => loadConversation(conversation.id)}>
+                      <span class="conversation-title-line">
+                        <strong>{conversation.title}</strong>
+                        <small>{conversationUpdatedLabel(conversation)}</small>
+                      </span>
+                      <span>{conversationPreview(conversation)}</span>
+                      <small>{conversationSummary(conversation)}</small>
+                    </button>
+                    <div class="conversation-row-actions">
+                      <button type="button" title="Rename chat" aria-label="Rename chat" on:click={(event) => renameConversation(event, conversation)}>
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        title={conversation.archivedAt ? 'Restore chat' : 'Archive chat'}
+                        aria-label={conversation.archivedAt ? 'Restore chat' : 'Archive chat'}
+                        on:click={(event) => archiveConversation(event, conversation)}
+                      >
+                        {#if conversation.archivedAt}
+                          <ArchiveRestore size={14} />
+                        {:else}
+                          <Archive size={14} />
+                        {/if}
+                      </button>
+                      <button class="danger" type="button" title="Delete chat" aria-label="Delete chat" on:click={(event) => deleteConversation(event, conversation)}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </article>
+                {/each}
+              </div>
+            </section>
           {/each}
         </div>
       {:else if activeDrawer === 'characters'}
@@ -4703,6 +4873,34 @@
     width: auto;
   }
 
+  .checkbox-row.compact {
+    min-height: 28px;
+    font-size: 12px;
+  }
+
+  .search-field {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #d7ddd6;
+    border-radius: 8px;
+    background: #fff;
+    color: #64706a;
+    padding: 0 10px;
+  }
+
+  .search-field input {
+    min-height: 38px;
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+
+  .search-field input:focus {
+    outline: 0;
+  }
+
   .file-picker {
     position: relative;
     display: inline-flex;
@@ -4764,6 +4962,149 @@
     color: #6c756f;
     font-size: 12px;
     overflow-wrap: anywhere;
+  }
+
+  .conversation-list {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: 0 16px 16px;
+  }
+
+  .conversation-group {
+    display: grid;
+    gap: 8px;
+  }
+
+  .conversation-group > header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    color: #3b463f;
+    font-size: 13px;
+  }
+
+  .conversation-group > header strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .conversation-group > header small {
+    color: #78817b;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .conversation-group-avatar {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    overflow: hidden;
+    border: 1px solid #d9ddd7;
+    border-radius: 7px;
+    background: #f2f4f0;
+    color: #4e5d55;
+  }
+
+  .conversation-group-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .conversation-group-items {
+    display: grid;
+    gap: 7px;
+  }
+
+  .conversation-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    border: 1px solid #dfe3dc;
+    border-radius: 8px;
+    background: #fff;
+    padding: 8px;
+  }
+
+  .conversation-row.active,
+  .conversation-row:hover {
+    border-color: #9dc7ad;
+    background: #edf6f0;
+  }
+
+  .conversation-row.archived {
+    background: #fafafa;
+    color: #59625d;
+  }
+
+  .conversation-row-main {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    text-align: left;
+  }
+
+  .conversation-title-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .conversation-title-line strong,
+  .conversation-row-main span,
+  .conversation-row-main small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .conversation-title-line small,
+  .conversation-row-main small,
+  .conversation-row-main > span:not(.conversation-title-line) {
+    color: #6a756e;
+    font-size: 12px;
+  }
+
+  .conversation-row-actions {
+    display: flex;
+    align-items: flex-start;
+    gap: 3px;
+  }
+
+  .conversation-row-actions button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: #64706a;
+    padding: 0;
+  }
+
+  .conversation-row-actions button:hover {
+    border-color: #cbd8ce;
+    background: #fff;
+    color: #214433;
+  }
+
+  .conversation-row-actions button.danger:hover {
+    border-color: #e6b8b4;
+    background: #fff5f4;
+    color: #9b2d25;
   }
 
   .drawer-empty.compact {

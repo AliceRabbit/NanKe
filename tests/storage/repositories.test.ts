@@ -61,4 +61,36 @@ describe('storage repositories', () => {
     sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('renames, archives, restores, and deletes conversations', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const repository = new ConversationRepository(db, sqlite);
+
+    const conversation = repository.save(createConversation({ title: 'Original', characterId: 'char-a' }));
+    repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Hello' }));
+
+    const renamed = repository.rename(conversation.id, 'Renamed');
+    expect(renamed?.title).toBe('Renamed');
+
+    const archived = repository.archive(conversation.id, true);
+    expect(archived?.archivedAt).toEqual(expect.any(Number));
+    expect(repository.list()).toHaveLength(0);
+    expect(repository.list({ includeArchived: true })).toHaveLength(1);
+    expect(repository.list({ includeArchived: true, characterId: 'char-a' })[0]?.title).toBe('Renamed');
+
+    const restored = repository.archive(conversation.id, false);
+    expect(restored?.archivedAt).toBeUndefined();
+    expect(repository.list()).toHaveLength(1);
+
+    expect(repository.delete(conversation.id)).toBe(true);
+    expect(repository.get(conversation.id)).toBeUndefined();
+    expect(repository.getWithMessages(conversation.id)).toBeUndefined();
+    expect(repository.delete(conversation.id)).toBe(false);
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 });

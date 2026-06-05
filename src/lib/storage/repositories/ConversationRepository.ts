@@ -697,6 +697,41 @@ export class ConversationRepository {
     return this.getWithMessages(conversation.id);
   }
 
+  editMessage(conversationId: string, nodeId: string, content: string): ConversationWithMessages | undefined {
+    const conversation = this.get(conversationId);
+    const source = this.getMessageNode(nodeId);
+    const trimmed = content.trim();
+    if (!conversation || !source || source.conversationId !== conversationId || source.kind !== 'message' || source.status === 'deleted' || !trimmed) {
+      return undefined;
+    }
+
+    const now = Date.now();
+    const node = messageNodeSchema.parse({
+      ...source,
+      content: trimmed,
+      tokenEstimate: estimateStoredNodeTokens({ ...source, content: trimmed, thinking: source.thinking }),
+      metadata: {
+        ...source.metadata,
+        editedAt: now
+      },
+      updatedAt: now
+    });
+    const updatedConversation = conversationSchema.parse({
+      ...conversation,
+      lastPreview: conversation.activeLeafId === node.id ? previewText(node.content) : conversation.lastPreview,
+      revision: conversation.revision + 1,
+      updatedAt: now
+    });
+
+    const transaction = this.sqlite.transaction(() => {
+      this.insertNode(node);
+      this.persistConversation(updatedConversation);
+    });
+    transaction();
+
+    return this.getWithMessages(conversation.id);
+  }
+
   setActiveLeaf(conversationId: string, leafId: string, options: ActiveLeafOptions = {}): ConversationWithMessages | undefined {
     const conversation = this.get(conversationId);
     const node = this.getMessageNode(leafId);

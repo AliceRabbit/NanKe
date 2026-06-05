@@ -92,6 +92,29 @@ describe('storage repositories', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('edits a message in place without creating a sibling branch', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const repository = new ConversationRepository(db, sqlite);
+
+    const conversation = repository.save(createConversation({ title: 'Inline edit chat' }));
+    const user = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Original wording.' }));
+    const assistant = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'Reply stays.' }));
+
+    const loaded = repository.editMessage(conversation.id, user.id, 'Edited wording.');
+    expect(loaded?.messages.map((message) => message.content)).toEqual(['Edited wording.', 'Reply stays.']);
+    expect(loaded?.branchCount).toBe(0);
+    expect(loaded?.nodeCount).toBe(2);
+    expect(loaded?.activeLeafId).toBe(assistant.id);
+    expect(repository.getMessageNode(user.id)?.content).toBe('Edited wording.');
+    expect(repository.getMessageNode(assistant.id)?.content).toBe('Reply stays.');
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('can focus an exact historical node without restoring its subtree', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
     const sqlite = new Database(path.join(dir, 'test.db'));

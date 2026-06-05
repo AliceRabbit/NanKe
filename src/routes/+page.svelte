@@ -336,6 +336,10 @@
   let status = 'Ready';
   let generationAbortController: AbortController | null = null;
   let isGenerating = false;
+  let editingMessageNodeId = '';
+  let editingMessageContent = '';
+  let editingMessageSaving = false;
+  let editingMessageStatus = '';
   let importKind: ImportKind = 'preset';
   let importName = '';
   let importText = '';
@@ -2012,25 +2016,71 @@
     rememberConversation(conversation);
   }
 
-  async function editMessageAsBranch(message: ChatMessage) {
+  function messageNodeId(message: ChatMessage): string {
+    return message.branch?.nodeId ?? message.id ?? '';
+  }
+
+  function messageEditableContent(message: ChatMessage): string {
+    return typeof message.content === 'string' ? message.content : '';
+  }
+
+  function startEditingMessage(message: ChatMessage) {
+    const nodeId = messageNodeId(message);
+    if (!nodeId || isGenerating || editingMessageSaving) return;
+    const content = messageEditableContent(message);
+    editingMessageContent = content;
+    editingMessageStatus = '';
+    editingMessageNodeId = nodeId;
+  }
+
+  function cancelEditingMessage() {
+    editingMessageNodeId = '';
+    editingMessageContent = '';
+    editingMessageStatus = '';
+  }
+
+  function editMessageRows(content: string): number {
+    return Math.min(14, Math.max(4, content.split(/\r?\n/).length + 1));
+  }
+
+  async function saveMessageEdit(message: ChatMessage) {
     const nodeId = message.branch?.nodeId ?? message.id;
     const conversationId = message.conversationId ?? activeConversationId;
-    if (!nodeId || !conversationId || isGenerating) return;
-    const content = window.prompt('Edit message as a new branch', message.content)?.trim();
-    if (!content || content === message.content.trim()) return;
-    const conversation = await fetchJson<Conversation>('/api/conversations', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'edit-message-branch',
-        conversationId,
-        nodeId,
-        content
-      })
-    });
-    activeConversationId = conversation.id;
-    messages = conversation.messages ?? [];
-    rememberConversation(conversation);
+    const content = editingMessageContent.trim();
+    if (!nodeId || !conversationId || isGenerating || editingMessageSaving) return;
+    if (!content) {
+      editingMessageStatus = 'Message cannot be empty.';
+      return;
+    }
+    if (content === messageEditableContent(message).trim()) {
+      cancelEditingMessage();
+      return;
+    }
+
+    editingMessageSaving = true;
+    editingMessageStatus = 'Saving';
+    try {
+      const conversation = await fetchJson<Conversation>('/api/conversations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'edit-message',
+          conversationId,
+          nodeId,
+          content
+        })
+      });
+      activeConversationId = conversation.id;
+      activeConversationRecord = conversation;
+      messages = conversation.messages ?? [];
+      rememberConversation(conversation);
+      if (conversationTreeSummary?.conversation.id === conversation.id) await loadConversationTree(conversation.id);
+      cancelEditingMessage();
+    } catch (error) {
+      editingMessageStatus = error instanceof Error ? error.message : 'Edit failed.';
+    } finally {
+      editingMessageSaving = false;
+    }
   }
 
   async function forkMessagePathToConversation(message: ChatMessage) {
@@ -2736,62 +2786,86 @@
                   <div class="thinking-block-content rich">{@html thinkingDisplayContent(message, index)}</div>
                 </details>
               {/if}
-              {#if message.content.trim() || !message.thinking?.trim()}
-                <div class="message-content rich">{@html messageDisplayContent(message, index)}</div>
-              {/if}
-              {#if message.branch}
-                <div class="branch-controls" aria-label="Message branches">
-                  <button
-                    type="button"
-                    title="Edit as branch"
-                    aria-label="Edit as branch"
-                    disabled={isGenerating}
-                    on:click={() => editMessageAsBranch(message)}
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    title="Save path as chat"
-                    aria-label="Save path as chat"
-                    disabled={isGenerating}
-                    on:click={() => forkMessagePathToConversation(message)}
-                  >
-                    <MessageSquare size={14} />
-                  </button>
-                  {#if !message.branch.isLatest}
-                    <button
-                      type="button"
-                      title="Continue from here"
-                      aria-label="Continue from here"
-                      disabled={isGenerating}
-                      on:click={() => continueFromMessage(message)}
-                    >
-                      <GitBranch size={15} />
+              {#if editingMessageNodeId && editingMessageNodeId === messageNodeId(message)}
+                <div class="message-editor" aria-label="Edit message">
+                  {#key editingMessageNodeId}
+                    <textarea
+                      bind:value={editingMessageContent}
+                      rows={editMessageRows(editingMessageContent)}
+                      disabled={editingMessageSaving}
+                      aria-label="Edited message content"
+                    ></textarea>
+                  {/key}
+                  <div class="message-editor-actions">
+                    <button type="button" disabled={editingMessageSaving} on:click={cancelEditingMessage}>
+                      <X size={14} /> Cancel
                     </button>
-                  {/if}
-                  {#if message.branch.total > 1 || (message.role === 'assistant' && message.branch.isLatest)}
-                    <button
-                      type="button"
-                      title="Previous branch"
-                      aria-label="Previous branch"
-                      disabled={isGenerating || message.branch.current <= 1}
-                      on:click={() => switchMessageSibling(message, 'left')}
-                    >
-                      <ChevronLeft size={15} />
+                    <button class="primary" type="button" disabled={editingMessageSaving || !editingMessageContent.trim()} on:click={() => saveMessageEdit(message)}>
+                      <Save size={14} /> {editingMessageSaving ? 'Saving' : 'Save'}
                     </button>
-                    <span>{message.branch.current}/{message.branch.total}</span>
-                    <button
-                      type="button"
-                      title={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
-                      aria-label={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
-                      disabled={isGenerating || (message.branch.current >= message.branch.total && !(message.role === 'assistant' && message.branch.isLatest))}
-                      on:click={() => nextMessageBranch(message)}
-                    >
-                      <ChevronRight size={15} />
-                    </button>
+                  </div>
+                  {#if editingMessageStatus}
+                    <small>{editingMessageStatus}</small>
                   {/if}
                 </div>
+              {:else}
+                {#if message.content.trim() || !message.thinking?.trim()}
+                  <div class="message-content rich">{@html messageDisplayContent(message, index)}</div>
+                {/if}
+                {#if message.branch}
+                  <div class="branch-controls" aria-label="Message branches">
+                    <button
+                      type="button"
+                      title="Edit message"
+                      aria-label="Edit message"
+                      disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId)}
+                      on:click={() => startEditingMessage(message)}
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Save path as chat"
+                      aria-label="Save path as chat"
+                      disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId)}
+                      on:click={() => forkMessagePathToConversation(message)}
+                    >
+                      <MessageSquare size={14} />
+                    </button>
+                    {#if !message.branch.isLatest}
+                      <button
+                        type="button"
+                        title="Continue from here"
+                        aria-label="Continue from here"
+                        disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId)}
+                        on:click={() => continueFromMessage(message)}
+                      >
+                        <GitBranch size={15} />
+                      </button>
+                    {/if}
+                    {#if message.branch.total > 1 || (message.role === 'assistant' && message.branch.isLatest)}
+                      <button
+                        type="button"
+                        title="Previous branch"
+                        aria-label="Previous branch"
+                        disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || message.branch.current <= 1}
+                        on:click={() => switchMessageSibling(message, 'left')}
+                      >
+                        <ChevronLeft size={15} />
+                      </button>
+                      <span>{message.branch.current}/{message.branch.total}</span>
+                      <button
+                        type="button"
+                        title={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
+                        aria-label={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
+                        disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || (message.branch.current >= message.branch.total && !(message.role === 'assistant' && message.branch.isLatest))}
+                        on:click={() => nextMessageBranch(message)}
+                      >
+                        <ChevronRight size={15} />
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
               {/if}
             </div>
           </article>
@@ -4768,6 +4842,77 @@
 
   .message-content.rich :global(p:last-child) {
     margin-bottom: 0;
+  }
+
+  .message-editor {
+    display: grid;
+    gap: 8px;
+  }
+
+  .message-editor textarea {
+    width: 100%;
+    min-height: 118px;
+    resize: vertical;
+    border: 1px solid #cfd9cf;
+    border-radius: 8px;
+    background: #fbfcfa;
+    color: #26362e;
+    font: inherit;
+    line-height: 1.58;
+    padding: 10px 11px;
+  }
+
+  .message-editor textarea:focus {
+    border-color: #7fb28d;
+    box-shadow: 0 0 0 3px rgb(127 178 141 / 20%);
+    outline: 0;
+  }
+
+  .message-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 7px;
+  }
+
+  .message-editor-actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 30px;
+    border: 1px solid #cbd8ce;
+    border-radius: 8px;
+    background: #fff;
+    color: #30433a;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 0 10px;
+  }
+
+  .message-editor-actions button.primary {
+    border-color: #2d7d4f;
+    background: #2f8a56;
+    color: #fff;
+  }
+
+  .message-editor-actions button:not(:disabled):hover {
+    border-color: #9fbda8;
+    background: #f0f7f2;
+  }
+
+  .message-editor-actions button.primary:not(:disabled):hover {
+    border-color: #286f46;
+    background: #287849;
+  }
+
+  .message-editor-actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.56;
+  }
+
+  .message-editor small {
+    color: #6b766e;
+    font-size: 11px;
   }
 
   .branch-controls {

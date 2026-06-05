@@ -584,6 +584,106 @@ export class ConversationRepository {
     return this.getWithMessages(conversationId);
   }
 
+  deleteNode(conversationId: string, nodeId: string): ConversationWithMessages | undefined {
+    const conversation = this.get(conversationId);
+    const node = this.getMessageNode(nodeId);
+    if (!conversation || !node || node.conversationId !== conversationId || node.kind !== 'message' || node.status === 'deleted' || !node.parentId) {
+      return undefined;
+    }
+
+    const descendantIds = this.subtreeNodeIds(conversationId, nodeId).filter((id) => id !== nodeId);
+    const descendantIdSet = new Set(descendantIds);
+    const childNodes = this.childMessageNodes(conversationId, nodeId);
+    const childIds = childNodes.map((child) => child.id);
+    const childIdSet = new Set(childIds);
+    const parentSiblingIds = this.siblingRows(conversationId, node.parentId).map((sibling) => sibling.id);
+    const targetIndex = parentSiblingIds.indexOf(nodeId);
+    if (targetIndex < 0) return undefined;
+
+    const orderedSiblingIds = [
+      ...parentSiblingIds.slice(0, targetIndex),
+      ...childIds,
+      ...parentSiblingIds.slice(targetIndex + 1)
+    ];
+    const siblingOrderById = new Map(orderedSiblingIds.map((id, index) => [id, index]));
+    const fallbackBase = this.fallbackNodeAfterSubtreeDelete(conversationId, node.parentId, nodeId, [nodeId]);
+    const restoredLeaf = this.resolveRestoredLeaf(node);
+    const firstChildLeaf = childNodes[0] ? (this.resolveRestoredLeaf(childNodes[0]) ?? childNodes[0]) : undefined;
+    const activeLeafId = conversation.activeLeafId ?? conversation.rootNodeId;
+    const nextActiveLeafId =
+      activeLeafId === nodeId
+        ? restoredLeaf && descendantIdSet.has(restoredLeaf.id)
+          ? restoredLeaf.id
+          : firstChildLeaf?.id ?? fallbackBase?.id ?? conversation.rootNodeId
+        : activeLeafId;
+    const now = Date.now();
+    const deletedNode = messageNodeSchema.parse({
+      ...node,
+      status: 'deleted',
+      metadata: {
+        ...node.metadata,
+        deletedAt: now,
+        deleteMode: 'node'
+      },
+      updatedAt: now
+    });
+    const affectedIds = new Set([...descendantIds, ...orderedSiblingIds]);
+    affectedIds.delete(nodeId);
+    const affectedNodes = [...affectedIds]
+      .map((id) => this.getMessageNode(id))
+      .filter((item): item is MessageNode => item !== undefined && item.status !== 'deleted')
+      .map((item) =>
+        messageNodeSchema.parse({
+          ...item,
+          parentId: childIdSet.has(item.id) ? node.parentId : item.parentId,
+          siblingOrder: siblingOrderById.get(item.id) ?? item.siblingOrder,
+          depth: descendantIdSet.has(item.id) ? Math.max(1, item.depth - 1) : item.depth,
+          updatedAt: now
+        })
+      );
+
+    const transaction = this.sqlite.transaction(() => {
+      this.insertNode(deletedNode);
+      for (const item of affectedNodes) this.insertNode(item);
+
+      if (nextActiveLeafId) {
+        this.sqlite
+          .prepare(
+            `
+            UPDATE message_nodes
+            SET last_active_leaf_id = @leafId,
+                updated_at = @updatedAt
+            WHERE conversation_id = @conversationId
+              AND last_active_leaf_id = @nodeId
+          `
+          )
+          .run({ conversationId, nodeId, leafId: nextActiveLeafId, updatedAt: now });
+      }
+
+      const rootNodeId = conversation.rootNodeId ?? '';
+      let activeNode = nextActiveLeafId ? this.getMessageNode(nextActiveLeafId) : undefined;
+      if (!activeNode || activeNode.status === 'deleted') {
+        activeNode = rootNodeId ? this.fallbackActiveNode(conversationId, rootNodeId) : undefined;
+      }
+      if (activeNode?.kind === 'message' && activeNode.parentId) this.updateAncestorsLastLeaf(activeNode.parentId, activeNode.id, now);
+      const stats = this.conversationTreeStats(conversationId);
+      const updated = conversationSchema.parse({
+        ...conversation,
+        activeLeafId: activeNode?.id ?? conversation.rootNodeId,
+        activeDepth: activeNode?.depth ?? 0,
+        nodeCount: stats.nodeCount,
+        branchCount: stats.branchCount,
+        lastPreview: activeNode?.kind === 'message' ? previewText(activeNode.content) : undefined,
+        revision: conversation.revision + 1,
+        updatedAt: now
+      });
+      this.persistConversation(updated);
+    });
+    transaction();
+
+    return this.getWithMessages(conversationId);
+  }
+
   listMessages(conversationId: string): NankeMessage[] {
     const conversation = this.get(conversationId);
     if (!conversation) return [];
@@ -1018,8 +1118,16 @@ export class ConversationRepository {
       .onConflictDoUpdate({
         target: messageNodes.id,
         set: {
+          parentId: node.parentId,
+          kind: node.kind,
+          role: node.role,
+          speakerId: node.speakerId,
+          speakerName: node.speakerName,
+          speakerAvatarAssetId: node.speakerAvatarAssetId,
           content: node.content,
           thinking: node.thinking,
+          siblingOrder: node.siblingOrder,
+          depth: node.depth,
           status: node.status,
           lastActiveLeafId: node.lastActiveLeafId,
           tokenEstimate: node.tokenEstimate,
@@ -1050,6 +1158,20 @@ export class ConversationRepository {
          ORDER BY sibling_order ASC, created_at ASC`
       )
       .all(conversationId, parentId) as Array<{ id: string; last_active_leaf_id: string | null }>;
+  }
+
+  private childMessageNodes(conversationId: string, parentId: string): MessageNode[] {
+    const rows = this.sqlite
+      .prepare(
+        `
+        SELECT *
+        FROM message_nodes
+        WHERE conversation_id = ? AND parent_id = ? AND kind = 'message' AND status != 'deleted'
+        ORDER BY sibling_order ASC, created_at ASC
+      `
+      )
+      .all(conversationId, parentId) as MessageNodeRow[];
+    return rows.map((row) => this.hydrateMessageNode(row));
   }
 
   private subtreeNodeIds(conversationId: string, nodeId: string): string[] {

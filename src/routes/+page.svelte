@@ -212,6 +212,12 @@
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl' | 'conversation-snapshot';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
+  type MessageDeleteMode = 'node' | 'subtree';
+  type PendingMessageDelete = {
+    conversationId: string;
+    nodeId: string;
+    label: string;
+  };
   type SamplerField = Exclude<keyof NonNullable<Profile['sampler']>, 'stop'>;
   type ConversationTreeDockProps = {
     summary: ConversationTreeSummary | null;
@@ -340,6 +346,9 @@
   let editingMessageContent = '';
   let editingMessageSaving = false;
   let editingMessageStatus = '';
+  let pendingMessageDelete: PendingMessageDelete | null = null;
+  let deletingMessageNode = false;
+  let messageDeleteStatus = '';
   let importKind: ImportKind = 'preset';
   let importName = '';
   let importText = '';
@@ -2129,28 +2138,70 @@
     }
   }
 
-  async function deleteConversationTreeNode(node: ConversationTreeNode) {
+  function deleteLabel(value: string): string {
+    const compact = value.trim().replace(/\s+/g, ' ');
+    return compact.length > 180 ? `${compact.slice(0, 180)}...` : compact;
+  }
+
+  function openMessageDeleteDialog(message: ChatMessage) {
+    const nodeId = messageNodeId(message);
+    const conversationId = message.conversationId ?? activeConversationId;
+    if (!nodeId || !conversationId || isGenerating || editingMessageSaving || deletingMessageNode) return;
+    pendingMessageDelete = {
+      conversationId,
+      nodeId,
+      label: deleteLabel(message.content || message.thinking || messageSpeaker(message))
+    };
+    messageDeleteStatus = '';
+  }
+
+  function deleteConversationTreeNode(node: ConversationTreeNode) {
     const conversationId = conversationTreeSummary?.conversation.id ?? activeConversationId;
-    if (!conversationId || isGenerating || conversationTreeActionStatus) return;
-    const label = node.preview || node.speakerName || node.role;
-    if (!window.confirm(`Delete this branch and all descendants?\n\n${label}`)) return;
-    conversationTreeActionStatus = 'Deleting branch';
+    if (!conversationId || isGenerating || deletingMessageNode) return;
+    pendingMessageDelete = {
+      conversationId,
+      nodeId: node.id,
+      label: deleteLabel(node.preview || node.speakerName || node.role)
+    };
+    messageDeleteStatus = '';
+  }
+
+  function closeMessageDeleteDialog() {
+    if (deletingMessageNode) return;
+    pendingMessageDelete = null;
+    messageDeleteStatus = '';
+  }
+
+  async function confirmMessageDelete(mode: MessageDeleteMode) {
+    const target = pendingMessageDelete;
+    if (!target || isGenerating || deletingMessageNode) return;
+    deletingMessageNode = true;
+    messageDeleteStatus = mode === 'node' ? 'Deleting node' : 'Deleting subtree';
+    if (conversationTreeSummary?.conversation.id === target.conversationId) {
+      conversationTreeActionStatus = messageDeleteStatus;
+    }
     try {
       const conversation = await fetchJson<Conversation>('/api/conversations', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'delete-node-subtree',
-          conversationId,
-          nodeId: node.id
+          action: mode === 'node' ? 'delete-node' : 'delete-node-subtree',
+          conversationId: target.conversationId,
+          nodeId: target.nodeId
         })
       });
       activeConversationId = conversation.id;
       activeConversationRecord = conversation;
       messages = conversation.messages ?? [];
       rememberConversation(conversation);
-      await loadConversationTree(conversation.id);
+      if (editingMessageNodeId === target.nodeId) cancelEditingMessage();
+      if (conversationTreeSummary?.conversation.id === conversation.id) await loadConversationTree(conversation.id);
+      pendingMessageDelete = null;
+      messageDeleteStatus = '';
+    } catch (error) {
+      messageDeleteStatus = error instanceof Error ? error.message : 'Delete failed.';
     } finally {
+      deletingMessageNode = false;
       conversationTreeActionStatus = '';
     }
   }
@@ -2824,10 +2875,20 @@
                       <Pencil size={14} />
                     </button>
                     <button
+                      class="danger"
+                      type="button"
+                      title="Delete message"
+                      aria-label="Delete message"
+                      disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || deletingMessageNode}
+                      on:click={() => openMessageDeleteDialog(message)}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                    <button
                       type="button"
                       title="Save path as chat"
                       aria-label="Save path as chat"
-                      disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId)}
+                      disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || deletingMessageNode}
                       on:click={() => forkMessagePathToConversation(message)}
                     >
                       <MessageSquare size={14} />
@@ -2837,7 +2898,7 @@
                         type="button"
                         title="Continue from here"
                         aria-label="Continue from here"
-                        disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId)}
+                        disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || deletingMessageNode}
                         on:click={() => continueFromMessage(message)}
                       >
                         <GitBranch size={15} />
@@ -2848,7 +2909,7 @@
                         type="button"
                         title="Previous branch"
                         aria-label="Previous branch"
-                        disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || message.branch.current <= 1}
+                        disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || deletingMessageNode || message.branch.current <= 1}
                         on:click={() => switchMessageSibling(message, 'left')}
                       >
                         <ChevronLeft size={15} />
@@ -2858,7 +2919,7 @@
                         type="button"
                         title={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
                         aria-label={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
-                        disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || (message.branch.current >= message.branch.total && !(message.role === 'assistant' && message.branch.isLatest))}
+                        disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || deletingMessageNode || (message.branch.current >= message.branch.total && !(message.role === 'assistant' && message.branch.isLatest))}
                         on:click={() => nextMessageBranch(message)}
                       >
                         <ChevronRight size={15} />
@@ -2929,6 +2990,32 @@
           <img src={zoomedAvatar.src} alt={`${zoomedAvatar.name} avatar`} />
         {:else}
           <span>{zoomedAvatar.initials}</span>
+        {/if}
+      </div>
+    </section>
+  {/if}
+
+  {#if pendingMessageDelete}
+    <section class="delete-dialog-backdrop" role="presentation">
+      <div class="delete-dialog" role="dialog" aria-modal="true" aria-label="Delete message node">
+        <header>
+          <Trash2 size={17} />
+          <strong>Delete Message</strong>
+        </header>
+        <p>{pendingMessageDelete.label || 'This message has no visible content.'}</p>
+        <div class="delete-dialog-actions">
+          <button type="button" disabled={deletingMessageNode} on:click={closeMessageDeleteDialog}>
+            Cancel
+          </button>
+          <button type="button" disabled={deletingMessageNode} on:click={() => confirmMessageDelete('node')}>
+            Delete Node Only
+          </button>
+          <button class="danger" type="button" disabled={deletingMessageNode} on:click={() => confirmMessageDelete('subtree')}>
+            Delete With Descendants
+          </button>
+        </div>
+        {#if messageDeleteStatus}
+          <small>{messageDeleteStatus}</small>
         {/if}
       </div>
     </section>
@@ -4950,6 +5037,11 @@
     color: #1f3b2b;
   }
 
+  .branch-controls button.danger:not(:disabled):hover {
+    background: #f4e4e2;
+    color: #8f2f28;
+  }
+
   .branch-controls button:disabled {
     cursor: default;
     opacity: 0.36;
@@ -5263,6 +5355,93 @@
   .avatar-viewer-controls button:focus-visible {
     background: rgb(28 107 67 / 88%);
     outline: 0;
+  }
+
+  .delete-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 58;
+    display: grid;
+    place-items: center;
+    background: rgb(22 28 24 / 28%);
+    padding: 24px;
+  }
+
+  .delete-dialog {
+    display: grid;
+    gap: 13px;
+    width: min(460px, 100%);
+    border: 1px solid #e1d7d2;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 24px 70px rgb(28 32 29 / 22%);
+    color: #27342d;
+    padding: 16px;
+  }
+
+  .delete-dialog header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #71312c;
+  }
+
+  .delete-dialog p {
+    max-height: 24vh;
+    overflow: auto;
+    margin: 0;
+    color: #4d5a52;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .delete-dialog-actions {
+    display: grid;
+    grid-template-columns: auto 1fr 1fr;
+    gap: 8px;
+  }
+
+  .delete-dialog-actions button {
+    min-height: 34px;
+    border: 1px solid #d6ded6;
+    border-radius: 8px;
+    background: #fff;
+    color: #33443a;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 0 11px;
+  }
+
+  .delete-dialog-actions button:not(:disabled):hover {
+    border-color: #acbdae;
+    background: #f5f8f5;
+  }
+
+  .delete-dialog-actions button.danger {
+    border-color: #d9aaa4;
+    background: #9f3d35;
+    color: #fff;
+  }
+
+  .delete-dialog-actions button.danger:not(:disabled):hover {
+    border-color: #b96f67;
+    background: #85332c;
+  }
+
+  .delete-dialog-actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+  }
+
+  .delete-dialog small {
+    color: #7a6862;
+    font-size: 11px;
+  }
+
+  @media (max-width: 620px) {
+    .delete-dialog-actions {
+      grid-template-columns: 1fr;
+    }
   }
 
   .primary,

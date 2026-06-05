@@ -143,6 +143,15 @@ export async function PATCH({ request }) {
       return json(conversation);
     }
 
+    if (body?.action === 'delete-node') {
+      if (typeof body.conversationId !== 'string' || typeof body.nodeId !== 'string') {
+        throw new AppError('conversationId and nodeId are required.', 400, 'conversation_node_delete_required');
+      }
+      const conversation = context.conversations.deleteNode(body.conversationId, body.nodeId);
+      if (!conversation) throw new AppError('Conversation node not found.', 404, 'conversation_node_not_found');
+      return json(conversation);
+    }
+
     if (body?.action === 'edit-message-branch') {
       if (typeof body.conversationId !== 'string' || typeof body.nodeId !== 'string' || typeof body.content !== 'string') {
         throw new AppError('conversationId, nodeId, and content are required.', 400, 'conversation_node_edit_required');

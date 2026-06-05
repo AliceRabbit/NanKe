@@ -253,6 +253,37 @@ describe('storage repositories', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('deletes one node by splicing its descendants back into the tree', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const repository = new ConversationRepository(db, sqlite);
+
+    const conversation = repository.save(createConversation({ title: 'Spliced chat' }));
+    const user = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Start.' }));
+    const middle = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'Remove only me.' }));
+    const descendant = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Keep this descendant.' }));
+
+    const loaded = repository.deleteNode(conversation.id, middle.id);
+    expect(loaded?.messages.map((message) => message.content)).toEqual(['Start.', 'Keep this descendant.']);
+    expect(loaded?.activeLeafId).toBe(descendant.id);
+    expect(loaded?.nodeCount).toBe(2);
+    expect(loaded?.branchCount).toBe(0);
+
+    const deleted = repository.getMessageNode(middle.id);
+    const preserved = repository.getMessageNode(descendant.id);
+    expect(deleted?.status).toBe('deleted');
+    expect(preserved?.parentId).toBe(user.id);
+    expect(preserved?.depth).toBe(2);
+
+    const summary = repository.getTree(conversation.id);
+    expect(summary?.nodes.map((node) => node.id)).toEqual([user.id, descendant.id]);
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('repairs derived conversation state from the message tree', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
     const sqlite = new Database(path.join(dir, 'test.db'));

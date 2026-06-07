@@ -34,8 +34,10 @@
     Send,
     Save,
     Settings2,
+    SlidersHorizontal,
     Star,
     Trash2,
+    Type,
     Upload,
     UserRound,
     SquarePen,
@@ -212,7 +214,13 @@
   type ConversationGroup = { key: string; label: string; avatarUrl: string; count: number; conversations: Conversation[] };
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl' | 'conversation-snapshot';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
-  type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'import' | 'inspector' | null;
+  type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'settings' | 'import' | 'inspector' | null;
+  type AppFontFamily = 'system' | 'serif' | 'mono';
+  type AppSettings = {
+    fontFamily: AppFontFamily;
+    uiFontSize: number;
+    chatFontSize: number;
+  };
   type MessageDeleteMode = 'node' | 'subtree';
   type PendingMessageDelete = {
     conversationId: string;
@@ -314,6 +322,27 @@
     'seed',
     'n'
   ];
+  const appSettingsStorageKey = 'nanke.interface-settings.v1';
+  const appFontFamilies: Array<{ value: AppFontFamily; label: string; description: string; css: string }> = [
+    {
+      value: 'system',
+      label: 'System',
+      description: 'Native UI font',
+      css: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    },
+    {
+      value: 'serif',
+      label: 'Serif',
+      description: 'Novel-like reading',
+      css: 'Georgia, "Times New Roman", ui-serif, serif'
+    },
+    {
+      value: 'mono',
+      label: 'Mono',
+      description: 'Fixed-width text',
+      css: '"Cascadia Code", "SFMono-Regular", Consolas, ui-monospace, monospace'
+    }
+  ];
 
   let profiles: Profile[] = [];
   let characters: Character[] = [];
@@ -328,6 +357,7 @@
   let showArchivedConversations = false;
   let activeView: View = 'chat';
   let activeDrawer: Drawer = null;
+  let appSettings: AppSettings = defaultAppSettings();
   let activeProfileId = '';
   let activeCharacterId = '';
   let activePersonaId = '';
@@ -516,8 +546,11 @@
                 ? 'Import'
                 : activeDrawer === 'inspector'
                   ? 'Inspector'
-                  : '';
-  $: drawerIsRight = activeDrawer === 'import' || activeDrawer === 'inspector';
+                  : activeDrawer === 'settings'
+                    ? 'Settings'
+                    : '';
+  $: drawerIsRight = activeDrawer === 'import' || activeDrawer === 'inspector' || activeDrawer === 'settings';
+  $: appSettingsStyle = `--app-font-family: ${appFontFamilyCss(appSettings.fontFamily)}; --app-ui-font-size: ${appSettings.uiFontSize}px; --app-chat-font-size: ${appSettings.chatFontSize}px;`;
   $: if (activeProfileId !== profileDraftId) {
     loadProfileDraft(activeProfile);
   }
@@ -557,8 +590,64 @@
   }
 
   onMount(() => {
+    loadAppSettings();
     void refreshAll();
   });
+
+  function defaultAppSettings(): AppSettings {
+    return {
+      fontFamily: 'system',
+      uiFontSize: 14,
+      chatFontSize: 15
+    };
+  }
+
+  function appFontFamilyCss(value: AppFontFamily) {
+    return appFontFamilies.find((font) => font.value === value)?.css ?? appFontFamilies[0].css;
+  }
+
+  function clampSetting(value: unknown, min: number, max: number, fallback: number) {
+    const number = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(max, Math.max(min, Math.round(number)));
+  }
+
+  function isAppFontFamily(value: unknown): value is AppFontFamily {
+    return appFontFamilies.some((font) => font.value === value);
+  }
+
+  function normalizeAppSettings(value: Partial<AppSettings> | null | undefined): AppSettings {
+    const defaults = defaultAppSettings();
+    const candidateFontFamily = value?.fontFamily;
+    const fontFamily = isAppFontFamily(candidateFontFamily) ? candidateFontFamily : defaults.fontFamily;
+    return {
+      fontFamily,
+      uiFontSize: clampSetting(value?.uiFontSize, 12, 18, defaults.uiFontSize),
+      chatFontSize: clampSetting(value?.chatFontSize, 13, 24, defaults.chatFontSize)
+    };
+  }
+
+  function loadAppSettings() {
+    try {
+      const raw = localStorage.getItem(appSettingsStorageKey);
+      appSettings = raw ? normalizeAppSettings(JSON.parse(raw) as Partial<AppSettings>) : defaultAppSettings();
+    } catch {
+      appSettings = defaultAppSettings();
+    }
+  }
+
+  function saveAppSettings(next: AppSettings) {
+    appSettings = normalizeAppSettings(next);
+    localStorage.setItem(appSettingsStorageKey, JSON.stringify(appSettings));
+  }
+
+  function updateAppSettings(patch: Partial<AppSettings>) {
+    saveAppSettings({ ...appSettings, ...patch });
+  }
+
+  function resetAppSettings() {
+    saveAppSettings(defaultAppSettings());
+  }
 
   function openLibrary(view: Exclude<View, 'chat'>) {
     activeView = view;
@@ -2691,7 +2780,7 @@
   <title>NanKe</title>
 </svelte:head>
 
-<main class="workspace">
+<main class="workspace" style={appSettingsStyle}>
   <aside class="rail" aria-label="Navigation">
     <div class="brand">NK</div>
     <button
@@ -2748,6 +2837,16 @@
       <Settings2 size={20} />
     </button>
     <div class="rail-spacer"></div>
+    <button
+      class="icon-button"
+      class:active={activeDrawer === 'settings'}
+      title="Settings"
+      aria-label="Settings"
+      aria-pressed={activeDrawer === 'settings'}
+      on:click={() => openDrawer('settings')}
+    >
+      <SlidersHorizontal size={20} />
+    </button>
     <button
       class="icon-button"
       class:active={activeDrawer === 'import'}
@@ -4462,6 +4561,70 @@
             </div>
           </section>
         </div>
+      {:else if activeDrawer === 'settings'}
+        <div class="settings-panel">
+          <section class="settings-section" aria-label="Interface typography">
+            <div class="settings-section-head">
+              <div>
+                <strong>Typography</strong>
+                <span>Applied locally to this workspace</span>
+              </div>
+              <Type size={18} />
+            </div>
+
+            <div class="font-choice-grid" aria-label="Font family">
+              {#each appFontFamilies as font}
+                <button
+                  class:active={appSettings.fontFamily === font.value}
+                  type="button"
+                  on:click={() => updateAppSettings({ fontFamily: font.value })}
+                >
+                  <strong>{font.label}</strong>
+                  <span>{font.description}</span>
+                </button>
+              {/each}
+            </div>
+
+            <label class="settings-range">
+              <span>
+                <strong>Interface size</strong>
+                <output>{appSettings.uiFontSize}px</output>
+              </span>
+              <input
+                type="range"
+                min="12"
+                max="18"
+                step="1"
+                value={appSettings.uiFontSize}
+                on:input={(event) => updateAppSettings({ uiFontSize: (event.currentTarget as HTMLInputElement).valueAsNumber })}
+              />
+            </label>
+
+            <label class="settings-range">
+              <span>
+                <strong>Chat text size</strong>
+                <output>{appSettings.chatFontSize}px</output>
+              </span>
+              <input
+                type="range"
+                min="13"
+                max="24"
+                step="1"
+                value={appSettings.chatFontSize}
+                on:input={(event) => updateAppSettings({ chatFontSize: (event.currentTarget as HTMLInputElement).valueAsNumber })}
+              />
+            </label>
+
+            <div class="settings-preview">
+              <strong>Preview</strong>
+              <p>Character dialogue, narration, and markdown output use the selected reading size.</p>
+            </div>
+          </section>
+
+          <button class="secondary full" type="button" on:click={resetAppSettings}>
+            <RotateCcw size={16} />Reset Interface
+          </button>
+        </div>
       {:else if activeDrawer === 'import'}
         <div class="import-panel">
           <select aria-label="Import kind" bind:value={importKind}>
@@ -4506,6 +4669,8 @@
     min-height: 100vh;
     background: #f5f6f4;
     color: #1e2420;
+    font-family: var(--app-font-family);
+    font-size: var(--app-ui-font-size);
   }
 
   .rail {
@@ -4716,6 +4881,13 @@
     min-width: 0;
   }
 
+  button,
+  select,
+  input,
+  textarea {
+    font: inherit;
+  }
+
   select,
   input,
   textarea {
@@ -4888,7 +5060,7 @@
     border-top: 1px solid #e2e6e0;
     padding: 10px 12px 12px;
     color: #4b5a51;
-    font-size: 13px;
+    font-size: calc(var(--app-chat-font-size) * 0.92);
     line-height: 1.65;
   }
 
@@ -4909,6 +5081,7 @@
   .message-content {
     margin: 0;
     overflow-wrap: anywhere;
+    font-size: var(--app-chat-font-size);
     white-space: pre-wrap;
   }
 
@@ -5222,6 +5395,11 @@
     background: #fff;
   }
 
+  .composer textarea {
+    font-size: var(--app-chat-font-size);
+    line-height: 1.55;
+  }
+
   .composer-action {
     display: inline-flex;
     align-items: center;
@@ -5530,10 +5708,132 @@
   .drawer-actions,
   .editor,
   .import-panel,
-  .inspector-panel {
+  .inspector-panel,
+  .settings-panel {
     display: grid;
     gap: 10px;
     padding: 16px;
+  }
+
+  .settings-panel {
+    align-content: start;
+    overflow: auto;
+  }
+
+  .settings-section {
+    display: grid;
+    gap: 14px;
+    border: 1px solid #e0e4de;
+    border-radius: 8px;
+    background: #fbfcfa;
+    padding: 14px;
+  }
+
+  .settings-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: #2c3931;
+  }
+
+  .settings-section-head > div {
+    display: grid;
+    gap: 2px;
+  }
+
+  .settings-section-head strong {
+    font-size: 14px;
+  }
+
+  .settings-section-head span {
+    color: #6a746d;
+    font-size: 12px;
+  }
+
+  .font-choice-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .font-choice-grid button {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    border: 1px solid #d7ddd5;
+    border-radius: 8px;
+    background: #fff;
+    color: #304039;
+    padding: 9px 8px;
+    text-align: left;
+  }
+
+  .font-choice-grid button.active {
+    border-color: #8fbf9f;
+    background: #eaf6ee;
+    color: #183d29;
+  }
+
+  .font-choice-grid strong {
+    font-size: 13px;
+  }
+
+  .font-choice-grid span {
+    overflow: hidden;
+    color: #6a746d;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .settings-range {
+    display: grid;
+    gap: 8px;
+  }
+
+  .settings-range > span {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: #34433b;
+    font-size: 13px;
+  }
+
+  .settings-range output {
+    color: #607067;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+  }
+
+  .settings-range input[type='range'] {
+    height: 28px;
+    border: 0;
+    background: transparent;
+    accent-color: #2f8a56;
+    padding: 0;
+  }
+
+  .settings-preview {
+    display: grid;
+    gap: 6px;
+    border: 1px solid #dce4db;
+    border-radius: 8px;
+    background: #fff;
+    padding: 12px;
+  }
+
+  .settings-preview strong {
+    color: #304039;
+    font-size: 12px;
+  }
+
+  .settings-preview p {
+    margin: 0;
+    color: #34433b;
+    font-size: var(--app-chat-font-size);
+    line-height: 1.58;
   }
 
   .compact-editor {

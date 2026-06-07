@@ -215,7 +215,7 @@
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl' | 'conversation-snapshot';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'settings' | 'import' | 'inspector' | null;
-  type AppFontFamily = 'system' | 'serif' | 'mono';
+  type AppFontFamily = 'system' | 'source-han-sans' | 'source-han-serif' | 'serif' | 'mono';
   type AppSettings = {
     fontFamily: AppFontFamily;
     uiFontSize: number;
@@ -329,6 +329,18 @@
       label: 'System',
       description: 'Native UI font',
       css: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    },
+    {
+      value: 'source-han-sans',
+      label: '思源黑体',
+      description: 'Source Han Sans',
+      css: '"Source Han Sans SC", "Source Han Sans CN", "Noto Sans CJK SC", "思源黑体", "Microsoft YaHei", sans-serif'
+    },
+    {
+      value: 'source-han-serif',
+      label: '思源宋体',
+      description: 'Source Han Serif',
+      css: '"Source Han Serif SC", "Source Han Serif CN", "Noto Serif CJK SC", "思源宋体", "Songti SC", serif'
     },
     {
       value: 'serif',
@@ -5753,7 +5765,7 @@
 
   .font-choice-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 6px;
   }
 

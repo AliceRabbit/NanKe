@@ -152,6 +152,12 @@ export async function PATCH({ request }) {
       return json(conversation);
     }
 
+    if (body?.action === 'purge-deleted-nodes') {
+      return json({
+        purged: context.conversations.purgeDeletedNodes(typeof body.conversationId === 'string' ? body.conversationId : undefined)
+      });
+    }
+
     if (body?.action === 'edit-message-branch') {
       if (typeof body.conversationId !== 'string' || typeof body.nodeId !== 'string' || typeof body.content !== 'string') {
         throw new AppError('conversationId, nodeId, and content are required.', 400, 'conversation_node_edit_required');

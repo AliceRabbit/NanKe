@@ -8,7 +8,6 @@ export const zhCN = {
   'nav.worldbooks': '世界书',
   'nav.profiles': '预设',
   'nav.settings': '设置',
-  'nav.import': '导入',
   'nav.inspector': '提示词检查器',
 
   'drawer.chats': '聊天记录',
@@ -16,7 +15,6 @@ export const zhCN = {
   'drawer.personas': '用户设定',
   'drawer.worldbooks': '世界书',
   'drawer.profiles': '预设',
-  'drawer.import': '导入',
   'drawer.inspector': '检查器',
   'drawer.settings': '设置',
 
@@ -250,6 +248,7 @@ export const zhCN = {
 
   'worldbook.library': '世界书库',
   'worldbook.editor': '世界书编辑器',
+  'worldbook.import': '导入世界书',
   'worldbook.namePlaceholder': '新世界书名称',
   'worldbook.create': '创建',
   'worldbook.noWorldBooks': '还没有世界书',
@@ -506,6 +505,9 @@ export const zhCN = {
   'import.kind.worldbook': '世界书',
   'import.kind.chatJsonl': '聊天 JSONL',
   'import.kind.snapshot': 'NanKe 聊天快照',
+  'import.title.character': '导入角色卡',
+  'import.title.profile': '导入预设',
+  'import.title.worldbook': '导入世界书',
   'import.namePlaceholder': '名称',
   'import.choosePng': '选择 PNG 角色卡',
   'import.chooseFile': '选择导入文件',

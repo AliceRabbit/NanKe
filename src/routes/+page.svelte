@@ -217,6 +217,7 @@
   type GenerationStreamEvent = { type: 'text' | 'thinking' | 'inspector' | 'done' | 'error'; text?: string; conversationId?: string; activeLeafId?: string };
   type ConversationGroup = { key: string; label: string; avatarUrl: string; count: number; conversations: Conversation[] };
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl' | 'conversation-snapshot';
+  type ImportScope = 'character' | 'profile' | 'worldbook';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'settings' | 'import' | 'inspector' | null;
   type AppFontFamily = 'system' | 'source-han-sans' | 'source-han-serif' | 'serif' | 'mono';
@@ -282,6 +283,11 @@
     { value: 'oldest', label: t('sort.oldest') },
     { value: 'tokens-desc', label: t('sort.mostTokens') }
   ];
+  const importKindsByScope: Record<ImportScope, ImportKind[]> = {
+    character: ['character-card-png', 'character-card-json'],
+    profile: ['preset'],
+    worldbook: ['worldbook']
+  };
   const maxContextTokens = 2_000_000;
   const maxOutputTokenRange = 65_536;
   const openAIStrictSamplerFields = new Set<SamplerField>([
@@ -398,6 +404,7 @@
   let deletingMessageNode = false;
   let messageDeleteStatus = '';
   let importKind: ImportKind = 'preset';
+  let importScope: ImportScope = 'profile';
   let importName = '';
   let importText = '';
   let importFileName = '';
@@ -568,13 +575,17 @@
             : activeDrawer === 'profiles'
               ? t('drawer.profiles')
               : activeDrawer === 'import'
-                ? t('drawer.import')
+                ? importScopeTitle(importScope)
                 : activeDrawer === 'inspector'
                   ? t('drawer.inspector')
                   : activeDrawer === 'settings'
                     ? t('drawer.settings')
                     : '';
   $: drawerIsRight = activeDrawer === 'import' || activeDrawer === 'inspector' || activeDrawer === 'settings';
+  $: importOptions = importKindsByScope[importScope];
+  $: if (!importOptions.includes(importKind)) {
+    importKind = importOptions[0];
+  }
   $: appSettingsStyle = `--app-font-family: ${appFontFamilyCss(appSettings.fontFamily)}; --app-ui-font-size: ${appSettings.uiFontSize}px; --app-chat-font-size: ${appSettings.chatFontSize}px;`;
   $: if (activeProfileId !== profileDraftId) {
     loadProfileDraft(activeProfile);
@@ -713,6 +724,21 @@
     return source;
   }
 
+  function importKindLabel(kind: ImportKind) {
+    if (kind === 'preset') return t('import.kind.preset');
+    if (kind === 'character-card-json') return t('import.kind.characterJson');
+    if (kind === 'character-card-png') return t('import.kind.characterPng');
+    if (kind === 'worldbook') return t('import.kind.worldbook');
+    if (kind === 'chat-jsonl') return t('import.kind.chatJsonl');
+    return t('import.kind.snapshot');
+  }
+
+  function importScopeTitle(scope: ImportScope) {
+    if (scope === 'character') return t('import.title.character');
+    if (scope === 'worldbook') return t('import.title.worldbook');
+    return t('import.title.profile');
+  }
+
   function openLibrary(view: Exclude<View, 'chat'>) {
     activeView = view;
     activeDrawer = activeDrawer === view ? null : view;
@@ -725,9 +751,18 @@
     }
   }
 
-  function openPresetImport() {
-    importKind = 'preset';
+  function openImport(scope: ImportScope, kind: ImportKind = importKindsByScope[scope][0]) {
+    importScope = scope;
+    importKind = importKindsByScope[scope].includes(kind) ? kind : importKindsByScope[scope][0];
+    importName = '';
+    importText = '';
+    importFileName = '';
+    importFileBase64 = '';
     activeDrawer = 'import';
+  }
+
+  function openPresetImport() {
+    openImport('profile', 'preset');
   }
 
   function closeDrawer() {
@@ -2554,12 +2589,11 @@
   }
 
   function openCharacterImport() {
-    importKind = 'character-card-png';
-    importName = '';
-    importText = '';
-    importFileName = '';
-    importFileBase64 = '';
-    activeDrawer = 'import';
+    openImport('character', 'character-card-png');
+  }
+
+  function openWorldBookImport() {
+    openImport('worldbook', 'worldbook');
   }
 
   function startChatWithCharacter(character: Character | undefined = activeCharacter) {
@@ -2613,6 +2647,7 @@
 
   async function runImport() {
     status = t('status.importing');
+    const scope = importScope;
     const data =
       importKind === 'chat-jsonl'
         ? importText
@@ -2631,14 +2666,25 @@
     await refreshAll();
     if (result.type === 'character' && result.item?.id) {
       activeCharacterId = result.item.id;
+      activeView = 'characters';
+      activeDrawer = 'characters';
     } else if (result.type === 'profile' && result.item?.id) {
       activeProfileId = result.item.id;
+      activeView = 'profiles';
+      activeDrawer = 'profiles';
+    } else if (result.type === 'worldbook' && result.item?.id) {
+      activeWorldBookId = result.item.id;
+      activeView = 'worldbooks';
+      activeDrawer = 'worldbooks';
     } else if (result.type === 'conversation' && result.item?.id) {
       activeConversationId = result.item.id;
       activeView = 'chat';
       closeDrawer();
       await refreshConversationState(result.item.id);
+    } else {
+      activeDrawer = scope === 'character' ? 'characters' : scope === 'worldbook' ? 'worldbooks' : 'profiles';
     }
+    status = t('status.ready');
   }
 
   async function createCharacter() {
@@ -2934,16 +2980,6 @@
       on:click={() => openDrawer('settings')}
     >
       <SlidersHorizontal size={20} />
-    </button>
-    <button
-      class="icon-button"
-      class:active={activeDrawer === 'import'}
-      title={t('nav.import')}
-      aria-label={t('nav.import')}
-      aria-pressed={activeDrawer === 'import'}
-      on:click={() => openDrawer('import')}
-    >
-      <Upload size={20} />
     </button>
     <button
       class="icon-button"
@@ -3756,10 +3792,15 @@
       {:else if activeDrawer === 'worldbooks'}
         <div class="worldbook-workspace">
           <section class="worldbook-library" aria-label={t('worldbook.library')}>
-            <form class="worldbook-create" on:submit|preventDefault={createWorldBook}>
-              <input bind:value={newWorldBookName} placeholder={t('worldbook.namePlaceholder')} />
-              <button class="primary" type="submit"><BookOpen size={16} />{t('common.create')}</button>
-            </form>
+            <div class="worldbook-library-actions">
+              <form class="worldbook-create" on:submit|preventDefault={createWorldBook}>
+                <input bind:value={newWorldBookName} placeholder={t('worldbook.namePlaceholder')} />
+                <button class="primary" type="submit"><BookOpen size={16} />{t('common.create')}</button>
+              </form>
+              <button class="secondary full" type="button" on:click={openWorldBookImport}>
+                <FileInput size={16} />{t('worldbook.import')}
+              </button>
+            </div>
 
             <div class="worldbook-list">
               {#each worldBooks as worldBook}
@@ -4748,14 +4789,18 @@
         </div>
       {:else if activeDrawer === 'import'}
         <div class="import-panel">
-          <select aria-label={t('import.kind')} bind:value={importKind}>
-            <option value="preset">{t('import.kind.preset')}</option>
-            <option value="character-card-json">{t('import.kind.characterJson')}</option>
-            <option value="character-card-png">{t('import.kind.characterPng')}</option>
-            <option value="worldbook">{t('import.kind.worldbook')}</option>
-            <option value="chat-jsonl">{t('import.kind.chatJsonl')}</option>
-            <option value="conversation-snapshot">{t('import.kind.snapshot')}</option>
-          </select>
+          {#if importOptions.length > 1}
+            <select aria-label={t('import.kind')} bind:value={importKind}>
+              {#each importOptions as option}
+                <option value={option}>{importKindLabel(option)}</option>
+              {/each}
+            </select>
+          {:else}
+            <div class="import-kind-note">
+              <span>{t('import.kind')}</span>
+              <strong>{importKindLabel(importKind)}</strong>
+            </div>
+          {/if}
           <input bind:value={importName} placeholder={t('import.namePlaceholder')} />
           <label class="file-picker">
             <Upload size={16} />
@@ -6119,6 +6164,25 @@
     outline: 0;
   }
 
+  .import-kind-note {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 40px;
+    border: 1px solid #e0e4de;
+    border-radius: 8px;
+    background: #fbfcfa;
+    padding: 8px 10px;
+    color: #59635c;
+    font-size: 13px;
+  }
+
+  .import-kind-note strong {
+    color: #1f2b24;
+    font-weight: 700;
+  }
+
   .file-picker {
     position: relative;
     display: inline-flex;
@@ -6709,6 +6773,11 @@
     border-right: 1px solid #e1e4df;
     background: #fbfcfa;
     padding: 14px;
+  }
+
+  .worldbook-library-actions {
+    display: grid;
+    gap: 8px;
   }
 
   .worldbook-create {

@@ -16,6 +16,7 @@
     BookOpen,
     ChevronLeft,
     ChevronRight,
+    ClipboardList,
     CircleStop,
     Copy,
     Download,
@@ -2765,7 +2766,7 @@
       aria-pressed={activeDrawer === 'inspector'}
       on:click={openInspector}
     >
-      <Search size={20} />
+      <ClipboardList size={20} />
     </button>
   </aside>
 
@@ -2797,9 +2798,6 @@
       <div class="toolbar" aria-label="Chat actions">
         <button class="tool-button" type="button" on:click={startNewConversation} title="New chat" aria-label="New chat">
           <SquarePen size={17} />
-        </button>
-        <button class="tool-button" type="button" on:click={openInspector} title="Prompt Inspector" aria-label="Prompt Inspector">
-          <Search size={17} />
         </button>
         <button class="tool-button" type="button" on:click={refreshAll} title="Refresh" aria-label="Refresh">
           <RefreshCw size={17} />
@@ -3791,7 +3789,7 @@
                   <Download size={16} />
                 </button>
                 <button class="tool-button" type="button" on:click={inspectCurrentPrompt} title="Prompt Inspector" aria-label="Prompt Inspector" disabled={!activeProfile}>
-                  <Search size={16} />
+                  <ClipboardList size={16} />
                 </button>
               </div>
             </div>
@@ -4493,7 +4491,7 @@
         </div>
       {:else if activeDrawer === 'inspector'}
         <div class="inspector-panel">
-          <button class="secondary full" type="button" on:click={inspectCurrentPrompt}><Search size={16} />Inspect</button>
+          <button class="secondary full" type="button" on:click={inspectCurrentPrompt}><ClipboardList size={16} />Inspect</button>
           <pre>{inspector}</pre>
         </div>
       {/if}

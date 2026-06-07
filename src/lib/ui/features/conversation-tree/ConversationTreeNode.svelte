@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '$lib/i18n';
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import type { ConversationTreeFlowNodeData } from './types';
 
@@ -23,9 +24,9 @@
   <div class="node-meta">
     <span>{node.meta}</span>
     {#if node.branchCount}
-      <span>{node.branchCount} branches</span>
+      <span>{t('tree.branches', { count: node.branchCount })}</span>
     {:else if node.childCount}
-      <span>{node.childCount} next</span>
+      <span>{t('tree.next', { count: node.childCount })}</span>
     {/if}
   </div>
   {#if node.preview}

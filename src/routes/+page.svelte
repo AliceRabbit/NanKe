@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { applyRegexScripts, REGEX_PLACEMENT } from '$lib/core/regex';
+  import { t } from '$lib/i18n';
   import { renderMessageMarkdown } from '$lib/ui/markdown';
   import type { Component } from 'svelte';
   import type { ConversationTreeNode, ConversationTreeSummary } from '$lib/ui/features/conversation-tree/types';
@@ -261,25 +262,25 @@
   const promptRoles: PromptRole[] = ['system', 'user', 'assistant'];
   const promptTriggerOptions = ['normal', 'continue', 'impersonate', 'swipe', 'regenerate', 'quiet'];
   const worldBookPositions: Array<{ value: WorldBookEntry['position']; label: string }> = [
-    { value: 'before', label: 'Before Char' },
-    { value: 'after', label: 'After Char' },
-    { value: 'depth', label: '@ Depth' }
+    { value: 'before', label: t('worldbook.position.before') },
+    { value: 'after', label: t('worldbook.position.after') },
+    { value: 'depth', label: t('worldbook.position.depth') }
   ];
   const worldBookSortModes = [
-    { value: 'order-desc', label: 'Order desc' },
-    { value: 'order-asc', label: 'Order asc' },
-    { value: 'title-asc', label: 'Title A-Z' },
-    { value: 'title-desc', label: 'Title Z-A' },
-    { value: 'depth-asc', label: 'Depth asc' },
-    { value: 'probability-desc', label: 'Trigger desc' }
+    { value: 'order-desc', label: t('worldbook.sort.orderDesc') },
+    { value: 'order-asc', label: t('worldbook.sort.orderAsc') },
+    { value: 'title-asc', label: t('worldbook.sort.titleAsc') },
+    { value: 'title-desc', label: t('worldbook.sort.titleDesc') },
+    { value: 'depth-asc', label: t('worldbook.sort.depthAsc') },
+    { value: 'probability-desc', label: t('worldbook.sort.triggerDesc') }
   ];
   const characterSortModes: Array<{ value: CharacterSortMode; label: string }> = [
-    { value: 'favorite', label: 'Favorites' },
-    { value: 'name-asc', label: 'A-Z' },
-    { value: 'name-desc', label: 'Z-A' },
-    { value: 'newest', label: 'Newest' },
-    { value: 'oldest', label: 'Oldest' },
-    { value: 'tokens-desc', label: 'Most tokens' }
+    { value: 'favorite', label: t('sort.favorites') },
+    { value: 'name-asc', label: t('sort.nameAsc') },
+    { value: 'name-desc', label: t('sort.nameDesc') },
+    { value: 'newest', label: t('sort.newest') },
+    { value: 'oldest', label: t('sort.oldest') },
+    { value: 'tokens-desc', label: t('sort.mostTokens') }
   ];
   const maxContextTokens = 2_000_000;
   const maxOutputTokenRange = 65_536;
@@ -329,32 +330,32 @@
   const appFontFamilies: Array<{ value: AppFontFamily; label: string; description: string; css: string }> = [
     {
       value: 'system',
-      label: 'System',
-      description: 'Native UI font',
+      label: t('font.system'),
+      description: t('font.systemDescription'),
       css: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     },
     {
       value: 'source-han-sans',
       label: '思源黑体',
-      description: 'Source Han Sans',
+      description: t('font.sourceHanSansDescription'),
       css: '"Source Han Sans SC", "Source Han Sans CN", "Noto Sans CJK SC", "思源黑体", "Microsoft YaHei", sans-serif'
     },
     {
       value: 'source-han-serif',
       label: '思源宋体',
-      description: 'Source Han Serif',
+      description: t('font.sourceHanSerifDescription'),
       css: '"Source Han Serif SC", "Source Han Serif CN", "Noto Serif CJK SC", "思源宋体", "Songti SC", serif'
     },
     {
       value: 'serif',
-      label: 'Serif',
-      description: 'Novel-like reading',
+      label: t('font.serif'),
+      description: t('font.serifDescription'),
       css: 'Georgia, "Times New Roman", ui-serif, serif'
     },
     {
       value: 'mono',
-      label: 'Mono',
-      description: 'Fixed-width text',
+      label: t('font.mono'),
+      description: t('font.monoDescription'),
       css: '"Cascadia Code", "SFMono-Regular", Consolas, ui-monospace, monospace'
     }
   ];
@@ -386,7 +387,7 @@
   let messages: ChatMessage[] = [];
   let input = '';
   let composerToolsOpen = false;
-  let status = 'Ready';
+  let status = t('status.ready');
   let generationAbortController: AbortController | null = null;
   let isGenerating = false;
   let editingMessageNodeId = '';
@@ -492,8 +493,8 @@
   let profileDraftSquashSystemMessages = false;
   let activeSamplerFields = openAIStrictSamplerFields;
   let samplerVisible = samplerVisibility(activeSamplerFields);
-  let samplerPanelHeading = 'OpenAI Chat Parameters';
-  let maxTokensFieldLabel = 'Max Completion';
+  let samplerPanelHeading = t('profile.openAIParams');
+  let maxTokensFieldLabel = t('profile.maxCompletion');
   let candidateCountFieldLabel = 'N';
   let profileDraftRegexEnabled = true;
   let profileDraftRegexScripts: RegexScript[] = [];
@@ -519,13 +520,13 @@
   $: samplerVisible = samplerVisibility(activeSamplerFields);
   $: samplerPanelHeading =
     profileDraftProviderType === 'gemini'
-      ? 'Gemini GenerationConfig'
+      ? t('profile.geminiParams')
       : profileDraftOpenAICompatibility === 'extended'
-        ? 'Extended Chat Parameters'
-        : 'OpenAI Chat Parameters';
+        ? t('profile.extendedParams')
+        : t('profile.openAIParams');
   $: maxTokensFieldLabel =
-    profileDraftProviderType === 'gemini' ? 'Max Output' : profileDraftOpenAICompatibility === 'extended' ? 'Max Tokens' : 'Max Completion';
-  $: candidateCountFieldLabel = profileDraftProviderType === 'gemini' ? 'Candidates' : 'N';
+    profileDraftProviderType === 'gemini' ? t('profile.maxOutput') : profileDraftOpenAICompatibility === 'extended' ? t('profile.maxTokens') : t('profile.maxCompletion');
+  $: candidateCountFieldLabel = profileDraftProviderType === 'gemini' ? t('profile.candidates') : 'N';
   $: draftModelUsesGeminiThinkingLevel = profileDraftProviderType === 'gemini' && /^gemini-3(?:\.|-|$)/i.test(profileDraftProviderModel.trim());
   $: showAdvancedSampler =
     samplerVisible.topA ||
@@ -557,21 +558,21 @@
     !deletingMessageNode;
   $: drawerTitle =
     activeDrawer === 'chats'
-      ? 'Chats'
+      ? t('drawer.chats')
       : activeDrawer === 'characters'
-        ? 'Characters'
+        ? t('drawer.characters')
         : activeDrawer === 'personas'
-          ? 'Personas'
+          ? t('drawer.personas')
           : activeDrawer === 'worldbooks'
-            ? 'World Books'
+            ? t('drawer.worldbooks')
             : activeDrawer === 'profiles'
-              ? 'Profiles'
+              ? t('drawer.profiles')
               : activeDrawer === 'import'
-                ? 'Import'
+                ? t('drawer.import')
                 : activeDrawer === 'inspector'
-                  ? 'Inspector'
+                  ? t('drawer.inspector')
                   : activeDrawer === 'settings'
-                    ? 'Settings'
+                    ? t('drawer.settings')
                     : '';
   $: drawerIsRight = activeDrawer === 'import' || activeDrawer === 'inspector' || activeDrawer === 'settings';
   $: appSettingsStyle = `--app-font-family: ${appFontFamilyCss(appSettings.fontFamily)}; --app-ui-font-size: ${appSettings.uiFontSize}px; --app-chat-font-size: ${appSettings.chatFontSize}px;`;
@@ -671,6 +672,45 @@
 
   function resetAppSettings() {
     saveAppSettings(defaultAppSettings());
+  }
+
+  function formatLocalTime(value: number) {
+    return new Date(value).toLocaleString(t('date.locale'), {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+  function roleLabel(role: string) {
+    if (role === 'assistant') return t('role.assistant');
+    if (role === 'user') return t('role.user');
+    if (role === 'system') return t('role.system');
+    if (role === 'root') return t('role.root');
+    return role;
+  }
+
+  function promptSourceLabel(source: PromptSlotSource) {
+    return t(`promptSource.${source}` as Parameters<typeof t>[0]);
+  }
+
+  function triggerLabel(trigger: string) {
+    return t(`trigger.${trigger}` as Parameters<typeof t>[0]);
+  }
+
+  function reasoningEffortLabel(value: OpenAIReasoningEffort) {
+    return t(`reasoning.${value}` as Parameters<typeof t>[0]);
+  }
+
+  function geminiThinkingModeLabel(value: GeminiThinkingMode | GeminiThinkingLevel) {
+    return t(`thinking.${value}` as Parameters<typeof t>[0]);
+  }
+
+  function metadataSourceLabel(source?: string) {
+    if (source === 'character-card') return t('source.characterCard');
+    if (!source || source === 'native') return t('common.native');
+    return source;
   }
 
   function openLibrary(view: Exclude<View, 'chat'>) {
@@ -826,7 +866,7 @@
         groups.get(key) ??
         ({
           key,
-          label: character?.name ?? 'No character',
+          label: character?.name ?? t('chat.noCharacter'),
           avatarUrl: characterAvatarUrl(character),
           count: 0,
           conversations: []
@@ -840,11 +880,11 @@
 
   function conversationSummary(conversation: Conversation) {
     const parts = [
-      `${conversation.nodeCount ?? 0} nodes`,
-      conversation.branchCount ? `${conversation.branchCount} branches` : '',
-      conversation.archivedAt ? 'archived' : ''
+      t('chat.nodes', { count: conversation.nodeCount ?? 0 }),
+      conversation.branchCount ? t('chat.branches', { count: conversation.branchCount }) : '',
+      conversation.archivedAt ? t('chat.archived') : ''
     ].filter(Boolean);
-    return parts.join(' · ') || 'Empty chat';
+    return parts.join(' · ') || t('chat.empty');
   }
 
   function conversationPreview(conversation: Conversation) {
@@ -853,16 +893,11 @@
 
   function conversationUpdatedLabel(conversation: Conversation) {
     if (!conversation.updatedAt) return '';
-    return new Date(conversation.updatedAt).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return formatLocalTime(conversation.updatedAt);
   }
 
   async function refreshAll() {
-    status = 'Loading';
+    status = t('status.loading');
     profiles = await fetchJson<Profile[]>('/api/profiles');
     characters = await fetchJson<Character[]>('/api/characters');
     personas = await fetchJson<UserPersona[]>('/api/personas');
@@ -874,7 +909,7 @@
     if (!activeWorldBookId || !worldBooks.some((worldBook) => worldBook.id === activeWorldBookId)) {
       activeWorldBookId = worldBooks[0]?.id ?? '';
     }
-    status = 'Ready';
+    status = t('status.ready');
   }
 
   function profileStats(profile?: Profile) {
@@ -889,19 +924,19 @@
 
   function profileOrigin(profile: Profile) {
     const kind = profile.metadata?.sillyTavern?.kind;
-    return kind ? `SillyTavern ${kind}` : 'NanKe native';
+    return kind ? `SillyTavern ${kind}` : t('profile.nativeOrigin');
   }
 
   function profileSamplerLine(profile: Profile) {
     const sampler = profile.sampler ?? {};
     const parts = [
-      sampler.temperature !== undefined ? `temp ${sampler.temperature}` : '',
-      sampler.topP !== undefined ? `top-p ${sampler.topP}` : '',
-      sampler.maxTokens !== undefined ? `${sampler.maxTokens} out` : '',
-      sampler.contextTokens !== undefined ? `${sampler.contextTokens} ctx` : '',
-      profile.request?.stream === false ? 'non-stream' : 'stream'
+      sampler.temperature !== undefined ? t('profile.samplerTemp', { value: sampler.temperature }) : '',
+      sampler.topP !== undefined ? t('profile.samplerTopP', { value: sampler.topP }) : '',
+      sampler.maxTokens !== undefined ? t('profile.samplerOut', { value: sampler.maxTokens }) : '',
+      sampler.contextTokens !== undefined ? t('profile.samplerCtx', { value: sampler.contextTokens }) : '',
+      profile.request?.stream === false ? t('profile.nonStream') : t('profile.stream')
     ].filter(Boolean);
-    return parts.join(' · ') || 'No sampler details';
+    return parts.join(' · ') || t('profile.noSamplerDetails');
   }
 
   function boundWorldBooksForCharacter(character?: Character) {
@@ -976,18 +1011,18 @@
   }
 
   function characterOrigin(character?: Character) {
-    if (!character) return 'No character';
-    if (character.legacy?.source === 'sillytavern') return 'SillyTavern card';
-    return 'NanKe native';
+    if (!character) return t('character.noCharacter');
+    if (character.legacy?.source === 'sillytavern') return t('character.sillyTavernCard');
+    return t('character.nankeNative');
   }
 
   function characterListLine(character: Character) {
     const stats = characterStats(character);
     const parts = [
-      `${stats.tokens} tokens`,
-      stats.worldBooks ? `${stats.worldBooks} lore` : '',
-      stats.tags ? `${stats.tags} tags` : '',
-      character.favorite ? 'favorite' : '',
+      t('character.tokens', { count: stats.tokens }),
+      stats.worldBooks ? t('character.loreCount', { count: stats.worldBooks }) : '',
+      stats.tags ? t('character.tagsCount', { count: stats.tags }) : '',
+      character.favorite ? t('common.favorite') : '',
       characterOrigin(character)
     ].filter(Boolean);
     return parts.join(' · ');
@@ -1084,9 +1119,9 @@
 
   function worldBookLine(worldBook: WorldBook) {
     if (worldBook.metadata?.source === 'character-card') {
-      return `${worldBook.entries.length} entries · bound to ${worldBook.metadata.characterName ?? 'character'}`;
+      return t('worldbook.boundToCharacter', { count: worldBook.entries.length, character: worldBook.metadata.characterName ?? t('common.character') });
     }
-    return `${worldBook.entries.length} entries`;
+    return t('worldbook.entries', { count: worldBook.entries.length });
   }
 
   function worldBookStats(entries: WorldBookEntry[]) {
@@ -1097,7 +1132,7 @@
   }
 
   function entryTitle(entry?: WorldBookEntry) {
-    if (!entry) return 'No entry';
+    if (!entry) return t('worldbook.noEntry');
     return entry.comment.trim() || entry.keys[0] || entry.id;
   }
 
@@ -1114,18 +1149,18 @@
 
   function entryStatusLabel(entry: WorldBookEntry) {
     const status = entryStatus(entry);
-    if (status === 'disabled') return 'Disabled';
-    if (status === 'constant') return 'Constant';
-    return 'Normal';
+    if (status === 'disabled') return t('worldbook.status.disabled');
+    if (status === 'constant') return t('worldbook.status.constant');
+    return t('worldbook.status.normal');
   }
 
   function entryMetaLine(entry: WorldBookEntry) {
     const parts = [
-      entry.position === 'depth' ? `@${entry.depth} ${entry.role}` : entry.position,
-      `order ${entry.order}`,
+      entry.position === 'depth' ? `@${entry.depth} ${roleLabel(entry.role)}` : worldBookPositions.find((position) => position.value === entry.position)?.label ?? entry.position,
+      t('worldbook.orderMeta', { order: entry.order }),
       `${entry.probability}%`,
-      entry.selective ? 'selective' : '',
-      entry.extensions.use_regex === true ? 'regex' : ''
+      entry.selective ? t('worldbook.selectiveMeta') : '',
+      entry.extensions.use_regex === true ? t('common.regex') : ''
     ].filter(Boolean);
     return parts.join(' · ');
   }
@@ -1589,21 +1624,21 @@
   async function saveActiveProfile() {
     if (!activeProfile) return false;
     if (!profileDraftName.trim()) {
-      status = 'Profile name required';
+      status = t('status.profileNameRequired');
       return false;
     }
 
-    status = 'Saving';
+    status = t('status.saving');
     try {
       const saved = await saveProfilePayload(buildProfileFromDraft(activeProfile));
       profiles = profiles.map((profile) => (profile.id === saved.id ? saved : profile));
       activeProfileId = saved.id;
       loadProfileDraft(saved);
-      status = 'Ready';
+      status = t('status.ready');
       return true;
     } catch (error) {
       console.error(error);
-      status = 'Profile save failed';
+      status = t('status.profileSaveFailed');
       return false;
     }
   }
@@ -1611,7 +1646,7 @@
   async function duplicateActiveProfile() {
     if (!activeProfile) return;
     if (!profileDraftName.trim()) {
-      status = 'Profile name required';
+      status = t('status.profileNameRequired');
       return;
     }
 
@@ -1620,42 +1655,42 @@
     const duplicate: Profile = {
       ...copy,
       id: crypto.randomUUID(),
-      name: `${copy.name} Copy`,
+      name: t('profile.copySuffix', { name: copy.name }),
       createdAt: now,
       updatedAt: now,
       metadata: structuredClone(copy.metadata ?? {}),
       legacy: copy.legacy ? structuredClone(copy.legacy) : undefined
     };
 
-    status = 'Saving';
+    status = t('status.saving');
     try {
       const saved = await saveProfilePayload(duplicate);
       profiles = [...profiles, saved].sort((a, b) => a.name.localeCompare(b.name));
       activeProfileId = saved.id;
       loadProfileDraft(saved);
-      status = 'Ready';
+      status = t('status.ready');
     } catch (error) {
       console.error(error);
-      status = 'Profile copy failed';
+      status = t('status.profileCopyFailed');
     }
   }
 
   function slotMeta(slot: PromptSlot) {
-    const parts: string[] = [slot.source, slot.role];
+    const parts: string[] = [promptSourceLabel(slot.source), roleLabel(slot.role)];
     if (slot.legacy?.source === 'sillytavern') parts.push('ST');
-    if (slot.legacy?.marker) parts.push('marker');
+    if (slot.legacy?.marker) parts.push(t('profile.slotKind.marker'));
     if (slot.injection?.position === 'absolute') parts.push(`@${slot.injection.depth ?? 4}`);
-    if (slot.enabled === false) parts.push('off');
+    if (slot.enabled === false) parts.push(t('common.off'));
     return parts.join(' · ');
   }
 
   function slotKind(slot: PromptSlot) {
-    if (slot.injection?.position === 'absolute') return 'In-chat';
-    if (slot.legacy?.marker) return 'Marker';
-    if (slot.legacy?.systemPrompt && slot.legacy?.forbidOverrides) return 'Important';
-    if (slot.legacy?.systemPrompt) return 'System';
-    if (slot.source === 'custom') return 'Custom';
-    return 'Runtime';
+    if (slot.injection?.position === 'absolute') return t('profile.slotKind.inChat');
+    if (slot.legacy?.marker) return t('profile.slotKind.marker');
+    if (slot.legacy?.systemPrompt && slot.legacy?.forbidOverrides) return t('profile.slotKind.important');
+    if (slot.legacy?.systemPrompt) return t('profile.slotKind.system');
+    if (slot.source === 'custom') return t('profile.slotKind.custom');
+    return t('profile.slotKind.runtime');
   }
 
   function slotTokenEstimate(slot: PromptSlot) {
@@ -1683,7 +1718,7 @@
       source: 'custom',
       role: 'system',
       enabled: true,
-      label: 'Custom Prompt',
+      label: t('profile.customPrompt'),
       content: '',
       injection: { position: 'relative', depth: 4, order: 100, triggers: [] }
     };
@@ -1698,7 +1733,7 @@
       ...structuredClone(slot),
       id: `custom-${crypto.randomUUID()}`,
       source: 'custom',
-      label: `${slot.label || slot.id} Copy`,
+      label: t('profile.copySuffix', { name: slot.label || slot.id }),
       legacy: undefined
     };
     const index = profileDraftSlots.findIndex((item) => item.id === slot.id);
@@ -1824,7 +1859,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title: input.slice(0, 40) || 'New Chat',
+        title: input.slice(0, 40) || t('chat.newChat'),
         characterId: activeCharacterId || undefined,
         personaId: activePersonaId || undefined,
         profileId: activeProfileId || undefined
@@ -1846,7 +1881,7 @@
 
   async function renameConversation(event: MouseEvent, conversation: Conversation) {
     event.stopPropagation();
-    const title = window.prompt('Rename chat', conversation.title)?.trim();
+    const title = window.prompt(t('chat.renamePrompt'), conversation.title)?.trim();
     if (!title || title === conversation.title) return;
     const updated = await fetchJson<Conversation>('/api/conversations', {
       method: 'PATCH',
@@ -1877,7 +1912,7 @@
 
   async function cloneConversation(event: MouseEvent, conversation: Conversation) {
     event.stopPropagation();
-    status = 'Cloning';
+    status = t('status.cloning');
     const cloned = await fetchJson<Conversation>('/api/conversations', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -1890,12 +1925,12 @@
     messages = cloned.messages ?? [];
     rememberConversation(cloned);
     activeView = 'chat';
-    status = 'Ready';
+    status = t('status.ready');
   }
 
   async function deleteConversation(event: MouseEvent, conversation: Conversation) {
     event.stopPropagation();
-    if (!window.confirm(`Delete "${conversation.title}"? This cannot be undone.`)) return;
+    if (!window.confirm(t('chat.deleteConfirm', { title: conversation.title }))) return;
     await fetchJson<{ deleted: boolean; id: string }>(`/api/conversations?id=${encodeURIComponent(conversation.id)}`, {
       method: 'DELETE'
     });
@@ -1911,7 +1946,7 @@
 
   async function exportConversation(event: MouseEvent, conversation: Conversation) {
     event.stopPropagation();
-    status = 'Exporting';
+    status = t('status.exporting');
     try {
       const response = await fetch(`/api/conversations?id=${encodeURIComponent(conversation.id)}&export=true`);
       if (!response.ok) throw new Error(await response.text());
@@ -1922,9 +1957,9 @@
       link.download = conversationSnapshotFilename(conversation.title);
       link.click();
       URL.revokeObjectURL(url);
-      status = 'Ready';
+      status = t('status.ready');
     } catch {
-      status = 'Export failed';
+      status = t('status.exportFailed');
     }
   }
 
@@ -1934,7 +1969,7 @@
         .trim()
         .replace(/[\\/:*?"<>|]+/g, '_')
         .replace(/\s+/g, ' ')
-        .slice(0, 80) || 'conversation';
+      .slice(0, 80) || 'conversation';
     return `${name}.nanke-conversation.json`;
   }
 
@@ -1975,7 +2010,7 @@
     if (!target || !canContinueActiveLeaf || !nodeId || !activeConversationId) return;
     composerToolsOpen = false;
     inspector = '';
-    status = 'Continuing';
+    status = t('status.continuing');
     await streamGeneration(
       {
         conversationId: activeConversationId,
@@ -1993,7 +2028,7 @@
   }
 
   async function streamGeneration(body: Record<string, unknown>, options: { preserveAssistantOnError?: boolean } = {}) {
-    status = 'Generating';
+    status = t('status.generating');
     const controller = new AbortController();
     generationAbortController = controller;
     let completedConversationId = typeof body.conversationId === 'string' ? body.conversationId : '';
@@ -2008,8 +2043,8 @@
 
       if (!response.body || !response.ok) {
         const errorMessage = await responseErrorMessage(response);
-        showAssistantStreamError(`Provider error: ${errorMessage}`, options.preserveAssistantOnError);
-        status = 'Provider error';
+        showAssistantStreamError(`${t('status.providerError')}: ${errorMessage}`, options.preserveAssistantOnError);
+        status = t('status.providerError');
         return;
       }
 
@@ -2022,8 +2057,8 @@
         if (event.type === 'text') appendAssistantDraftText(event.text ?? '');
         if (event.type === 'done') completedConversationId = event.conversationId ?? completedConversationId;
         if (event.type === 'error') {
-          showAssistantStreamError(`Generation error: ${event.text ?? 'Unknown error'}`, options.preserveAssistantOnError);
-          status = 'Generation error';
+          showAssistantStreamError(`${t('status.generationError')}: ${event.text ?? ''}`.trim(), options.preserveAssistantOnError);
+          status = t('status.generationError');
         }
       };
       while (true) {
@@ -2040,17 +2075,17 @@
       if (buffer.trim()) {
         consumeLine(buffer);
       }
-      status = controller.signal.aborted ? 'Stopped' : 'Ready';
+      status = controller.signal.aborted ? t('status.stopped') : t('status.ready');
       if (!controller.signal.aborted && completedConversationId) {
         await refreshConversationState(completedConversationId);
       }
     } catch (error) {
       if (controller.signal.aborted) {
         removeEmptyAssistantDraft();
-        status = 'Stopped';
+        status = t('status.stopped');
       } else {
-        showAssistantStreamError(`Generation error: ${error instanceof Error ? error.message : 'Unknown error'}`, options.preserveAssistantOnError);
-        status = 'Generation error';
+        showAssistantStreamError(`${t('status.generationError')}: ${error instanceof Error ? error.message : ''}`.trim(), options.preserveAssistantOnError);
+        status = t('status.generationError');
       }
     } finally {
       if (generationAbortController === controller) {
@@ -2129,7 +2164,7 @@
 
   function stopGeneration() {
     generationAbortController?.abort();
-    status = 'Stopping';
+    status = t('status.stopping');
   }
 
   async function switchMessageSibling(message: ChatMessage, direction: 'left' | 'right') {
@@ -2201,7 +2236,7 @@
     const content = editingMessageContent.trim();
     if (!nodeId || !conversationId || isGenerating || editingMessageSaving) return;
     if (!content) {
-      editingMessageStatus = 'Message cannot be empty.';
+      editingMessageStatus = t('chat.messageEmpty');
       return;
     }
     if (content === messageEditableContent(message).trim()) {
@@ -2210,7 +2245,7 @@
     }
 
     editingMessageSaving = true;
-    editingMessageStatus = 'Saving';
+    editingMessageStatus = t('status.saving');
     try {
       const conversation = await fetchJson<Conversation>('/api/conversations', {
         method: 'PATCH',
@@ -2229,7 +2264,7 @@
       if (conversationTreeSummary?.conversation.id === conversation.id) await loadConversationTree(conversation.id);
       cancelEditingMessage();
     } catch (error) {
-      editingMessageStatus = error instanceof Error ? error.message : 'Edit failed.';
+      editingMessageStatus = error instanceof Error ? error.message : t('chat.editFailed');
     } finally {
       editingMessageSaving = false;
     }
@@ -2239,7 +2274,7 @@
     const nodeId = message.branch?.nodeId ?? message.id;
     const conversationId = message.conversationId ?? activeConversationId;
     if (!nodeId || !conversationId || isGenerating) return;
-    status = 'Forking';
+    status = t('status.forking');
     const conversation = await fetchJson<Conversation>('/api/conversations', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -2253,13 +2288,13 @@
     messages = conversation.messages ?? [];
     rememberConversation(conversation);
     activeView = 'chat';
-    status = 'Ready';
+    status = t('status.ready');
   }
 
   async function focusConversationTreeNode(node: ConversationTreeNode, restoreSubtree = true) {
     const conversationId = conversationTreeSummary?.conversation.id ?? activeConversationId;
     if (!conversationId || isGenerating || conversationTreeActionStatus) return;
-    conversationTreeActionStatus = restoreSubtree ? 'Focusing node' : 'Continuing from node';
+    conversationTreeActionStatus = restoreSubtree ? t('tree.focusingNode') : t('tree.continuingFromNode');
     try {
       const conversation = await fetchJson<Conversation>('/api/conversations', {
         method: 'PATCH',
@@ -2319,7 +2354,7 @@
     const target = pendingMessageDelete;
     if (!target || isGenerating || deletingMessageNode) return;
     deletingMessageNode = true;
-    messageDeleteStatus = mode === 'node' ? 'Deleting node' : 'Deleting subtree';
+    messageDeleteStatus = mode === 'node' ? t('chat.deletingNode') : t('chat.deletingSubtree');
     if (conversationTreeSummary?.conversation.id === target.conversationId) {
       conversationTreeActionStatus = messageDeleteStatus;
     }
@@ -2342,7 +2377,7 @@
       pendingMessageDelete = null;
       messageDeleteStatus = '';
     } catch (error) {
-      messageDeleteStatus = error instanceof Error ? error.message : 'Delete failed.';
+      messageDeleteStatus = error instanceof Error ? error.message : t('chat.deleteFailed');
     } finally {
       deletingMessageNode = false;
       conversationTreeActionStatus = '';
@@ -2378,7 +2413,7 @@
   }
 
   async function inspectCurrentPrompt() {
-    const content = input.trim() || 'Inspect prompt';
+    const content = input.trim() || t('chat.inspectPromptFallback');
     const conversationId = await ensureConversation();
     const response = await fetch('/api/generate', {
       method: 'POST',
@@ -2406,16 +2441,16 @@
   }
 
   function renderCharacterTemplate(template: string): string {
-    const charName = activeCharacter?.name ?? 'Assistant';
-    const userName = activePersona?.name ?? 'User';
+    const charName = activeCharacter?.name ?? t('role.assistant');
+    const userName = activePersona?.name ?? t('role.user');
     return template.replaceAll('{{char}}', charName).replaceAll('{{charIfNotGroup}}', charName).replaceAll('{{user}}', userName);
   }
 
   function messageSpeaker(message: ChatMessage): string {
     if (message.name?.trim()) return message.name;
-    if (message.role === 'assistant') return activeCharacter?.name ?? 'Assistant';
-    if (message.role === 'user') return activePersona?.name ?? 'User';
-    return 'System';
+    if (message.role === 'assistant') return activeCharacter?.name ?? t('role.assistant');
+    if (message.role === 'user') return activePersona?.name ?? t('role.user');
+    return t('role.system');
   }
 
   function messageAvatarUrl(message: ChatMessage): string {
@@ -2436,11 +2471,11 @@
   }
 
   function messageRegexMacros() {
-    const charName = activeCharacter?.name ?? 'Assistant';
+    const charName = activeCharacter?.name ?? t('role.assistant');
     return {
       char: charName,
       charIfNotGroup: charName,
-      user: activePersona?.name ?? 'User'
+      user: activePersona?.name ?? t('role.user')
     };
   }
 
@@ -2563,7 +2598,7 @@
         const value = String(reader.result ?? '');
         resolve(value);
       });
-      reader.addEventListener('error', () => reject(reader.error ?? new Error('Could not read file.')));
+      reader.addEventListener('error', () => reject(reader.error ?? new Error('无法读取文件。')));
       if (importKind === 'character-card-png') reader.readAsDataURL(file);
       else reader.readAsText(file);
     });
@@ -2577,7 +2612,7 @@
   }
 
   async function runImport() {
-    status = 'Importing';
+    status = t('status.importing');
     const data =
       importKind === 'chat-jsonl'
         ? importText
@@ -2609,7 +2644,7 @@
   async function createCharacter() {
     const name = newCharacterName.trim();
     if (!name) return;
-    status = 'Saving';
+    status = t('status.saving');
     const character = await fetchJson<Character>('/api/characters', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2636,14 +2671,14 @@
     characterPanelMode = 'edit';
     loadCharacterDraft(character);
     resetNewCharacterDraft();
-    status = 'Ready';
+    status = t('status.ready');
   }
 
   async function saveActiveCharacter() {
     if (!activeCharacter) return;
     const name = characterDraftName.trim();
     if (!name) return;
-    status = 'Saving';
+    status = t('status.saving');
     const character = await fetchJson<Character>('/api/characters', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2670,12 +2705,12 @@
     characters = characters.map((item) => (item.id === character.id ? character : item));
     activeCharacterId = character.id;
     loadCharacterDraft(character);
-    status = 'Ready';
+    status = t('status.ready');
   }
 
   async function toggleCharacterFavorite(character: Character | undefined = activeCharacter) {
     if (!character) return;
-    status = 'Saving';
+    status = t('status.saving');
     const saved = await fetchJson<Character>('/api/characters', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2689,19 +2724,19 @@
     if (activeCharacterId === saved.id) {
       loadCharacterDraft(saved);
     }
-    status = 'Ready';
+    status = t('status.ready');
   }
 
   async function duplicateActiveCharacter() {
     if (!activeCharacter) return;
-    status = 'Saving';
+    status = t('status.saving');
     const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, characterBook: _characterBook, ...rest } = structuredClone(activeCharacter);
     const character = await fetchJson<Character>('/api/characters', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...rest,
-        name: `${activeCharacter.name} Copy`,
+        name: t('profile.copySuffix', { name: activeCharacter.name }),
         favorite: false,
         worldBookIds: boundWorldBooksForCharacter(activeCharacter).map((worldBook) => worldBook.id)
       })
@@ -2709,14 +2744,14 @@
     characters = [...characters, character];
     activeCharacterId = character.id;
     loadCharacterDraft(character);
-    status = 'Ready';
+    status = t('status.ready');
   }
 
   async function deleteActiveCharacter() {
     if (!activeCharacter) return;
     const character = activeCharacter;
-    if (!confirm(`Delete character "${character.name}"?`)) return;
-    status = 'Deleting';
+    if (!confirm(t('character.deleteConfirm', { name: character.name }))) return;
+    status = t('status.deleting');
     await fetchJson<{ deleted: boolean }>('/api/characters', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -2734,13 +2769,13 @@
       zoomedAvatar = null;
     }
     loadCharacterDraft(characters.find((item) => item.id === activeCharacterId));
-    status = 'Ready';
+    status = t('status.ready');
   }
 
   async function createPersona() {
     const name = newPersonaName.trim();
     if (!name) return;
-    status = 'Saving';
+    status = t('status.saving');
     const persona = await fetchJson<UserPersona>('/api/personas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2753,14 +2788,14 @@
     newPersonaName = '';
     newPersonaDescription = '';
     newPersonaDefault = false;
-    status = 'Ready';
+    status = t('status.ready');
   }
 
   async function saveActivePersona() {
     if (!activePersona) return;
     const name = personaDraftName.trim();
     if (!name) return;
-    status = 'Saving';
+    status = t('status.saving');
     const persona = await fetchJson<UserPersona>('/api/personas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2779,13 +2814,13 @@
     personaDraftName = persona.name;
     personaDraftDescription = persona.description;
     personaDraftDefault = persona.isDefault;
-    status = 'Ready';
+    status = t('status.ready');
   }
 
   async function createWorldBook() {
     const name = newWorldBookName.trim();
     if (!name) return;
-    status = 'Saving';
+    status = t('status.saving');
     const worldBook = await fetchJson<WorldBook>('/api/worldbooks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2795,12 +2830,12 @@
     activeWorldBookId = worldBook.id;
     newWorldBookName = '';
     loadWorldBookDraft(worldBook);
-    status = 'Ready';
+    status = t('status.ready');
   }
 
   async function saveActiveWorldBook() {
     if (!activeWorldBook || !worldBookDraftName.trim()) return;
-    status = 'Saving';
+    status = t('status.saving');
     const payload: WorldBook = {
       ...activeWorldBook,
       name: worldBookDraftName.trim(),
@@ -2825,7 +2860,7 @@
     worldBooks = worldBooks.map((worldBook) => (worldBook.id === saved.id ? saved : worldBook));
     activeWorldBookId = saved.id;
     loadWorldBookDraft(saved);
-    status = 'Ready';
+    status = t('status.ready');
   }
 </script>
 
@@ -2834,13 +2869,13 @@
 </svelte:head>
 
 <main class="workspace" style={appSettingsStyle}>
-  <aside class="rail" aria-label="Navigation">
+  <aside class="rail" aria-label={t('nav.navigation')}>
     <div class="brand">NK</div>
     <button
       class="icon-button"
       class:active={activeView === 'chat' && activeDrawer !== 'chats'}
-      title="Chat"
-      aria-label="Chat"
+      title={t('nav.chat')}
+      aria-label={t('nav.chat')}
       aria-pressed={activeView === 'chat' && activeDrawer !== 'chats'}
       on:click={() => {
         activeView = 'chat';
@@ -2852,8 +2887,8 @@
     <button
       class="icon-button"
       class:active={activeDrawer === 'characters'}
-      title="Characters"
-      aria-label="Characters"
+      title={t('nav.characters')}
+      aria-label={t('nav.characters')}
       aria-pressed={activeDrawer === 'characters'}
       on:click={() => openLibrary('characters')}
     >
@@ -2862,8 +2897,8 @@
     <button
       class="icon-button"
       class:active={activeDrawer === 'personas'}
-      title="Personas"
-      aria-label="Personas"
+      title={t('nav.personas')}
+      aria-label={t('nav.personas')}
       aria-pressed={activeDrawer === 'personas'}
       on:click={() => openLibrary('personas')}
     >
@@ -2872,8 +2907,8 @@
     <button
       class="icon-button"
       class:active={activeDrawer === 'worldbooks'}
-      title="World Books"
-      aria-label="World Books"
+      title={t('nav.worldbooks')}
+      aria-label={t('nav.worldbooks')}
       aria-pressed={activeDrawer === 'worldbooks'}
       on:click={() => openLibrary('worldbooks')}
     >
@@ -2882,8 +2917,8 @@
     <button
       class="icon-button"
       class:active={activeDrawer === 'profiles'}
-      title="Profiles"
-      aria-label="Profiles"
+      title={t('nav.profiles')}
+      aria-label={t('nav.profiles')}
       aria-pressed={activeDrawer === 'profiles'}
       on:click={() => openLibrary('profiles')}
     >
@@ -2893,8 +2928,8 @@
     <button
       class="icon-button"
       class:active={activeDrawer === 'settings'}
-      title="Settings"
-      aria-label="Settings"
+      title={t('nav.settings')}
+      aria-label={t('nav.settings')}
       aria-pressed={activeDrawer === 'settings'}
       on:click={() => openDrawer('settings')}
     >
@@ -2903,8 +2938,8 @@
     <button
       class="icon-button"
       class:active={activeDrawer === 'import'}
-      title="Import"
-      aria-label="Import"
+      title={t('nav.import')}
+      aria-label={t('nav.import')}
       aria-pressed={activeDrawer === 'import'}
       on:click={() => openDrawer('import')}
     >
@@ -2913,8 +2948,8 @@
     <button
       class="icon-button"
       class:active={activeDrawer === 'inspector'}
-      title="Prompt Inspector"
-      aria-label="Prompt Inspector"
+      title={t('nav.inspector')}
+      aria-label={t('nav.inspector')}
       aria-pressed={activeDrawer === 'inspector'}
       on:click={openInspector}
     >
@@ -2922,36 +2957,36 @@
     </button>
   </aside>
 
-  <section class="stage" class:tree-open={conversationTreeLoading || Boolean(conversationTreeSummary)} aria-label="Chat workspace">
+  <section class="stage" class:tree-open={conversationTreeLoading || Boolean(conversationTreeSummary)} aria-label={t('chat.workspace')}>
     <header class="chatbar">
       <div class="scene">
         <button class="conversation-button" type="button" on:click={() => openDrawer('chats')}>
           <MessageSquare size={16} />
-          <span>{activeConversation?.title ?? 'New Chat'}</span>
+          <span>{activeConversation?.title ?? t('chat.newChat')}</span>
         </button>
       </div>
 
-      <div class="context-strip" aria-label="Current context">
+      <div class="context-strip" aria-label={t('chat.currentContext')}>
         <button class="context-chip" type="button" on:click={() => openLibrary('characters')}>
           <Bot size={15} />
-          <span>{activeCharacter?.name ?? 'No character'}</span>
+          <span>{activeCharacter?.name ?? t('chat.noCharacter')}</span>
         </button>
         <button class="context-chip" type="button" on:click={() => openLibrary('personas')}>
           <UserRound size={15} />
-          <span>{activePersona?.name ?? 'User'}</span>
+          <span>{activePersona?.name ?? t('role.user')}</span>
         </button>
         <button class="context-chip profile" type="button" on:click={() => openLibrary('profiles')}>
           <Settings2 size={15} />
-          <span>{activeProfile ? `${activeProfile.name} · ${activeProfile.provider.model}` : 'No profile'}</span>
+          <span>{activeProfile ? `${activeProfile.name} · ${activeProfile.provider.model}` : t('chat.noProfile')}</span>
         </button>
         <span class="status-pill">{status}</span>
       </div>
 
-      <div class="toolbar" aria-label="Chat actions">
-        <button class="tool-button" type="button" on:click={startNewConversation} title="New chat" aria-label="New chat">
+      <div class="toolbar" aria-label={t('chat.actions')}>
+        <button class="tool-button" type="button" on:click={startNewConversation} title={t('chat.newChat')} aria-label={t('chat.newChat')}>
           <SquarePen size={17} />
         </button>
-        <button class="tool-button" type="button" on:click={refreshAll} title="Refresh" aria-label="Refresh">
+        <button class="tool-button" type="button" on:click={refreshAll} title={t('common.refresh')} aria-label={t('common.refresh')}>
           <RefreshCw size={17} />
         </button>
       </div>
@@ -2964,13 +2999,13 @@
             <MessageSquare size={28} />
             <h1>{activeCharacter?.name ?? 'NanKe'}</h1>
             <p>
-              {activePersona?.name ?? 'User'} · {activeProfile ? `${activeProfile.provider.type} · ${activeProfile.provider.model}` : 'No profile selected'}
+              {activePersona?.name ?? t('role.user')} · {activeProfile ? `${activeProfile.provider.type} · ${activeProfile.provider.model}` : t('chat.noProfileSelected')}
             </p>
           </div>
         {/if}
         {#each messages as message, index}
           <article class="message-row {message.role}">
-            <button class="message-avatar" type="button" aria-label={`Open avatar for ${messageSpeaker(message)}`} on:click={() => openZoomedAvatar(message)}>
+            <button class="message-avatar" type="button" aria-label={t('chat.openAvatar', { name: messageSpeaker(message) })} on:click={() => openZoomedAvatar(message)}>
               {#if messageAvatarUrl(message)}
                 <img src={messageAvatarUrl(message)} alt="" />
               {:else}
@@ -2982,27 +3017,27 @@
               {#if message.role === 'assistant' && message.thinking?.trim()}
                 <details class="thinking-block">
                   <summary>
-                    <span>Thinking</span>
+                    <span>{t('chat.thinking')}</span>
                   </summary>
                   <div class="thinking-block-content rich">{@html thinkingDisplayContent(message, index)}</div>
                 </details>
               {/if}
               {#if editingMessageNodeId && editingMessageNodeId === messageNodeId(message)}
-                <div class="message-editor" aria-label="Edit message">
+                <div class="message-editor" aria-label={t('chat.editMessage')}>
                   {#key editingMessageNodeId}
                     <textarea
                       bind:value={editingMessageContent}
                       rows={editMessageRows(editingMessageContent)}
                       disabled={editingMessageSaving}
-                      aria-label="Edited message content"
+                      aria-label={t('chat.editedContent')}
                     ></textarea>
                   {/key}
                   <div class="message-editor-actions">
                     <button type="button" disabled={editingMessageSaving} on:click={cancelEditingMessage}>
-                      <X size={14} /> Cancel
+                      <X size={14} /> {t('common.cancel')}
                     </button>
                     <button class="primary" type="button" disabled={editingMessageSaving || !editingMessageContent.trim()} on:click={() => saveMessageEdit(message)}>
-                      <Save size={14} /> {editingMessageSaving ? 'Saving' : 'Save'}
+                      <Save size={14} /> {editingMessageSaving ? t('common.saving') : t('common.save')}
                     </button>
                   </div>
                   {#if editingMessageStatus}
@@ -3014,11 +3049,11 @@
                   <div class="message-content rich">{@html messageDisplayContent(message, index)}</div>
                 {/if}
                 {#if message.branch}
-                  <div class="branch-controls" aria-label="Message branches">
+                  <div class="branch-controls" aria-label={t('chat.messageBranches')}>
                     <button
                       type="button"
-                      title="Edit message"
-                      aria-label="Edit message"
+                      title={t('chat.editMessage')}
+                      aria-label={t('chat.editMessage')}
                       disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId)}
                       on:click={() => startEditingMessage(message)}
                     >
@@ -3027,8 +3062,8 @@
                     <button
                       class="danger"
                       type="button"
-                      title="Delete message"
-                      aria-label="Delete message"
+                      title={t('chat.deleteMessage')}
+                      aria-label={t('chat.deleteMessage')}
                       disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || deletingMessageNode}
                       on:click={() => openMessageDeleteDialog(message)}
                     >
@@ -3036,8 +3071,8 @@
                     </button>
                     <button
                       type="button"
-                      title="Save path as chat"
-                      aria-label="Save path as chat"
+                      title={t('chat.savePathAsChat')}
+                      aria-label={t('chat.savePathAsChat')}
                       disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || deletingMessageNode}
                       on:click={() => forkMessagePathToConversation(message)}
                     >
@@ -3046,8 +3081,8 @@
                     {#if !message.branch.isLatest}
                       <button
                         type="button"
-                        title="Continue from here"
-                        aria-label="Continue from here"
+                        title={t('chat.continueFromHere')}
+                        aria-label={t('chat.continueFromHere')}
                         disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || deletingMessageNode}
                         on:click={() => continueFromMessage(message)}
                       >
@@ -3057,8 +3092,8 @@
                     {#if message.branch.total > 1 || (message.role === 'assistant' && message.branch.isLatest)}
                       <button
                         type="button"
-                        title="Previous branch"
-                        aria-label="Previous branch"
+                        title={t('chat.previousBranch')}
+                        aria-label={t('chat.previousBranch')}
                         disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || deletingMessageNode || message.branch.current <= 1}
                         on:click={() => switchMessageSibling(message, 'left')}
                       >
@@ -3067,8 +3102,8 @@
                       <span>{message.branch.current}/{message.branch.total}</span>
                       <button
                         type="button"
-                        title={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
-                        aria-label={message.branch.current < message.branch.total ? 'Next branch' : 'Regenerate branch'}
+                        title={message.branch.current < message.branch.total ? t('chat.nextBranch') : t('chat.regenerateBranch')}
+                        aria-label={message.branch.current < message.branch.total ? t('chat.nextBranch') : t('chat.regenerateBranch')}
                         disabled={isGenerating || editingMessageSaving || Boolean(editingMessageNodeId) || deletingMessageNode || (message.branch.current >= message.branch.total && !(message.role === 'assistant' && message.branch.isLatest))}
                         on:click={() => nextMessageBranch(message)}
                       >
@@ -3091,39 +3126,39 @@
             class="composer-toolbox-trigger"
             class:active={composerToolsOpen}
             type="button"
-            title="Tools"
-            aria-label="Tools"
+            title={t('chat.tools')}
+            aria-label={t('chat.tools')}
             aria-expanded={composerToolsOpen}
             on:click={() => (composerToolsOpen = !composerToolsOpen)}
           >
             <Wrench size={18} />
           </button>
           {#if composerToolsOpen}
-            <div class="composer-menu" role="menu" aria-label="Composer tools">
+            <div class="composer-menu" role="menu" aria-label={t('chat.composerTools')}>
               <button type="button" role="menuitem" disabled={!canContinueActiveLeaf} on:click={continueActiveLeaf}>
                 <CornerDownRight size={16} />
                 <span>
-                  <strong>Continue</strong>
-                  <small>Extend last reply</small>
+                  <strong>{t('common.continue')}</strong>
+                  <small>{t('chat.extendLastReply')}</small>
                 </span>
               </button>
               <button type="button" role="menuitem" disabled={!input.trim()} on:click={clearComposerInput}>
                 <Eraser size={16} />
                 <span>
-                  <strong>Clear</strong>
-                  <small>Discard draft</small>
+                  <strong>{t('chat.clear')}</strong>
+                  <small>{t('chat.discardDraft')}</small>
                 </span>
               </button>
             </div>
           {/if}
         </div>
-        <textarea class="composer-input" bind:value={input} rows="1" placeholder="Message" aria-label="Message"></textarea>
+        <textarea class="composer-input" bind:value={input} rows="1" placeholder={t('chat.messagePlaceholder')} aria-label={t('chat.messagePlaceholder')}></textarea>
         <button
           class="composer-action"
           class:stopping={isGenerating}
           type={isGenerating ? 'button' : 'submit'}
-          title={isGenerating ? 'Stop generation' : 'Send message'}
-          aria-label={isGenerating ? 'Stop generation' : 'Send message'}
+          title={isGenerating ? t('chat.stopGeneration') : t('chat.sendMessage')}
+          aria-label={isGenerating ? t('chat.stopGeneration') : t('chat.sendMessage')}
           disabled={!isGenerating && !input.trim()}
           on:click={() => {
             if (isGenerating) stopGeneration();
@@ -3152,25 +3187,25 @@
           onDeleteNode={deleteConversationTreeNode}
         />
       {:else}
-        <aside class="tree-dock-loading" aria-label="Conversation tree">
+        <aside class="tree-dock-loading" aria-label={t('tree.title')}>
           <RefreshCw size={20} />
-          <span>Loading tree</span>
+          <span>{t('tree.loading')}</span>
         </aside>
       {/if}
     {/if}
   </section>
 
   {#if zoomedAvatar}
-    <section class="avatar-viewer" aria-label="Avatar preview" title={zoomedAvatar.name}>
+    <section class="avatar-viewer" aria-label={t('chat.avatarPreview')} title={zoomedAvatar.name}>
       <div class="avatar-viewer-controls">
         <span aria-hidden="true"><GripHorizontal size={18} /></span>
-        <button type="button" title="Close avatar preview" aria-label="Close avatar preview" on:click={() => (zoomedAvatar = null)}>
+        <button type="button" title={t('chat.closeAvatar')} aria-label={t('chat.closeAvatar')} on:click={() => (zoomedAvatar = null)}>
           <X size={18} />
         </button>
       </div>
       <div class="avatar-viewer-image" class:user={zoomedAvatar.role === 'user'}>
         {#if zoomedAvatar.src}
-          <img src={zoomedAvatar.src} alt={`${zoomedAvatar.name} avatar`} />
+          <img src={zoomedAvatar.src} alt={t('chat.avatarAlt', { name: zoomedAvatar.name })} />
         {:else}
           <span>{zoomedAvatar.initials}</span>
         {/if}
@@ -3180,21 +3215,21 @@
 
   {#if pendingMessageDelete}
     <section class="delete-dialog-backdrop" role="presentation">
-      <div class="delete-dialog" role="dialog" aria-modal="true" aria-label="Delete message node">
+      <div class="delete-dialog" role="dialog" aria-modal="true" aria-label={t('chat.deleteMessage')}>
         <header>
           <Trash2 size={17} />
-          <strong>Delete Message</strong>
+          <strong>{t('chat.deleteDialogTitle')}</strong>
         </header>
-        <p>{pendingMessageDelete.label || 'This message has no visible content.'}</p>
+        <p>{pendingMessageDelete.label || t('chat.deleteEmpty')}</p>
         <div class="delete-dialog-actions">
           <button type="button" disabled={deletingMessageNode} on:click={closeMessageDeleteDialog}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button type="button" disabled={deletingMessageNode} on:click={() => confirmMessageDelete('node')}>
-            Delete Node Only
+            {t('chat.deleteNodeOnly')}
           </button>
           <button class="danger" type="button" disabled={deletingMessageNode} on:click={() => confirmMessageDelete('subtree')}>
-            Delete With Descendants
+            {t('chat.deleteWithDescendants')}
           </button>
         </div>
         {#if messageDeleteStatus}
@@ -3205,7 +3240,7 @@
   {/if}
 
   {#if activeDrawer}
-    <button class="scrim" type="button" aria-label="Close drawer" on:click={closeDrawer}></button>
+    <button class="scrim" type="button" aria-label={t('common.close')} on:click={closeDrawer}></button>
     <aside
       class="drawer"
       class:right={drawerIsRight}
@@ -3216,7 +3251,7 @@
     >
       <header class="drawer-header">
         <h2>{drawerTitle}</h2>
-        <button class="tool-button" type="button" title="Close" aria-label="Close" on:click={closeDrawer}>
+        <button class="tool-button" type="button" title={t('common.close')} aria-label={t('common.close')} on:click={closeDrawer}>
           <X size={18} />
         </button>
       </header>
@@ -3224,20 +3259,20 @@
       {#if activeDrawer === 'chats'}
         <div class="drawer-actions">
           <button class="secondary full" type="button" on:click={startNewConversation}>
-            <MessageSquare size={16} />New Chat
+            <MessageSquare size={16} />{t('chat.newChat')}
           </button>
           <label class="search-field">
             <Search size={15} />
-            <input bind:value={conversationQuery} placeholder="Search chats" aria-label="Search chats" on:input={queueConversationSearch} />
+            <input bind:value={conversationQuery} placeholder={t('chat.search')} aria-label={t('chat.search')} on:input={queueConversationSearch} />
           </label>
           <label class="checkbox-row compact">
             <input type="checkbox" checked={showArchivedConversations} on:change={toggleArchivedConversations} />
-            <span>Show archived chats</span>
+            <span>{t('chat.showArchived')}</span>
           </label>
         </div>
         <div class="conversation-list">
           {#if conversationGroups.length === 0}
-            <div class="drawer-empty compact">No chats found.</div>
+            <div class="drawer-empty compact">{t('chat.noChats')}</div>
           {/if}
           {#each conversationGroups as group}
             <section class="conversation-group" aria-label={group.label}>
@@ -3264,22 +3299,22 @@
                       <small>{conversationSummary(conversation)}</small>
                     </button>
                     <div class="conversation-row-actions">
-                      <button type="button" title="Rename chat" aria-label="Rename chat" on:click={(event) => renameConversation(event, conversation)}>
+                      <button type="button" title={t('chat.rename')} aria-label={t('chat.rename')} on:click={(event) => renameConversation(event, conversation)}>
                         <Pencil size={14} />
                       </button>
-                      <button type="button" title="Duplicate chat" aria-label="Duplicate chat" on:click={(event) => cloneConversation(event, conversation)}>
+                      <button type="button" title={t('chat.duplicate')} aria-label={t('chat.duplicate')} on:click={(event) => cloneConversation(event, conversation)}>
                         <Copy size={14} />
                       </button>
-                      <button type="button" title="Open chat tree" aria-label="Open chat tree" on:click={(event) => openConversationTree(event, conversation)}>
+                      <button type="button" title={t('chat.openTree')} aria-label={t('chat.openTree')} on:click={(event) => openConversationTree(event, conversation)}>
                         <GitBranch size={14} />
                       </button>
-                      <button type="button" title="Export chat" aria-label="Export chat" on:click={(event) => exportConversation(event, conversation)}>
+                      <button type="button" title={t('chat.export')} aria-label={t('chat.export')} on:click={(event) => exportConversation(event, conversation)}>
                         <Download size={14} />
                       </button>
                       <button
                         type="button"
-                        title={conversation.archivedAt ? 'Restore chat' : 'Archive chat'}
-                        aria-label={conversation.archivedAt ? 'Restore chat' : 'Archive chat'}
+                        title={conversation.archivedAt ? t('chat.restore') : t('chat.archive')}
+                        aria-label={conversation.archivedAt ? t('chat.restore') : t('chat.archive')}
                         on:click={(event) => archiveConversation(event, conversation)}
                       >
                         {#if conversation.archivedAt}
@@ -3288,7 +3323,7 @@
                           <Archive size={14} />
                         {/if}
                       </button>
-                      <button class="danger" type="button" title="Delete chat" aria-label="Delete chat" on:click={(event) => deleteConversation(event, conversation)}>
+                      <button class="danger" type="button" title={t('chat.delete')} aria-label={t('chat.delete')} on:click={(event) => deleteConversation(event, conversation)}>
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -3299,38 +3334,38 @@
           {/each}
           {#if conversationHasMore}
             <button class="secondary full" type="button" on:click={loadMoreConversations}>
-              <ArrowDown size={16} />Load More
+              <ArrowDown size={16} />{t('chat.loadMore')}
             </button>
           {/if}
         </div>
       {:else if activeDrawer === 'characters'}
         <div class="character-workspace">
-          <section class="character-library" aria-label="Character library">
+          <section class="character-library" aria-label={t('character.library')}>
             <div class="character-library-actions">
               <button class="primary" type="button" on:click={startCharacterCreate}>
-                <Plus size={16} />New
+                <Plus size={16} />{t('common.new')}
               </button>
               <button class="secondary" type="button" on:click={openCharacterImport}>
-                <FileInput size={16} />Import
+                <FileInput size={16} />{t('common.import')}
               </button>
             </div>
 
             <div class="character-toolbar">
-              <input class="profile-search" bind:value={characterQuery} placeholder="Search characters" aria-label="Search characters" />
-              <select bind:value={characterSortMode} aria-label="Sort characters">
+              <input class="profile-search" bind:value={characterQuery} placeholder={t('character.search')} aria-label={t('character.search')} />
+              <select bind:value={characterSortMode} aria-label={t('character.sort')}>
                 {#each characterSortModes as option}
                   <option value={option.value}>{option.label}</option>
                 {/each}
               </select>
             </div>
 
-            <div class="character-list" aria-label="Characters">
+            <div class="character-list" aria-label={t('nav.characters')}>
               {#each filteredCharacters as character}
                 <article class="character-row" class:active={character.id === activeCharacterId}>
                   <button class="character-row-main" type="button" on:click={() => selectCharacter(character)}>
                     <span class="character-avatar-small">
                       {#if characterAvatarUrl(character)}
-                        <img src={characterAvatarUrl(character)} alt={`${character.name} avatar`} />
+                        <img src={characterAvatarUrl(character)} alt={t('chat.avatarAlt', { name: character.name })} />
                       {:else}
                         <span>{characterInitials(character)}</span>
                       {/if}
@@ -3345,14 +3380,14 @@
                     class:active={character.favorite}
                     type="button"
                     on:click={() => toggleCharacterFavorite(character)}
-                    title={character.favorite ? 'Unfavorite' : 'Favorite'}
-                    aria-label={`${character.favorite ? 'Unfavorite' : 'Favorite'} ${character.name}`}
+                    title={character.favorite ? t('character.unfavorite') : t('common.favorite')}
+                    aria-label={`${character.favorite ? t('character.unfavorite') : t('common.favorite')} ${character.name}`}
                   >
                     <Star size={15} fill={character.favorite ? 'currentColor' : 'none'} />
                   </button>
                 </article>
               {:else}
-                <div class="drawer-empty compact">No matching characters</div>
+                <div class="drawer-empty compact">{t('character.noMatching')}</div>
               {/each}
             </div>
           </section>
@@ -3367,81 +3402,81 @@
                 <div class="character-hero-copy">
                   <div class="character-hero-title">
                     <div>
-                      <strong>{newCharacterName.trim() || 'New Character'}</strong>
-                      <span>NanKe native draft</span>
+                      <strong>{newCharacterName.trim() || t('character.newCharacter')}</strong>
+                      <span>{t('character.newDraft')}</span>
                     </div>
                     <button
                       class="favorite-button hero-favorite"
                       class:active={newCharacterFavorite}
                       type="button"
                       on:click={() => (newCharacterFavorite = !newCharacterFavorite)}
-                      title={newCharacterFavorite ? 'Unfavorite' : 'Favorite'}
-                      aria-label="Toggle favorite"
+                      title={newCharacterFavorite ? t('character.unfavorite') : t('common.favorite')}
+                      aria-label={t('character.toggleFavorite')}
                     >
                       <Star size={16} fill={newCharacterFavorite ? 'currentColor' : 'none'} />
                     </button>
                   </div>
 
-                  <div class="character-chips" aria-label="New character statistics">
-                    <span>{createCharacterStats.tokens} tokens</span>
-                    <span>{createCharacterStats.greetings} greetings</span>
-                    <span>{createCharacterStats.tags} tags</span>
+                  <div class="character-chips" aria-label={t('character.statsNew')}>
+                    <span>{t('character.tokens', { count: createCharacterStats.tokens })}</span>
+                    <span>{t('character.greetings', { count: createCharacterStats.greetings })}</span>
+                    <span>{t('character.tagsCount', { count: createCharacterStats.tags })}</span>
                     {#if createCharacterStats.overrides}
-                      <span>{createCharacterStats.overrides} overrides</span>
+                      <span>{t('character.overrides', { count: createCharacterStats.overrides })}</span>
                     {/if}
                   </div>
                 </div>
 
                 <div class="character-actions">
-                  <button class="tool-button" type="button" on:click={openCharacterImport} title="Import character card" aria-label="Import character card">
+                  <button class="tool-button" type="button" on:click={openCharacterImport} title={t('character.importCard')} aria-label={t('character.importCard')}>
                     <FileInput size={16} />
                   </button>
-                  <button class="tool-button" type="button" on:click={resetNewCharacterDraft} title="Reset draft" aria-label="Reset draft">
+                  <button class="tool-button" type="button" on:click={resetNewCharacterDraft} title={t('character.resetDraft')} aria-label={t('character.resetDraft')}>
                     <RotateCcw size={16} />
                   </button>
-                  <button class="tool-button" type="submit" title="Create character" aria-label="Create character" disabled={!newCharacterName.trim()}>
+                  <button class="tool-button" type="submit" title={t('character.create')} aria-label={t('character.create')} disabled={!newCharacterName.trim()}>
                     <Save size={16} />
                   </button>
                 </div>
               </header>
 
-              <nav class="character-tabs" aria-label="New character sections">
-                <button class:active={characterEditorTab === 'core'} type="button" on:click={() => (characterEditorTab = 'core')}>Core</button>
-                <button class:active={characterEditorTab === 'prompt'} type="button" on:click={() => (characterEditorTab = 'prompt')}>Prompt</button>
-                <button class:active={characterEditorTab === 'lore'} type="button" on:click={() => (characterEditorTab = 'lore')}>Lore</button>
-                <button class:active={characterEditorTab === 'metadata'} type="button" on:click={() => (characterEditorTab = 'metadata')}>Metadata</button>
+              <nav class="character-tabs" aria-label={t('character.newSections')}>
+                <button class:active={characterEditorTab === 'core'} type="button" on:click={() => (characterEditorTab = 'core')}>{t('character.tab.core')}</button>
+                <button class:active={characterEditorTab === 'prompt'} type="button" on:click={() => (characterEditorTab = 'prompt')}>{t('character.tab.prompt')}</button>
+                <button class:active={characterEditorTab === 'lore'} type="button" on:click={() => (characterEditorTab = 'lore')}>{t('character.tab.lore')}</button>
+                <button class:active={characterEditorTab === 'metadata'} type="button" on:click={() => (characterEditorTab = 'metadata')}>{t('character.tab.metadata')}</button>
               </nav>
 
               {#if characterEditorTab === 'core'}
                 <section class="character-editor-section">
                   <div class="character-field-grid">
                     <label>
-                      <span>Name</span>
-                      <input bind:value={newCharacterName} placeholder="Character name" />
+                      <span>{t('common.name')}</span>
+                      <input bind:value={newCharacterName} placeholder={t('character.placeholder.name')} />
                     </label>
                     <label>
-                      <span>Tags</span>
-                      <input bind:value={newCharacterTags} placeholder="Comma or newline separated" />
+                      <span>{t('common.tags')}</span>
+                      <input bind:value={newCharacterTags} placeholder={t('character.placeholder.tags')} />
                     </label>
                     <label class="span-2">
-                      <span>Description</span>
-                      <textarea bind:value={newCharacterDescription} rows="8" placeholder="Physical and mental traits"></textarea>
+                      <span>{t('character.description')}</span>
+                      <textarea bind:value={newCharacterDescription} rows="8" placeholder={t('character.placeholder.description')}></textarea>
                     </label>
                     <label>
-                      <span>Personality</span>
-                      <textarea bind:value={newCharacterPersonality} rows="5" placeholder="Personality notes"></textarea>
+                      <span>{t('character.personality')}</span>
+                      <textarea bind:value={newCharacterPersonality} rows="5" placeholder={t('character.placeholder.personality')}></textarea>
                     </label>
                     <label>
-                      <span>Scenario</span>
-                      <textarea bind:value={newCharacterScenario} rows="5" placeholder="Scene and relationship context"></textarea>
+                      <span>{t('character.scenario')}</span>
+                      <textarea bind:value={newCharacterScenario} rows="5" placeholder={t('character.placeholder.scenario')}></textarea>
                     </label>
                     <label class="span-2">
-                      <span>First Message</span>
-                      <textarea bind:value={newCharacterFirstMessage} rows="6" placeholder="Opening message"></textarea>
+                      <span>{t('character.firstMessage')}</span>
+                      <textarea bind:value={newCharacterFirstMessage} rows="6" placeholder={t('character.placeholder.firstMessage')}></textarea>
                     </label>
                     <label class="span-2">
-                      <span>Alternate Greetings</span>
-                      <textarea bind:value={newCharacterAlternateGreetings} rows="5" placeholder="Separate greetings with a line containing ---"></textarea>
+                      <span>{t('character.alternateGreetings')}</span>
+                      <textarea bind:value={newCharacterAlternateGreetings} rows="5" placeholder={t('character.placeholder.alternateGreetings')}></textarea>
                     </label>
                   </div>
                 </section>
@@ -3449,16 +3484,16 @@
                 <section class="character-editor-section">
                   <div class="character-field-grid">
                     <label class="span-2">
-                      <span>System Prompt Override</span>
-                      <textarea bind:value={newCharacterSystemPrompt} rows="7" placeholder="Character-level system prompt"></textarea>
+                      <span>{t('character.systemPromptOverride')}</span>
+                      <textarea bind:value={newCharacterSystemPrompt} rows="7" placeholder={t('character.placeholder.systemPrompt')}></textarea>
                     </label>
                     <label class="span-2">
-                      <span>Post-History Instructions</span>
-                      <textarea bind:value={newCharacterPostHistoryInstructions} rows="7" placeholder="Instructions injected after chat history"></textarea>
+                      <span>{t('character.postHistoryInstructions')}</span>
+                      <textarea bind:value={newCharacterPostHistoryInstructions} rows="7" placeholder={t('character.placeholder.postHistory')}></textarea>
                     </label>
                     <label class="span-2">
-                      <span>Example Messages</span>
-                      <textarea bind:value={newCharacterExampleMessages} rows="9" placeholder="Example dialogue"></textarea>
+                      <span>{t('character.exampleMessages')}</span>
+                      <textarea bind:value={newCharacterExampleMessages} rows="9" placeholder={t('character.placeholder.exampleMessages')}></textarea>
                     </label>
                   </div>
                 </section>
@@ -3466,38 +3501,38 @@
                 <section class="character-editor-section">
                   <div class="character-lore-header">
                     <div>
-                      <strong>Character Lore</strong>
-                      <span>0 bound world books</span>
+                      <strong>{t('character.lore')}</strong>
+                      <span>{t('character.boundWorldBooks', { count: 0 })}</span>
                     </div>
                     <button class="secondary" type="button" on:click={openCharacterImport}>
-                      <FileInput size={16} />Import
+                      <FileInput size={16} />{t('common.import')}
                     </button>
                   </div>
 
                   <label class="character-textarea-label">
-                    <span>Creator Notes</span>
-                    <textarea bind:value={newCharacterCreatorNotes} rows="8" placeholder="Private author notes and card usage notes"></textarea>
+                    <span>{t('character.creatorNotes')}</span>
+                    <textarea bind:value={newCharacterCreatorNotes} rows="8" placeholder={t('character.placeholder.creatorNotes')}></textarea>
                   </label>
                 </section>
               {:else}
                 <section class="character-editor-section">
                   <div class="character-field-grid">
                     <label>
-                      <span>Creator</span>
-                      <input bind:value={newCharacterCreator} placeholder="Creator" />
+                      <span>{t('character.creator')}</span>
+                      <input bind:value={newCharacterCreator} placeholder={t('character.creator')} />
                     </label>
                     <label>
-                      <span>Version</span>
-                      <input bind:value={newCharacterCharacterVersion} placeholder="Character version" />
+                      <span>{t('common.version')}</span>
+                      <input bind:value={newCharacterCharacterVersion} placeholder={t('character.characterVersion')} />
                     </label>
                     <label>
-                      <span>Talkativeness</span>
-                      <input bind:value={newCharacterTalkativeness} inputmode="decimal" placeholder="Optional" />
+                      <span>{t('character.talkativeness')}</span>
+                      <input bind:value={newCharacterTalkativeness} inputmode="decimal" placeholder={t('common.optional')} />
                     </label>
                     <div class="character-source-panel">
-                      <span>Card Source</span>
-                      <strong>NanKe native draft</strong>
-                      <small>New character</small>
+                      <span>{t('character.cardSource')}</span>
+                      <strong>{t('character.nativeDraft')}</strong>
+                      <small>{t('character.newCharacter')}</small>
                     </div>
                   </div>
                 </section>
@@ -3506,9 +3541,9 @@
           {:else if activeCharacter}
             <form class="character-editor" on:submit|preventDefault={saveActiveCharacter}>
               <header class="character-editor-hero">
-                <button class="character-avatar-large" type="button" on:click={() => openCharacterAvatar(activeCharacter)} title="Open avatar preview" aria-label={`Open avatar for ${activeCharacter.name}`}>
+                <button class="character-avatar-large" type="button" on:click={() => openCharacterAvatar(activeCharacter)} title={t('character.openAvatarPreview')} aria-label={t('chat.openAvatar', { name: activeCharacter.name })}>
                   {#if characterAvatarUrl(activeCharacter)}
-                    <img src={characterAvatarUrl(activeCharacter)} alt={`${activeCharacter.name} avatar`} />
+                    <img src={characterAvatarUrl(activeCharacter)} alt={t('chat.avatarAlt', { name: activeCharacter.name })} />
                   {:else}
                     <span>{characterInitials(activeCharacter)}</span>
                   {/if}
@@ -3525,80 +3560,80 @@
                       class:active={characterDraftFavorite}
                       type="button"
                       on:click={() => (characterDraftFavorite = !characterDraftFavorite)}
-                      title={characterDraftFavorite ? 'Unfavorite on save' : 'Favorite on save'}
-                      aria-label="Toggle favorite in draft"
+                      title={characterDraftFavorite ? t('character.unfavoriteOnSave') : t('character.favoriteOnSave')}
+                      aria-label={t('character.toggleFavorite')}
                     >
                       <Star size={16} fill={characterDraftFavorite ? 'currentColor' : 'none'} />
                     </button>
                   </div>
 
-                  <div class="character-chips" aria-label="Character statistics">
-                    <span>{activeCharacterStats.tokens} tokens</span>
-                    <span>{activeCharacterStats.greetings} greetings</span>
-                    <span>{activeCharacterStats.worldBooks} lorebooks</span>
-                    <span>{activeCharacterStats.tags} tags</span>
+                  <div class="character-chips" aria-label={t('character.stats')}>
+                    <span>{t('character.tokens', { count: activeCharacterStats.tokens })}</span>
+                    <span>{t('character.greetings', { count: activeCharacterStats.greetings })}</span>
+                    <span>{t('character.loreCount', { count: activeCharacterStats.worldBooks })}</span>
+                    <span>{t('character.tagsCount', { count: activeCharacterStats.tags })}</span>
                     {#if activeCharacterStats.overrides}
-                      <span>{activeCharacterStats.overrides} overrides</span>
+                      <span>{t('character.overrides', { count: activeCharacterStats.overrides })}</span>
                     {/if}
                   </div>
                 </div>
 
                 <div class="character-actions">
-                  <button class="tool-button" type="button" on:click={() => startChatWithCharacter(activeCharacter)} title="Start chat" aria-label="Start chat">
+                  <button class="tool-button" type="button" on:click={() => startChatWithCharacter(activeCharacter)} title={t('character.startChat')} aria-label={t('character.startChat')}>
                     <MessageCircle size={16} />
                   </button>
-                  <button class="tool-button" type="button" on:click={openCharacterImport} title="Import character card" aria-label="Import character card">
+                  <button class="tool-button" type="button" on:click={openCharacterImport} title={t('character.importCard')} aria-label={t('character.importCard')}>
                     <FileInput size={16} />
                   </button>
-                  <button class="tool-button" type="button" on:click={duplicateActiveCharacter} title="Duplicate character" aria-label="Duplicate character">
+                  <button class="tool-button" type="button" on:click={duplicateActiveCharacter} title={t('character.duplicate')} aria-label={t('character.duplicate')}>
                     <Copy size={16} />
                   </button>
-                  <button class="tool-button danger" type="button" on:click={deleteActiveCharacter} title="Delete character" aria-label="Delete character">
+                  <button class="tool-button danger" type="button" on:click={deleteActiveCharacter} title={t('character.delete')} aria-label={t('character.delete')}>
                     <Trash2 size={16} />
                   </button>
-                  <button class="tool-button" type="submit" title="Save character" aria-label="Save character">
+                  <button class="tool-button" type="submit" title={t('character.save')} aria-label={t('character.save')}>
                     <Save size={16} />
                   </button>
                 </div>
               </header>
 
-              <nav class="character-tabs" aria-label="Character editor sections">
-                <button class:active={characterEditorTab === 'core'} type="button" on:click={() => (characterEditorTab = 'core')}>Core</button>
-                <button class:active={characterEditorTab === 'prompt'} type="button" on:click={() => (characterEditorTab = 'prompt')}>Prompt</button>
-                <button class:active={characterEditorTab === 'lore'} type="button" on:click={() => (characterEditorTab = 'lore')}>Lore</button>
-                <button class:active={characterEditorTab === 'metadata'} type="button" on:click={() => (characterEditorTab = 'metadata')}>Metadata</button>
+              <nav class="character-tabs" aria-label={t('character.editorSections')}>
+                <button class:active={characterEditorTab === 'core'} type="button" on:click={() => (characterEditorTab = 'core')}>{t('character.tab.core')}</button>
+                <button class:active={characterEditorTab === 'prompt'} type="button" on:click={() => (characterEditorTab = 'prompt')}>{t('character.tab.prompt')}</button>
+                <button class:active={characterEditorTab === 'lore'} type="button" on:click={() => (characterEditorTab = 'lore')}>{t('character.tab.lore')}</button>
+                <button class:active={characterEditorTab === 'metadata'} type="button" on:click={() => (characterEditorTab = 'metadata')}>{t('character.tab.metadata')}</button>
               </nav>
 
               {#if characterEditorTab === 'core'}
                 <section class="character-editor-section">
                   <div class="character-field-grid">
                     <label>
-                      <span>Name</span>
-                      <input bind:value={characterDraftName} placeholder="Character name" />
+                      <span>{t('common.name')}</span>
+                      <input bind:value={characterDraftName} placeholder={t('character.placeholder.name')} />
                     </label>
                     <label>
-                      <span>Tags</span>
-                      <input bind:value={characterDraftTags} placeholder="Comma or newline separated" />
+                      <span>{t('common.tags')}</span>
+                      <input bind:value={characterDraftTags} placeholder={t('character.placeholder.tags')} />
                     </label>
                     <label class="span-2">
-                      <span>Description</span>
-                      <textarea bind:value={characterDraftDescription} rows="8" placeholder="Physical and mental traits"></textarea>
+                      <span>{t('character.description')}</span>
+                      <textarea bind:value={characterDraftDescription} rows="8" placeholder={t('character.placeholder.description')}></textarea>
                     </label>
                     <label>
-                      <span>Personality</span>
-                      <textarea bind:value={characterDraftPersonality} rows="5" placeholder="Personality notes"></textarea>
+                      <span>{t('character.personality')}</span>
+                      <textarea bind:value={characterDraftPersonality} rows="5" placeholder={t('character.placeholder.personality')}></textarea>
                     </label>
                     <label>
-                      <span>Scenario</span>
-                      <textarea bind:value={characterDraftScenario} rows="5" placeholder="Scene and relationship context"></textarea>
+                      <span>{t('character.scenario')}</span>
+                      <textarea bind:value={characterDraftScenario} rows="5" placeholder={t('character.placeholder.scenario')}></textarea>
                     </label>
                     <label class="span-2">
-                      <span>First Message</span>
-                      <textarea bind:value={characterDraftFirstMessage} rows="6" placeholder="Opening message"></textarea>
+                      <span>{t('character.firstMessage')}</span>
+                      <textarea bind:value={characterDraftFirstMessage} rows="6" placeholder={t('character.placeholder.firstMessage')}></textarea>
                     </label>
                     <label class="span-2">
-                      <span>Alternate Greetings</span>
-                      <textarea bind:value={characterDraftAlternateGreetings} rows="5" placeholder="Separate greetings with a line containing ---"></textarea>
+                      <span>{t('character.alternateGreetings')}</span>
+                      <textarea bind:value={characterDraftAlternateGreetings} rows="5" placeholder={t('character.placeholder.alternateGreetings')}></textarea>
                     </label>
                   </div>
                 </section>
@@ -3606,16 +3641,16 @@
                 <section class="character-editor-section">
                   <div class="character-field-grid">
                     <label class="span-2">
-                      <span>System Prompt Override</span>
-                      <textarea bind:value={characterDraftSystemPrompt} rows="7" placeholder="Character-level system prompt"></textarea>
+                      <span>{t('character.systemPromptOverride')}</span>
+                      <textarea bind:value={characterDraftSystemPrompt} rows="7" placeholder={t('character.placeholder.systemPrompt')}></textarea>
                     </label>
                     <label class="span-2">
-                      <span>Post-History Instructions</span>
-                      <textarea bind:value={characterDraftPostHistoryInstructions} rows="7" placeholder="Instructions injected after chat history"></textarea>
+                      <span>{t('character.postHistoryInstructions')}</span>
+                      <textarea bind:value={characterDraftPostHistoryInstructions} rows="7" placeholder={t('character.placeholder.postHistory')}></textarea>
                     </label>
                     <label class="span-2">
-                      <span>Example Messages</span>
-                      <textarea bind:value={characterDraftExampleMessages} rows="9" placeholder="Example dialogue"></textarea>
+                      <span>{t('character.exampleMessages')}</span>
+                      <textarea bind:value={characterDraftExampleMessages} rows="9" placeholder={t('character.placeholder.exampleMessages')}></textarea>
                     </label>
                   </div>
                 </section>
@@ -3623,11 +3658,11 @@
                 <section class="character-editor-section">
                   <div class="character-lore-header">
                     <div>
-                      <strong>Character Lore</strong>
-                      <span>{activeCharacterWorldBooks.length} bound world book{activeCharacterWorldBooks.length === 1 ? '' : 's'}</span>
+                      <strong>{t('character.lore')}</strong>
+                      <span>{t('character.boundWorldBooks', { count: activeCharacterWorldBooks.length })}</span>
                     </div>
                     <button class="secondary" type="button" on:click={() => openCharacterWorldBooks(activeCharacter)}>
-                      <BookOpen size={16} />Open
+                      <BookOpen size={16} />{t('character.openWorldBook')}
                     </button>
                   </div>
                   {#if activeCharacterWorldBooks.length}
@@ -3637,37 +3672,37 @@
                           <BookOpen size={16} />
                           <span>
                             <strong>{worldBook.name}</strong>
-                            <small>{worldBook.entries.length} entries · {worldBook.metadata?.source ?? 'native'}</small>
+                            <small>{t('worldbook.entries', { count: worldBook.entries.length })} · {metadataSourceLabel(worldBook.metadata?.source)}</small>
                           </span>
                         </button>
                       {/each}
                     </div>
                   {:else}
-                    <div class="drawer-empty compact">No character-bound world book</div>
+                    <div class="drawer-empty compact">{t('character.noBoundWorldBook')}</div>
                   {/if}
 
                   <label class="character-textarea-label">
-                    <span>Creator Notes</span>
-                    <textarea bind:value={characterDraftCreatorNotes} rows="8" placeholder="Private author notes and card usage notes"></textarea>
+                    <span>{t('character.creatorNotes')}</span>
+                    <textarea bind:value={characterDraftCreatorNotes} rows="8" placeholder={t('character.placeholder.creatorNotes')}></textarea>
                   </label>
                 </section>
               {:else}
                 <section class="character-editor-section">
                   <div class="character-field-grid">
                     <label>
-                      <span>Creator</span>
-                      <input bind:value={characterDraftCreator} placeholder="Creator" />
+                      <span>{t('character.creator')}</span>
+                      <input bind:value={characterDraftCreator} placeholder={t('character.creator')} />
                     </label>
                     <label>
-                      <span>Version</span>
-                      <input bind:value={characterDraftCharacterVersion} placeholder="Character version" />
+                      <span>{t('common.version')}</span>
+                      <input bind:value={characterDraftCharacterVersion} placeholder={t('character.characterVersion')} />
                     </label>
                     <label>
-                      <span>Talkativeness</span>
-                      <input bind:value={characterDraftTalkativeness} inputmode="decimal" placeholder="Optional" />
+                      <span>{t('character.talkativeness')}</span>
+                      <input bind:value={characterDraftTalkativeness} inputmode="decimal" placeholder={t('common.optional')} />
                     </label>
                     <div class="character-source-panel">
-                      <span>Card Source</span>
+                      <span>{t('character.cardSource')}</span>
                       <strong>{characterOrigin(activeCharacter)}</strong>
                       <small>{activeCharacter.id}</small>
                     </div>
@@ -3678,30 +3713,30 @@
           {:else}
             <section class="character-editor empty">
               <Image size={28} />
-              <strong>Select or create a character</strong>
+              <strong>{t('character.selectOrCreate')}</strong>
             </section>
           {/if}
         </div>
       {:else if activeDrawer === 'personas'}
         <form class="editor" on:submit|preventDefault={createPersona}>
-          <input bind:value={newPersonaName} placeholder="Name" />
-          <textarea bind:value={newPersonaDescription} rows="5" placeholder="Description"></textarea>
+          <input bind:value={newPersonaName} placeholder={t('persona.namePlaceholder')} />
+          <textarea bind:value={newPersonaDescription} rows="5" placeholder={t('persona.descriptionPlaceholder')}></textarea>
           <label class="checkbox-row">
             <input type="checkbox" bind:checked={newPersonaDefault} />
-            <span>Default</span>
+            <span>{t('persona.default')}</span>
           </label>
-          <button class="primary full" type="submit"><UserRound size={16} />Create</button>
+          <button class="primary full" type="submit"><UserRound size={16} />{t('common.create')}</button>
         </form>
 
         {#if activePersona}
           <form class="editor compact-editor" on:submit|preventDefault={saveActivePersona}>
-            <input bind:value={personaDraftName} placeholder="Name" />
-            <textarea bind:value={personaDraftDescription} rows="6" placeholder="Description"></textarea>
+            <input bind:value={personaDraftName} placeholder={t('persona.namePlaceholder')} />
+            <textarea bind:value={personaDraftDescription} rows="6" placeholder={t('persona.descriptionPlaceholder')}></textarea>
             <label class="checkbox-row">
               <input type="checkbox" bind:checked={personaDraftDefault} />
-              <span>Default</span>
+              <span>{t('persona.default')}</span>
             </label>
-            <button class="secondary full" type="submit"><UserRound size={16} />Save</button>
+            <button class="secondary full" type="submit"><UserRound size={16} />{t('common.save')}</button>
           </form>
         {/if}
 
@@ -3714,16 +3749,16 @@
               on:click={() => (activePersonaId = persona.id)}
             >
               <strong>{persona.name}</strong>
-              <span>{persona.isDefault ? 'Default' : persona.id}</span>
+              <span>{persona.isDefault ? t('persona.default') : persona.id}</span>
             </button>
           {/each}
         </div>
       {:else if activeDrawer === 'worldbooks'}
         <div class="worldbook-workspace">
-          <section class="worldbook-library" aria-label="World book library">
+          <section class="worldbook-library" aria-label={t('worldbook.library')}>
             <form class="worldbook-create" on:submit|preventDefault={createWorldBook}>
-              <input bind:value={newWorldBookName} placeholder="New lorebook name" />
-              <button class="primary" type="submit"><BookOpen size={16} />Create</button>
+              <input bind:value={newWorldBookName} placeholder={t('worldbook.namePlaceholder')} />
+              <button class="primary" type="submit"><BookOpen size={16} />{t('common.create')}</button>
             </form>
 
             <div class="worldbook-list">
@@ -3739,28 +3774,28 @@
                     <small>{worldBookLine(worldBook)}</small>
                   </span>
                   {#if worldBook.metadata?.source === 'character-card'}
-                    <em>bound</em>
+                    <em>{t('worldbook.bound')}</em>
                   {/if}
                 </button>
               {:else}
-                <div class="drawer-empty compact">No world books yet</div>
+                <div class="drawer-empty compact">{t('worldbook.noWorldBooks')}</div>
               {/each}
             </div>
           </section>
 
           {#if activeWorldBook}
             {@const worldStats = worldBookStats(worldBookDraftEntries)}
-            <section class="worldbook-editor" aria-label="World book editor">
+            <section class="worldbook-editor" aria-label={t('worldbook.editor')}>
               <header class="worldbook-editor-header">
                 <div>
-                  <strong>World Editor</strong>
-                  <span>{worldStats.enabled}/{worldStats.total} enabled · {worldStats.constant} constant · {worldStats.regex} regex</span>
+                  <strong>{t('worldbook.editor')}</strong>
+                  <span>{t('worldbook.enabledStats', { enabled: worldStats.enabled, total: worldStats.total, constant: worldStats.constant, regex: worldStats.regex })}</span>
                 </div>
                 <div class="preset-actions">
-                  <button class="tool-button" type="button" on:click={addWorldBookEntry} title="New entry" aria-label="New entry">
+                  <button class="tool-button" type="button" on:click={addWorldBookEntry} title={t('worldbook.newEntry')} aria-label={t('worldbook.newEntry')}>
                     <Plus size={16} />
                   </button>
-                  <button class="tool-button" type="button" on:click={saveActiveWorldBook} title="Save world book" aria-label="Save world book">
+                  <button class="tool-button" type="button" on:click={saveActiveWorldBook} title={t('worldbook.save')} aria-label={t('worldbook.save')}>
                     <Save size={16} />
                   </button>
                 </div>
@@ -3768,12 +3803,12 @@
 
               <div class="worldbook-title-row">
                 <label>
-                  <span>Name</span>
-                  <input bind:value={worldBookDraftName} placeholder="World book name" />
+                  <span>{t('common.name')}</span>
+                  <input bind:value={worldBookDraftName} placeholder={t('worldbook.name')} />
                 </label>
                 <div class="worldbook-source">
-                  <span>Source</span>
-                  <strong>{activeWorldBook.metadata?.source ?? 'native'}</strong>
+                  <span>{t('common.source')}</span>
+                  <strong>{metadataSourceLabel(activeWorldBook.metadata?.source)}</strong>
                   {#if activeWorldBook.metadata?.characterName}
                     <small>{activeWorldBook.metadata.characterName}</small>
                   {/if}
@@ -3781,8 +3816,8 @@
               </div>
 
               <div class="worldbook-entry-toolbar">
-                <input class="profile-search" bind:value={worldBookEntryQuery} placeholder="Search entries" aria-label="Search world book entries" />
-                <select bind:value={worldBookSortMode} aria-label="Sort world book entries">
+                <input class="profile-search" bind:value={worldBookEntryQuery} placeholder={t('worldbook.searchEntries')} aria-label={t('worldbook.searchEntries')} />
+                <select bind:value={worldBookSortMode} aria-label={t('worldbook.sortEntries')}>
                   {#each worldBookSortModes as option}
                     <option value={option.value}>{option.label}</option>
                   {/each}
@@ -3790,7 +3825,7 @@
               </div>
 
               <div class="worldbook-editor-grid">
-                <div class="worldbook-entry-list" aria-label="Entries">
+                <div class="worldbook-entry-list" aria-label={t('worldbook.entriesLabel')}>
                   {#each filteredWorldBookEntries as entry}
                     <article class="worldbook-entry-row" class:active={entry.id === activeWorldBookEntryId}>
                       <button class="worldbook-entry-main" type="button" on:click={() => (activeWorldBookEntryId = entry.id)}>
@@ -3801,37 +3836,37 @@
                         </span>
                       </button>
                       <div class="worldbook-entry-actions">
-                        <button type="button" on:click={() => moveWorldBookEntryOrder(entry, 1)} title="Raise order" aria-label={`Raise ${entryTitle(entry)} order`}>
+                        <button type="button" on:click={() => moveWorldBookEntryOrder(entry, 1)} title={t('worldbook.raiseOrder', { title: entryTitle(entry) })} aria-label={t('worldbook.raiseOrder', { title: entryTitle(entry) })}>
                           <ArrowUp size={14} />
                         </button>
-                        <button type="button" on:click={() => moveWorldBookEntryOrder(entry, -1)} title="Lower order" aria-label={`Lower ${entryTitle(entry)} order`}>
+                        <button type="button" on:click={() => moveWorldBookEntryOrder(entry, -1)} title={t('worldbook.lowerOrder', { title: entryTitle(entry) })} aria-label={t('worldbook.lowerOrder', { title: entryTitle(entry) })}>
                           <ArrowDown size={14} />
                         </button>
-                        <button type="button" on:click={() => duplicateWorldBookEntry(entry)} title="Duplicate entry" aria-label={`Duplicate ${entryTitle(entry)}`}>
+                        <button type="button" on:click={() => duplicateWorldBookEntry(entry)} title={t('worldbook.duplicateEntry')} aria-label={`${t('worldbook.duplicateEntry')} ${entryTitle(entry)}`}>
                           <Copy size={14} />
                         </button>
-                        <button type="button" on:click={() => removeWorldBookEntry(entry)} title="Delete entry" aria-label={`Delete ${entryTitle(entry)}`}>
+                        <button type="button" on:click={() => removeWorldBookEntry(entry)} title={t('worldbook.deleteEntry')} aria-label={`${t('worldbook.deleteEntry')} ${entryTitle(entry)}`}>
                           <Trash2 size={14} />
                         </button>
                       </div>
                     </article>
                   {:else}
-                    <div class="drawer-empty compact">No matching entries</div>
+                    <div class="drawer-empty compact">{t('worldbook.noMatchingEntries')}</div>
                   {/each}
                 </div>
 
                 {#if activeWorldBookEntry}
-                  <section class="worldbook-entry-editor" aria-label="Entry editor">
+                  <section class="worldbook-entry-editor" aria-label={t('worldbook.entryEditor')}>
                     <div class="worldbook-entry-editor-head">
                       <div>
                         <strong>{entryTitle(activeWorldBookEntry)}</strong>
-                        <span>{entryTokenEstimate(activeWorldBookEntry)} tokens · {entryStatusLabel(activeWorldBookEntry)}</span>
+                        <span>{entryTokenEstimate(activeWorldBookEntry)} {t('common.tokenUnit')} · {entryStatusLabel(activeWorldBookEntry)}</span>
                       </div>
                       <div class="preset-actions">
-                        <button class="tool-button" type="button" on:click={() => duplicateWorldBookEntry(activeWorldBookEntry)} title="Duplicate entry" aria-label="Duplicate entry">
+                        <button class="tool-button" type="button" on:click={() => duplicateWorldBookEntry(activeWorldBookEntry)} title={t('worldbook.duplicateEntry')} aria-label={t('worldbook.duplicateEntry')}>
                           <Copy size={16} />
                         </button>
-                        <button class="tool-button" type="button" on:click={() => removeWorldBookEntry(activeWorldBookEntry)} title="Delete entry" aria-label="Delete entry">
+                        <button class="tool-button" type="button" on:click={() => removeWorldBookEntry(activeWorldBookEntry)} title={t('worldbook.deleteEntry')} aria-label={t('worldbook.deleteEntry')}>
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -3839,22 +3874,22 @@
 
                     <div class="worldbook-entry-fields">
                       <label class="span-2">
-                        <span>Memo / Title</span>
+                        <span>{t('worldbook.memoTitle')}</span>
                         <input value={activeWorldBookEntry.comment} on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { comment: (event.currentTarget as HTMLInputElement).value })} />
                       </label>
 
                       <div class="segmented-field">
-                        <span>Status</span>
-                        <div class="mini-segment three" aria-label="Entry status">
-                          <button class:active={entryStatus(activeWorldBookEntry) === 'normal'} type="button" on:click={() => setWorldBookEntryState(activeWorldBookEntry, 'normal')}>Normal</button>
-                          <button class:active={entryStatus(activeWorldBookEntry) === 'constant'} type="button" on:click={() => setWorldBookEntryState(activeWorldBookEntry, 'constant')}>Constant</button>
-                          <button class:active={entryStatus(activeWorldBookEntry) === 'disabled'} type="button" on:click={() => setWorldBookEntryState(activeWorldBookEntry, 'disabled')}>Off</button>
+                        <span>{t('common.status')}</span>
+                        <div class="mini-segment three" aria-label={t('worldbook.entryStatus')}>
+                          <button class:active={entryStatus(activeWorldBookEntry) === 'normal'} type="button" on:click={() => setWorldBookEntryState(activeWorldBookEntry, 'normal')}>{t('worldbook.status.normal')}</button>
+                          <button class:active={entryStatus(activeWorldBookEntry) === 'constant'} type="button" on:click={() => setWorldBookEntryState(activeWorldBookEntry, 'constant')}>{t('worldbook.status.constant')}</button>
+                          <button class:active={entryStatus(activeWorldBookEntry) === 'disabled'} type="button" on:click={() => setWorldBookEntryState(activeWorldBookEntry, 'disabled')}>{t('common.off')}</button>
                         </div>
                       </div>
 
                       <div class="segmented-field">
-                        <span>Position</span>
-                        <div class="mini-segment three" aria-label="World info position">
+                        <span>{t('worldbook.position')}</span>
+                        <div class="mini-segment three" aria-label={t('worldbook.position')}>
                           {#each worldBookPositions as position}
                             <button class:active={activeWorldBookEntry.position === position.value} type="button" on:click={() => updateWorldBookEntry(activeWorldBookEntry.id, { position: position.value })}>
                               {position.label}
@@ -3864,7 +3899,7 @@
                       </div>
 
                       <label>
-                        <span>Depth</span>
+                        <span>{t('worldbook.depth')}</span>
                         <input
                           value={activeWorldBookEntry.depth}
                           inputmode="numeric"
@@ -3872,7 +3907,7 @@
                         />
                       </label>
                       <label>
-                        <span>Order</span>
+                        <span>{t('worldbook.order')}</span>
                         <input
                           value={activeWorldBookEntry.order}
                           inputmode="numeric"
@@ -3880,7 +3915,7 @@
                         />
                       </label>
                       <label>
-                        <span>Trigger %</span>
+                        <span>{t('worldbook.triggerPercent')}</span>
                         <input
                           value={activeWorldBookEntry.probability}
                           inputmode="numeric"
@@ -3889,57 +3924,57 @@
                       </label>
 
                       <div class="segmented-field">
-                        <span>Role @ Depth</span>
-                        <div class="mini-segment three" aria-label="Entry role">
+                        <span>{t('worldbook.roleAtDepth')}</span>
+                        <div class="mini-segment three" aria-label={t('worldbook.roleAtDepth')}>
                           {#each promptRoles as role}
-                            <button class:active={activeWorldBookEntry.role === role} type="button" on:click={() => updateWorldBookEntry(activeWorldBookEntry.id, { role })}>{role}</button>
+                            <button class:active={activeWorldBookEntry.role === role} type="button" on:click={() => updateWorldBookEntry(activeWorldBookEntry.id, { role })}>{roleLabel(role)}</button>
                           {/each}
                         </div>
                       </div>
 
                       <label class="span-2">
-                        <span>Primary Keywords</span>
+                        <span>{t('worldbook.primaryKeywords')}</span>
                         <textarea
                           rows="2"
                           value={keywordText(activeWorldBookEntry.keys)}
-                          placeholder="Comma or newline separated"
+                          placeholder={t('character.placeholder.tags')}
                           on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { keys: parseKeywordText((event.currentTarget as HTMLTextAreaElement).value) })}
                         ></textarea>
                       </label>
                       <label class="span-2">
-                        <span>Optional Filter</span>
+                        <span>{t('worldbook.optionalFilter')}</span>
                         <textarea
                           rows="2"
                           value={keywordText(activeWorldBookEntry.secondaryKeys)}
-                          placeholder="Secondary keys, comma or newline separated"
+                          placeholder={t('worldbook.placeholder.secondaryKeys')}
                           on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { secondaryKeys: parseKeywordText((event.currentTarget as HTMLTextAreaElement).value) })}
                         ></textarea>
                       </label>
                       <label class="span-2 content-field">
-                        <span>Content</span>
+                        <span>{t('common.content')}</span>
                         <textarea
                           rows="10"
                           value={activeWorldBookEntry.content}
-                          placeholder="Text injected when this entry activates"
+                          placeholder={t('worldbook.placeholder.content')}
                           on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { content: (event.currentTarget as HTMLTextAreaElement).value })}
                         ></textarea>
                       </label>
                     </div>
 
                     <div class="worldbook-toggle-grid">
-                      <button class="toggle-pill" class:active={activeWorldBookEntry.selective} type="button" on:click={() => updateWorldBookEntry(activeWorldBookEntry.id, { selective: !activeWorldBookEntry.selective })}>Selective</button>
-                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.useProbability !== false} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'useProbability', activeWorldBookEntry.extensions.useProbability === false)}>Use Probability</button>
-                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.use_regex === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'use_regex', activeWorldBookEntry.extensions.use_regex !== true)}>Regex Keys</button>
-                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.case_sensitive === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'case_sensitive', activeWorldBookEntry.extensions.case_sensitive !== true)}>Case Sensitive</button>
-                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.match_whole_words === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'match_whole_words', activeWorldBookEntry.extensions.match_whole_words !== true)}>Whole Words</button>
-                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.ignore_budget === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'ignore_budget', activeWorldBookEntry.extensions.ignore_budget !== true)}>Ignore Budget</button>
+                      <button class="toggle-pill" class:active={activeWorldBookEntry.selective} type="button" on:click={() => updateWorldBookEntry(activeWorldBookEntry.id, { selective: !activeWorldBookEntry.selective })}>{t('worldbook.selective')}</button>
+                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.useProbability !== false} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'useProbability', activeWorldBookEntry.extensions.useProbability === false)}>{t('worldbook.useProbability')}</button>
+                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.use_regex === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'use_regex', activeWorldBookEntry.extensions.use_regex !== true)}>{t('worldbook.regexKeys')}</button>
+                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.case_sensitive === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'case_sensitive', activeWorldBookEntry.extensions.case_sensitive !== true)}>{t('worldbook.caseSensitive')}</button>
+                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.match_whole_words === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'match_whole_words', activeWorldBookEntry.extensions.match_whole_words !== true)}>{t('worldbook.wholeWords')}</button>
+                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.ignore_budget === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'ignore_budget', activeWorldBookEntry.extensions.ignore_budget !== true)}>{t('worldbook.ignoreBudget')}</button>
                     </div>
                   </section>
                 {:else}
                   <section class="worldbook-entry-editor empty">
                     <BookOpen size={28} />
-                    <strong>No entry selected</strong>
-                    <button class="primary" type="button" on:click={addWorldBookEntry}><Plus size={16} />New Entry</button>
+                    <strong>{t('worldbook.noEntry')}</strong>
+                    <button class="primary" type="button" on:click={addWorldBookEntry}><Plus size={16} />{t('worldbook.newEntry')}</button>
                   </section>
                 {/if}
               </div>
@@ -3947,40 +3982,40 @@
           {:else}
             <section class="worldbook-editor empty">
               <BookOpen size={28} />
-              <strong>Select or create a world book</strong>
+              <strong>{t('worldbook.selectOrCreate')}</strong>
             </section>
           {/if}
         </div>
       {:else if activeDrawer === 'profiles'}
         <div class="profile-workspace">
           <div class="profile-panel">
-            <div class="preset-toolbar" aria-label="Preset tools">
-              <select aria-label="Selected profile" bind:value={activeProfileId}>
+            <div class="preset-toolbar" aria-label={t('profile.presetTools')}>
+              <select aria-label={t('profile.selectedProfile')} bind:value={activeProfileId}>
                 {#each profiles as profile}
                   <option value={profile.id}>{profile.name}</option>
                 {/each}
               </select>
               <div class="preset-actions">
-                <button class="tool-button" type="button" on:click={openPresetImport} title="Import preset" aria-label="Import preset">
+                <button class="tool-button" type="button" on:click={openPresetImport} title={t('profile.importPreset')} aria-label={t('profile.importPreset')}>
                   <Upload size={16} />
                 </button>
-                <button class="tool-button" type="button" on:click={saveActiveProfile} title="Update current profile" aria-label="Update current profile" disabled={!activeProfile}>
+                <button class="tool-button" type="button" on:click={saveActiveProfile} title={t('profile.updateCurrent')} aria-label={t('profile.updateCurrent')} disabled={!activeProfile}>
                   <Save size={16} />
                 </button>
-                <button class="tool-button" type="button" on:click={duplicateActiveProfile} title="Save profile as" aria-label="Save profile as" disabled={!activeProfile}>
+                <button class="tool-button" type="button" on:click={duplicateActiveProfile} title={t('profile.saveAs')} aria-label={t('profile.saveAs')} disabled={!activeProfile}>
                   <Copy size={16} />
                 </button>
-                <button class="tool-button" type="button" on:click={exportActiveProfile} title="Export profile" aria-label="Export profile" disabled={!activeProfile}>
+                <button class="tool-button" type="button" on:click={exportActiveProfile} title={t('profile.export')} aria-label={t('profile.export')} disabled={!activeProfile}>
                   <Download size={16} />
                 </button>
-                <button class="tool-button" type="button" on:click={inspectCurrentPrompt} title="Prompt Inspector" aria-label="Prompt Inspector" disabled={!activeProfile}>
+                <button class="tool-button" type="button" on:click={inspectCurrentPrompt} title={t('nav.inspector')} aria-label={t('nav.inspector')} disabled={!activeProfile}>
                   <ClipboardList size={16} />
                 </button>
               </div>
             </div>
 
             {#if activeProfile}
-              <section class="profile-summary" aria-label="Active profile summary">
+              <section class="profile-summary" aria-label={t('profile.summary')}>
                 <div class="profile-summary-heading">
                   <div>
                     <strong>{activeProfile.name}</strong>
@@ -3989,72 +4024,72 @@
                   <span class="provider-pill">{activeProfile.provider.type}</span>
                 </div>
                 <div class="profile-model">{activeProfile.provider.model}</div>
-                <div class="profile-chips" aria-label="Prompt statistics">
-                  <span>{activeProfileStats.enabled} enabled</span>
-                  <span>{activeProfileStats.ordered} ordered</span>
-                  <span>{activeProfileStats.total} total</span>
+                <div class="profile-chips" aria-label={t('profile.promptStats')}>
+                  <span>{t('profile.enabledCount', { count: activeProfileStats.enabled })}</span>
+                  <span>{t('profile.orderedCount', { count: activeProfileStats.ordered })}</span>
+                  <span>{t('profile.totalCount', { count: activeProfileStats.total })}</span>
                   {#if activeProfile.prompt?.macroMode === 'sillytavern'}
-                    <span>ST macros</span>
+                    <span>{t('profile.stMacros')}</span>
                   {/if}
                   {#if activeProfile.prompt?.squashSystemMessages}
-                    <span>squash system</span>
+                    <span>{t('profile.squashSystemChip')}</span>
                   {/if}
-                  <span>{activeProfile.request?.stream === false ? 'non-stream' : 'stream'}</span>
+                  <span>{activeProfile.request?.stream === false ? t('profile.nonStream') : t('profile.stream')}</span>
                   {#if activeProfile.regex?.scripts?.length}
-                    <span>{activeProfile.regex.scripts.length} regex</span>
+                    <span>{t('profile.regexCount', { count: activeProfile.regex.scripts.length })}</span>
                   {/if}
                 </div>
                 <div class="profile-sampler">{profileSamplerLine(activeProfile)}</div>
               </section>
             {/if}
 
-            <input class="profile-search" bind:value={profileQuery} placeholder="Search profiles" aria-label="Search profiles" />
+            <input class="profile-search" bind:value={profileQuery} placeholder={t('profile.search')} aria-label={t('profile.search')} />
           </div>
 
           {#if activeProfile}
             <form class="profile-editor" on:submit|preventDefault={saveActiveProfile}>
               <div class="profile-editor-header">
                 <div>
-                  <strong>Preset Editor</strong>
-                  <span>{draftPromptStats.enabled}/{draftPromptStats.total} prompts · {draftPromptStats.injected} injections</span>
+                  <strong>{t('profile.editor')}</strong>
+                  <span>{t('profile.promptsInjections', { prompts: draftPromptStats.total, injections: draftPromptStats.injected })}</span>
                 </div>
                 <div class="preset-actions">
-                  <button class="tool-button" type="submit" title="Save changes" aria-label="Save changes">
+                  <button class="tool-button" type="submit" title={t('profile.saveChanges')} aria-label={t('profile.saveChanges')}>
                     <Save size={16} />
                   </button>
-                  <button class="tool-button" type="button" on:click={duplicateActiveProfile} title="Save as copy" aria-label="Save as copy">
+                  <button class="tool-button" type="button" on:click={duplicateActiveProfile} title={t('profile.saveAsCopy')} aria-label={t('profile.saveAsCopy')}>
                     <Copy size={16} />
                   </button>
                 </div>
               </div>
 
-              <section class="provider-editor" aria-label="Provider settings">
+              <section class="provider-editor" aria-label={t('profile.providerSettings')}>
                 <label class="profile-name-field">
-                  <span>Name</span>
-                  <input bind:value={profileDraftName} placeholder="Preset name" />
+                  <span>{t('common.name')}</span>
+                  <input bind:value={profileDraftName} placeholder={t('profile.presetName')} />
                 </label>
 
-                <div class="provider-segment" aria-label="Provider type">
+                <div class="provider-segment" aria-label={t('profile.providerType')}>
                   <button class:active={profileDraftProviderType === 'openai-compatible'} type="button" on:click={() => changeProfileProviderType('openai-compatible')}>
-                    <strong>OpenAI-compatible</strong>
-                    <span>Custom endpoint</span>
+                    <strong>{t('profile.openAICompatible')}</strong>
+                    <span>{t('profile.customEndpoint')}</span>
                   </button>
                   <button class:active={profileDraftProviderType === 'gemini'} type="button" on:click={() => changeProfileProviderType('gemini')}>
                     <strong>Gemini</strong>
-                    <span>AI Studio / Vertex</span>
+                    <span>{t('profile.aiStudioVertex')}</span>
                   </button>
                 </div>
 
                 <div class="provider-config">
                   <label>
-                    <span>Model</span>
+                    <span>{t('profile.model')}</span>
                     <input bind:value={profileDraftProviderModel} placeholder={profileDraftProviderType === 'gemini' ? 'gemini-2.5-pro' : 'gpt-4o-mini'} />
                   </label>
                   <label>
-                    <span>Endpoint</span>
+                    <span>{t('profile.endpoint')}</span>
                     <input
                       bind:value={profileDraftProviderEndpoint}
-                      placeholder={profileDraftProviderType === 'gemini' ? 'Optional full streamGenerateContent URL' : 'https://api.openai.com/v1'}
+                      placeholder={profileDraftProviderType === 'gemini' ? t('profile.optionalStreamUrl') : 'https://api.openai.com/v1'}
                     />
                   </label>
                 </div>
@@ -4065,7 +4100,7 @@
                       Vertex
                     </button>
                     {#if profileDraftVertexEnabled}
-                      <div class="mini-segment vertex-mode-selector" aria-label="Vertex mode">
+                      <div class="mini-segment vertex-mode-selector" aria-label={t('profile.vertexMode')}>
                         <button class:active={profileDraftVertexMode === 'express'} type="button" on:click={() => (profileDraftVertexMode = 'express')}>Express</button>
                         <button class:active={profileDraftVertexMode === 'oauth'} type="button" on:click={() => (profileDraftVertexMode = 'oauth')}>OAuth</button>
                       </div>
@@ -4074,11 +4109,11 @@
                   {#if profileDraftVertexEnabled}
                     <div class="provider-config">
                       <label>
-                        <span>{profileDraftVertexMode === 'oauth' ? 'Project' : 'Project (optional)'}</span>
+                        <span>{profileDraftVertexMode === 'oauth' ? t('profile.project') : t('profile.projectOptional')}</span>
                         <input bind:value={profileDraftVertexProjectId} placeholder="project-id" />
                       </label>
                       <label>
-                        <span>Location</span>
+                        <span>{t('profile.location')}</span>
                         <input bind:value={profileDraftVertexLocation} placeholder="us-central1" />
                       </label>
                     </div>
@@ -4088,22 +4123,22 @@
                 {#if profileDraftProviderType === 'openai-compatible'}
                   <div class="credential-panel">
                     <div class="credential-panel-head">
-                      <strong>Authentication</strong>
-                      <span>Bearer API key</span>
+                      <strong>{t('profile.authentication')}</strong>
+                      <span>{t('profile.bearerApiKey')}</span>
                     </div>
                     <div class="credential-grid single">
                       <label>
-                        <span>API Key</span>
+                        <span>{t('profile.apiKey')}</span>
                         <input bind:value={profileDraftApiKey} type="password" autocomplete="off" placeholder="sk-..." />
                       </label>
                     </div>
-                    <div class="compatibility-strip" aria-label="OpenAI-compatible request mode">
+                    <div class="compatibility-strip" aria-label={t('profile.requestMode')}>
                       <button class:active={profileDraftOpenAICompatibility === 'strict-openai'} type="button" on:click={() => (profileDraftOpenAICompatibility = 'strict-openai')}>
-                        <strong>OpenAI strict</strong>
-                        <span>official fields</span>
+                        <strong>{t('profile.openAIStrict')}</strong>
+                        <span>{t('profile.officialFields')}</span>
                       </button>
                       <button class:active={profileDraftOpenAICompatibility === 'extended'} type="button" on:click={() => (profileDraftOpenAICompatibility = 'extended')}>
-                        <strong>Extended</strong>
+                        <strong>{t('profile.extended')}</strong>
                         <span>top_k, min_p, max_tokens</span>
                       </button>
                     </div>
@@ -4111,12 +4146,12 @@
                 {:else if !profileDraftVertexEnabled}
                   <div class="credential-panel">
                     <div class="credential-panel-head">
-                      <strong>Authentication</strong>
-                      <span>AI Studio key is sent as x-goog-api-key</span>
+                      <strong>{t('profile.authentication')}</strong>
+                      <span>{t('profile.aiStudioKeyHint')}</span>
                     </div>
                     <div class="credential-grid single">
                       <label>
-                        <span>API Key</span>
+                        <span>{t('profile.apiKey')}</span>
                         <input bind:value={profileDraftApiKey} type="password" autocomplete="off" placeholder="AIza..." />
                       </label>
                     </div>
@@ -4124,18 +4159,18 @@
                 {:else}
                   <div class="credential-panel">
                     <div class="credential-panel-head">
-                      <strong>{profileDraftVertexMode === 'express' ? 'Vertex Express' : 'Vertex OAuth'}</strong>
-                      <span>{profileDraftVertexMode === 'express' ? 'Express API key' : 'Google Cloud access token'}</span>
+                      <strong>{profileDraftVertexMode === 'express' ? t('profile.vertexExpress') : t('profile.vertexOAuth')}</strong>
+                      <span>{profileDraftVertexMode === 'express' ? t('profile.expressApiKey') : t('profile.cloudAccessToken')}</span>
                     </div>
                     <div class="credential-grid single">
                       {#if profileDraftVertexMode === 'express'}
                         <label>
-                          <span>API Key</span>
+                          <span>{t('profile.apiKey')}</span>
                           <input bind:value={profileDraftVertexApiKey} type="password" autocomplete="off" placeholder="AIza..." />
                         </label>
                       {:else}
                         <label>
-                          <span>Access Token</span>
+                          <span>{t('profile.accessToken')}</span>
                           <input bind:value={profileDraftVertexAccessToken} type="password" autocomplete="off" placeholder="ya29..." />
                         </label>
                       {/if}
@@ -4144,70 +4179,70 @@
                 {/if}
               </section>
 
-              <section class="request-panel" aria-label="Request parameters">
+              <section class="request-panel" aria-label={t('profile.requestParameters')}>
                 <div class="request-panel-header">
                   <strong>{samplerPanelHeading}</strong>
-                  <span>{profileDraftMaxTokens || '512'} out · {profileDraftContextTokens || '8192'} ctx · {profileDraftStream ? 'stream' : 'single'}</span>
+                  <span>{profileDraftMaxTokens || '512'} 输出 · {profileDraftContextTokens || '8192'} 上下文 · {profileDraftStream ? t('profile.stream') : t('profile.singleResponse')}</span>
                 </div>
 
-                <div class="request-flow-strip" aria-label="Response mode">
+                <div class="request-flow-strip" aria-label={t('profile.responseMode')}>
                   <button class:active={profileDraftStream} type="button" on:click={() => (profileDraftStream = true)}>
-                    <strong>Streaming</strong>
-                    <span>Incremental tokens</span>
+                    <strong>{t('profile.streaming')}</strong>
+                    <span>{t('profile.streamingHint')}</span>
                   </button>
                   <button class:active={!profileDraftStream} type="button" on:click={() => (profileDraftStream = false)}>
-                    <strong>Single response</strong>
-                    <span>One complete reply</span>
+                    <strong>{t('profile.singleResponse')}</strong>
+                    <span>{t('profile.singleResponseHint')}</span>
                   </button>
                 </div>
 
-                <div class="thinking-panel" aria-label="Thinking request controls">
+                <div class="thinking-panel" aria-label={t('profile.thinkingControls')}>
                   <div class="thinking-panel-header">
                     <div>
-                      <strong>Thinking Request</strong>
-                      <span>{profileDraftProviderType === 'gemini' ? (profileDraftGeminiIncludeThoughts ? 'Gemini thought summaries requested' : 'Gemini summaries not requested') : profileDraftOpenAIReasoningEffort === 'default' ? 'Default endpoint effort' : `${profileDraftOpenAIReasoningEffort} effort`}</span>
+                      <strong>{t('profile.thinkingRequest')}</strong>
+                      <span>{profileDraftProviderType === 'gemini' ? (profileDraftGeminiIncludeThoughts ? t('profile.geminiThoughtsRequested') : t('profile.geminiThoughtsNotRequested')) : profileDraftOpenAIReasoningEffort === 'default' ? t('profile.defaultEndpointEffort') : t('profile.effort', { effort: reasoningEffortLabel(profileDraftOpenAIReasoningEffort) })}</span>
                     </div>
                   </div>
 
                   {#if profileDraftProviderType === 'openai-compatible'}
                     <div class="thinking-field">
-                      <span>Reasoning effort</span>
-                      <div class="mini-segment seven" aria-label="OpenAI reasoning effort">
-                        <button class:active={profileDraftOpenAIReasoningEffort === 'default'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'default')}>Auto</button>
-                        <button class:active={profileDraftOpenAIReasoningEffort === 'none'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'none')}>None</button>
-                        <button class:active={profileDraftOpenAIReasoningEffort === 'minimal'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'minimal')}>Minimal</button>
-                        <button class:active={profileDraftOpenAIReasoningEffort === 'low'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'low')}>Low</button>
-                        <button class:active={profileDraftOpenAIReasoningEffort === 'medium'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'medium')}>Medium</button>
-                        <button class:active={profileDraftOpenAIReasoningEffort === 'high'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'high')}>High</button>
-                        <button class:active={profileDraftOpenAIReasoningEffort === 'xhigh'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'xhigh')}>XHigh</button>
+                      <span>{t('profile.reasoningEffort')}</span>
+                      <div class="mini-segment seven" aria-label={t('profile.openAIReasoningEffort')}>
+                        <button class:active={profileDraftOpenAIReasoningEffort === 'default'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'default')}>{reasoningEffortLabel('default')}</button>
+                        <button class:active={profileDraftOpenAIReasoningEffort === 'none'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'none')}>{reasoningEffortLabel('none')}</button>
+                        <button class:active={profileDraftOpenAIReasoningEffort === 'minimal'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'minimal')}>{reasoningEffortLabel('minimal')}</button>
+                        <button class:active={profileDraftOpenAIReasoningEffort === 'low'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'low')}>{reasoningEffortLabel('low')}</button>
+                        <button class:active={profileDraftOpenAIReasoningEffort === 'medium'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'medium')}>{reasoningEffortLabel('medium')}</button>
+                        <button class:active={profileDraftOpenAIReasoningEffort === 'high'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'high')}>{reasoningEffortLabel('high')}</button>
+                        <button class:active={profileDraftOpenAIReasoningEffort === 'xhigh'} type="button" on:click={() => (profileDraftOpenAIReasoningEffort = 'xhigh')}>{reasoningEffortLabel('xhigh')}</button>
                       </div>
                     </div>
                   {:else}
                     <div class="thinking-field">
-                      <span>Visible thoughts</span>
+                      <span>{t('profile.visibleThoughts')}</span>
                       <button class="toggle-pill profile-toggle" class:active={profileDraftGeminiIncludeThoughts} type="button" on:click={() => (profileDraftGeminiIncludeThoughts = !profileDraftGeminiIncludeThoughts)}>
-                        {profileDraftGeminiIncludeThoughts ? 'Request thought summaries' : 'Do not request summaries'}
+                        {profileDraftGeminiIncludeThoughts ? t('profile.requestThoughtSummaries') : t('profile.doNotRequestSummaries')}
                       </button>
                     </div>
 
                     {#if draftModelUsesGeminiThinkingLevel}
                       <div class="thinking-field">
-                        <span>Thinking level</span>
-                        <div class="mini-segment five" aria-label="Gemini thinking level">
-                          <button class:active={profileDraftGeminiThinkingMode === 'default'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'default')}>Auto</button>
-                          <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === 'minimal'} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = 'minimal'; }}>Minimal</button>
-                          <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === 'low'} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = 'low'; }}>Low</button>
-                          <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === 'medium'} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = 'medium'; }}>Medium</button>
-                          <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === 'high'} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = 'high'; }}>High</button>
+                        <span>{t('profile.thinkingLevel')}</span>
+                        <div class="mini-segment five" aria-label={t('profile.thinkingLevel')}>
+                          <button class:active={profileDraftGeminiThinkingMode === 'default'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'default')}>{geminiThinkingModeLabel('default')}</button>
+                          <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === 'minimal'} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = 'minimal'; }}>{geminiThinkingModeLabel('minimal')}</button>
+                          <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === 'low'} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = 'low'; }}>{geminiThinkingModeLabel('low')}</button>
+                          <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === 'medium'} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = 'medium'; }}>{geminiThinkingModeLabel('medium')}</button>
+                          <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === 'high'} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = 'high'; }}>{geminiThinkingModeLabel('high')}</button>
                         </div>
                       </div>
                     {:else}
                       <div class="thinking-field">
-                        <span>Thinking budget</span>
-                        <div class="mini-segment three" aria-label="Gemini thinking budget mode">
-                          <button class:active={profileDraftGeminiThinkingMode === 'default'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'default')}>Auto</button>
-                          <button class:active={profileDraftGeminiThinkingMode === 'off'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'off')}>Off</button>
-                          <button class:active={profileDraftGeminiThinkingMode === 'budget'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'budget')}>Budget</button>
+                        <span>{t('profile.thinkingBudget')}</span>
+                        <div class="mini-segment three" aria-label={t('profile.thinkingBudget')}>
+                          <button class:active={profileDraftGeminiThinkingMode === 'default'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'default')}>{geminiThinkingModeLabel('default')}</button>
+                          <button class:active={profileDraftGeminiThinkingMode === 'off'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'off')}>{geminiThinkingModeLabel('off')}</button>
+                          <button class:active={profileDraftGeminiThinkingMode === 'budget'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'budget')}>{geminiThinkingModeLabel('budget')}</button>
                         </div>
                         {#if profileDraftGeminiThinkingMode === 'budget'}
                           <span class="sampler-control-body">
@@ -4224,7 +4259,7 @@
                   {#if samplerVisible.temperature}
                     <label class="sampler-control">
                       <span class="sampler-control-head">
-                        <span>Temperature</span>
+                        <span>{t('profile.temperature')}</span>
                         <output>{profileDraftTemperature || '1'}</output>
                       </span>
                       <span class="sampler-control-body">
@@ -4237,7 +4272,7 @@
                   {#if samplerVisible.topP}
                     <label class="sampler-control">
                       <span class="sampler-control-head">
-                        <span>Top P</span>
+                        <span>{t('profile.topP')}</span>
                         <output>{profileDraftTopP || '1'}</output>
                       </span>
                       <span class="sampler-control-body">
@@ -4250,12 +4285,12 @@
                   {#if samplerVisible.topK}
                     <label class="sampler-control">
                       <span class="sampler-control-head">
-                        <span>Top K</span>
-                        <output>{profileDraftTopK || 'auto'}</output>
+                        <span>{t('profile.topK')}</span>
+                        <output>{profileDraftTopK || t('reasoning.default')}</output>
                       </span>
                       <span class="sampler-control-body">
                         <input class="sampler-range" type="range" min="1" max="200" step="1" value={profileDraftTopK || '40'} on:input={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
-                        <input class="sampler-number" value={profileDraftTopK} inputmode="numeric" placeholder="auto" on:input={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
+                        <input class="sampler-number" value={profileDraftTopK} inputmode="numeric" placeholder={t('reasoning.default')} on:input={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
                       </span>
                     </label>
                   {/if}
@@ -4275,7 +4310,7 @@
 
                   <label class="sampler-control">
                     <span class="sampler-control-head">
-                      <span>Context</span>
+                      <span>{t('profile.context')}</span>
                       <output>{profileDraftContextTokens || '8192'}</output>
                     </span>
                     <span class="sampler-control-body">
@@ -4303,41 +4338,41 @@
 
                 {#if showAdvancedSampler}
                   <details class="advanced-sampler">
-                    <summary>Advanced</summary>
+                    <summary>{t('common.advanced')}</summary>
                     <div class="advanced-sampler-grid">
                       {#if samplerVisible.topA}
                         <label>
-                          <span>Top A</span>
+                          <span>{t('profile.topA')}</span>
                           <input bind:value={profileDraftTopA} inputmode="decimal" />
                         </label>
                       {/if}
                       {#if samplerVisible.minP}
                         <label>
-                          <span>Min P</span>
+                          <span>{t('profile.minP')}</span>
                           <input bind:value={profileDraftMinP} inputmode="decimal" />
                         </label>
                       {/if}
                       {#if samplerVisible.frequencyPenalty}
                         <label>
-                          <span>Freq Penalty</span>
+                          <span>{t('profile.freqPenalty')}</span>
                           <input bind:value={profileDraftFrequencyPenalty} inputmode="decimal" />
                         </label>
                       {/if}
                       {#if samplerVisible.presencePenalty}
                         <label>
-                          <span>Presence</span>
+                          <span>{t('profile.presencePenalty')}</span>
                           <input bind:value={profileDraftPresencePenalty} inputmode="decimal" />
                         </label>
                       {/if}
                       {#if samplerVisible.repetitionPenalty}
                         <label>
-                          <span>Rep Penalty</span>
+                          <span>{t('profile.repPenalty')}</span>
                           <input bind:value={profileDraftRepetitionPenalty} inputmode="decimal" />
                         </label>
                       {/if}
                       {#if samplerVisible.seed}
                         <label>
-                          <span>Seed</span>
+                          <span>{t('profile.seed')}</span>
                           <input bind:value={profileDraftSeed} inputmode="numeric" />
                         </label>
                       {/if}
@@ -4352,39 +4387,39 @@
                 {/if}
 
                 <label class="profile-textarea-label">
-                  <span>Stop strings</span>
-                  <textarea bind:value={profileDraftStop} rows="3" placeholder="One stop string per line"></textarea>
+                  <span>{t('profile.stopStrings')}</span>
+                  <textarea bind:value={profileDraftStop} rows="3" placeholder={t('profile.stopPlaceholder')}></textarea>
                 </label>
               </section>
 
               <div class="profile-mode-strip">
                 <div class="segmented-field">
-                  <span>Mode</span>
-                  <div class="mini-segment" aria-label="Prompt mode">
-                    <button class:active={profileDraftMode === 'chat'} type="button" on:click={() => (profileDraftMode = 'chat')}>Chat</button>
-                    <button class:active={profileDraftMode === 'text'} type="button" on:click={() => (profileDraftMode = 'text')}>Text</button>
+                  <span>{t('profile.mode')}</span>
+                  <div class="mini-segment" aria-label={t('profile.mode')}>
+                    <button class:active={profileDraftMode === 'chat'} type="button" on:click={() => (profileDraftMode = 'chat')}>{t('profile.mode.chat')}</button>
+                    <button class:active={profileDraftMode === 'text'} type="button" on:click={() => (profileDraftMode = 'text')}>{t('profile.mode.text')}</button>
                   </div>
                 </div>
                 <div class="segmented-field">
-                  <span>Macros</span>
-                  <div class="mini-segment" aria-label="Macro mode">
-                    <button class:active={profileDraftMacroMode === 'none'} type="button" on:click={() => (profileDraftMacroMode = 'none')}>None</button>
+                  <span>{t('profile.macros')}</span>
+                  <div class="mini-segment" aria-label={t('profile.macros')}>
+                    <button class:active={profileDraftMacroMode === 'none'} type="button" on:click={() => (profileDraftMacroMode = 'none')}>{t('profile.none')}</button>
                     <button class:active={profileDraftMacroMode === 'sillytavern'} type="button" on:click={() => (profileDraftMacroMode = 'sillytavern')}>ST</button>
                   </div>
                 </div>
                 <button class="toggle-pill" class:active={profileDraftSquashSystemMessages} type="button" on:click={() => (profileDraftSquashSystemMessages = !profileDraftSquashSystemMessages)}>
-                  Squash system
+                  {t('profile.squashSystem')}
                 </button>
               </div>
 
-              <section class="regex-panel" aria-label="Regex scripts">
+              <section class="regex-panel" aria-label={t('profile.regexScripts')}>
                 <div class="regex-panel-header">
                   <div>
-                    <strong>Regex Scripts</strong>
-                    <span>{profileDraftRegexScripts.filter((script) => !script.disabled).length}/{profileDraftRegexScripts.length} active · profile-bound</span>
+                    <strong>{t('profile.regexScripts')}</strong>
+                    <span>{t('profile.regexStats', { active: profileDraftRegexScripts.filter((script) => !script.disabled).length, total: profileDraftRegexScripts.length })}</span>
                   </div>
                   <button class="toggle-pill" class:active={profileDraftRegexEnabled} type="button" on:click={() => (profileDraftRegexEnabled = !profileDraftRegexEnabled)}>
-                    {profileDraftRegexEnabled ? 'Enabled' : 'Disabled'}
+                    {profileDraftRegexEnabled ? t('common.enabled') : t('common.disabled')}
                   </button>
                 </div>
                 {#if profileDraftRegexScripts.length}
@@ -4404,65 +4439,65 @@
                             profileDraftRegexScripts = [...profileDraftRegexScripts];
                           }}
                         >
-                          {script.disabled ? 'Off' : 'On'}
+                          {script.disabled ? t('common.off') : t('common.on')}
                         </button>
                       </article>
                     {/each}
                   </div>
                 {:else}
-                  <span class="drawer-empty compact">No regex scripts in this profile</span>
+                  <span class="drawer-empty compact">{t('profile.noRegexScripts')}</span>
                 {/if}
               </section>
             </form>
 
-            <section class="prompt-manager-panel" aria-label="Prompt Manager">
+            <section class="prompt-manager-panel" aria-label={t('profile.promptManager')}>
               <div class="prompt-manager-header">
                 <div>
-                  <strong>Prompt Manager</strong>
-                  <span>{draftPromptStats.enabled} enabled · {draftPromptStats.ordered} ordered · {draftPromptStats.total} total</span>
+                  <strong>{t('profile.promptManager')}</strong>
+                  <span>{t('profile.promptManagerStats', { enabled: draftPromptStats.enabled, ordered: draftPromptStats.ordered, total: draftPromptStats.total })}</span>
                 </div>
                 <div class="preset-actions">
-                  <button class="tool-button" type="button" on:click={addDraftPromptSlot} title="Add prompt" aria-label="Add prompt">
+                  <button class="tool-button" type="button" on:click={addDraftPromptSlot} title={t('profile.addPrompt')} aria-label={t('profile.addPrompt')}>
                     <Plus size={16} />
                   </button>
-                  <button class="tool-button" type="button" on:click={() => openPromptEditor(activePromptSlot)} title="Edit selected prompt" aria-label="Edit selected prompt" disabled={!activePromptSlot}>
+                  <button class="tool-button" type="button" on:click={() => openPromptEditor(activePromptSlot)} title={t('profile.editSelectedPrompt')} aria-label={t('profile.editSelectedPrompt')} disabled={!activePromptSlot}>
                     <Pencil size={16} />
                   </button>
-                  <button class="tool-button" type="button" on:click={() => duplicateDraftPromptSlot(activePromptSlot)} title="Duplicate selected prompt" aria-label="Duplicate selected prompt" disabled={!activePromptSlot}>
+                  <button class="tool-button" type="button" on:click={() => duplicateDraftPromptSlot(activePromptSlot)} title={t('profile.duplicateSelectedPrompt')} aria-label={t('profile.duplicateSelectedPrompt')} disabled={!activePromptSlot}>
                     <Copy size={16} />
                   </button>
                 </div>
               </div>
 
               <div class="prompt-manager-toolbar">
-                <input class="profile-search" bind:value={promptSlotQuery} placeholder="Search prompts" aria-label="Search prompts" />
+                <input class="profile-search" bind:value={promptSlotQuery} placeholder={t('profile.searchPrompts')} aria-label={t('profile.searchPrompts')} />
                 {#if activePromptSlot}
                   <div class="prompt-selection-summary">
                     <strong>{activePromptSlot.label || activePromptSlot.id}</strong>
-                    <span>{slotMeta(activePromptSlot)} · {slotTokenEstimate(activePromptSlot)} tokens</span>
+                    <span>{slotMeta(activePromptSlot)} · {slotTokenEstimate(activePromptSlot)} {t('common.tokenUnit')}</span>
                   </div>
                 {/if}
               </div>
 
-              <div class="prompt-slot-list" aria-label="Prompt slots">
+              <div class="prompt-slot-list" aria-label={t('profile.promptSlots')}>
                 <div class="prompt-slot-list-header" aria-hidden="true">
                   <span></span>
-                  <span>Prompt</span>
-                  <span>Type</span>
-                  <span>Tokens</span>
-                  <span>Actions</span>
+                  <span>{t('common.prompt')}</span>
+                  <span>{t('common.type')}</span>
+                  <span>{t('common.tokens')}</span>
+                  <span>{t('common.actions')}</span>
                 </div>
                 {#each filteredPromptSlots as slot}
                   <article class="prompt-slot-row" class:active={slot.id === activePromptSlotId}>
-                    <span class="prompt-slot-grip" title="Order">
+                    <span class="prompt-slot-grip" title={t('profile.order')}>
                       <GripHorizontal size={14} />
                     </span>
                     <input
                       class="prompt-slot-toggle"
                       type="checkbox"
                       checked={slot.enabled !== false}
-                      title="Toggle prompt"
-                      aria-label={`Toggle ${slot.label || slot.id}`}
+                      title={t('profile.togglePrompt')}
+                      aria-label={`${t('profile.togglePrompt')} ${slot.label || slot.id}`}
                       on:change={(event) => updateDraftSlot(slot.id, { enabled: (event.currentTarget as HTMLInputElement).checked })}
                     />
                     <button class="prompt-slot-main" type="button" on:click={() => (activePromptSlotId = slot.id)}>
@@ -4472,45 +4507,45 @@
                     <span class="prompt-kind-badge">{slotKind(slot)}</span>
                     <span class="prompt-token-count">{slotTokenEstimate(slot)}</span>
                     <span class="prompt-row-actions">
-                      <button type="button" on:click={() => moveDraftPromptSlot(slot, -1)} title="Move up" aria-label={`Move ${slot.label || slot.id} up`} disabled={isFirstPromptSlot(slot)}>
+                      <button type="button" on:click={() => moveDraftPromptSlot(slot, -1)} title={t('profile.moveUp')} aria-label={`${t('profile.moveUp')} ${slot.label || slot.id}`} disabled={isFirstPromptSlot(slot)}>
                         <ArrowUp size={14} />
                       </button>
-                      <button type="button" on:click={() => moveDraftPromptSlot(slot, 1)} title="Move down" aria-label={`Move ${slot.label || slot.id} down`} disabled={isLastPromptSlot(slot)}>
+                      <button type="button" on:click={() => moveDraftPromptSlot(slot, 1)} title={t('profile.moveDown')} aria-label={`${t('profile.moveDown')} ${slot.label || slot.id}`} disabled={isLastPromptSlot(slot)}>
                         <ArrowDown size={14} />
                       </button>
-                      <button type="button" on:click={() => openPromptEditor(slot)} title="Edit prompt" aria-label={`Edit ${slot.label || slot.id}`}>
+                      <button type="button" on:click={() => openPromptEditor(slot)} title={t('profile.editPrompt')} aria-label={`${t('profile.editPrompt')} ${slot.label || slot.id}`}>
                         <Pencil size={14} />
                       </button>
-                      <button type="button" on:click={() => duplicateDraftPromptSlot(slot)} title="Duplicate prompt" aria-label={`Duplicate ${slot.label || slot.id}`}>
+                      <button type="button" on:click={() => duplicateDraftPromptSlot(slot)} title={t('profile.duplicatePrompt')} aria-label={`${t('profile.duplicatePrompt')} ${slot.label || slot.id}`}>
                         <Copy size={14} />
                       </button>
-                      <button type="button" on:click={() => removeDraftPromptSlot(slot)} title="Remove prompt" aria-label={`Remove ${slot.label || slot.id}`} disabled={!canRemovePromptSlot(slot)}>
+                      <button type="button" on:click={() => removeDraftPromptSlot(slot)} title={t('profile.removePrompt')} aria-label={`${t('profile.removePrompt')} ${slot.label || slot.id}`} disabled={!canRemovePromptSlot(slot)}>
                         <Trash2 size={14} />
                       </button>
                     </span>
                   </article>
                 {:else}
-                  <div class="drawer-empty">No matching prompts</div>
+                  <div class="drawer-empty">{t('profile.noMatchingPrompts')}</div>
                 {/each}
               </div>
             </section>
 
             {#if promptEditorSlot}
-              <div class="prompt-editor-overlay" role="dialog" aria-modal="true" aria-label="Edit prompt">
+              <div class="prompt-editor-overlay" role="dialog" aria-modal="true" aria-label={t('profile.editPrompt')}>
                 <form class="prompt-editor-window" on:submit|preventDefault={savePromptEditor}>
                   <header class="prompt-editor-titlebar">
                     <div>
-                      <h3>Edit Prompt</h3>
-                      <span>{promptEditorSlot.legacy?.identifier ?? promptEditorSlot.id} · {slotKind(promptEditorSlot)} · {slotTokenEstimate(promptEditorSlot)} tokens</span>
+                      <h3>{t('profile.editPromptTitle')}</h3>
+                      <span>{promptEditorSlot.legacy?.identifier ?? promptEditorSlot.id} · {slotKind(promptEditorSlot)} · {slotTokenEstimate(promptEditorSlot)} {t('common.tokenUnit')}</span>
                     </div>
                     <div class="preset-actions">
-                      <button class="tool-button" type="button" on:click={resetPromptEditor} title="Reset prompt" aria-label="Reset prompt">
+                      <button class="tool-button" type="button" on:click={resetPromptEditor} title={t('profile.resetPrompt')} aria-label={t('profile.resetPrompt')}>
                         <RotateCcw size={16} />
                       </button>
-                      <button class="tool-button" type="submit" title="Save prompt" aria-label="Save prompt">
+                      <button class="tool-button" type="submit" title={t('profile.savePrompt')} aria-label={t('profile.savePrompt')}>
                         <Save size={16} />
                       </button>
-                      <button class="tool-button" type="button" on:click={closePromptEditor} title="Close prompt editor" aria-label="Close prompt editor">
+                      <button class="tool-button" type="button" on:click={closePromptEditor} title={t('profile.closePromptEditor')} aria-label={t('profile.closePromptEditor')}>
                         <X size={16} />
                       </button>
                     </div>
@@ -4518,33 +4553,33 @@
 
                   <div class="prompt-editor-fields">
                     <label>
-                      <span>Name</span>
+                      <span>{t('common.name')}</span>
                       <input value={promptEditorSlot.label ?? ''} on:input={(event) => updateDraftSlot(promptEditorSlot.id, { label: (event.currentTarget as HTMLInputElement).value })} />
                     </label>
                     <div class="segmented-field">
-                      <span>Role</span>
-                      <div class="mini-segment three" aria-label="Prompt role">
+                      <span>{t('profile.promptRole')}</span>
+                      <div class="mini-segment three" aria-label={t('profile.promptRole')}>
                         {#each promptRoles as role}
                           <button class:active={promptEditorSlot.role === role} type="button" on:click={() => updateDraftSlot(promptEditorSlot.id, { role })}>
-                            {role}
+                            {roleLabel(role)}
                           </button>
                         {/each}
                       </div>
                     </div>
                     <label>
-                      <span>Source</span>
+                      <span>{t('common.source')}</span>
                       <select value={promptEditorSlot.source} on:change={(event) => updateDraftSlot(promptEditorSlot.id, { source: (event.currentTarget as HTMLSelectElement).value as PromptSlotSource })}>
                         {#each promptSources as source}
-                          <option value={source}>{source}</option>
+                          <option value={source}>{promptSourceLabel(source)}</option>
                         {/each}
                       </select>
                     </label>
                     <div class="segmented-field">
-                      <span>Position</span>
-                      <div class="mini-segment three" aria-label="Prompt injection position">
-                        <button class:active={!promptEditorSlot.injection} type="button" on:click={() => setPromptInjectionPosition(promptEditorSlot, 'none')}>None</button>
-                        <button class:active={promptEditorSlot.injection?.position === 'relative'} type="button" on:click={() => setPromptInjectionPosition(promptEditorSlot, 'relative')}>Relative</button>
-                        <button class:active={promptEditorSlot.injection?.position === 'absolute'} type="button" on:click={() => setPromptInjectionPosition(promptEditorSlot, 'absolute')}>In-chat</button>
+                      <span>{t('profile.promptPosition')}</span>
+                      <div class="mini-segment three" aria-label={t('profile.promptPosition')}>
+                        <button class:active={!promptEditorSlot.injection} type="button" on:click={() => setPromptInjectionPosition(promptEditorSlot, 'none')}>{t('profile.position.none')}</button>
+                        <button class:active={promptEditorSlot.injection?.position === 'relative'} type="button" on:click={() => setPromptInjectionPosition(promptEditorSlot, 'relative')}>{t('profile.position.relative')}</button>
+                        <button class:active={promptEditorSlot.injection?.position === 'absolute'} type="button" on:click={() => setPromptInjectionPosition(promptEditorSlot, 'absolute')}>{t('profile.position.inChat')}</button>
                       </div>
                     </div>
                   </div>
@@ -4552,7 +4587,7 @@
                   {#if promptEditorSlot.injection}
                     <div class="prompt-editor-fields compact">
                       <label>
-                        <span>Depth</span>
+                        <span>{t('worldbook.depth')}</span>
                         <input
                           value={promptEditorSlot.injection.depth ?? 4}
                           inputmode="numeric"
@@ -4564,7 +4599,7 @@
                         />
                       </label>
                       <label>
-                        <span>Order</span>
+                        <span>{t('worldbook.order')}</span>
                         <input
                           value={promptEditorSlot.injection.order ?? 100}
                           inputmode="numeric"
@@ -4579,18 +4614,18 @@
                   {/if}
 
                   <div class="prompt-trigger-panel">
-                    <span>Triggers</span>
-                    <div class="prompt-trigger-options" aria-label="Generation triggers">
+                    <span>{t('profile.triggers')}</span>
+                    <div class="prompt-trigger-options" aria-label={t('profile.generationTriggers')}>
                       {#each promptTriggerOptions as trigger}
                         <button class:active={(promptEditorSlot.injection?.triggers ?? []).includes(trigger)} type="button" on:click={() => togglePromptTrigger(promptEditorSlot, trigger)}>
-                          {trigger}
+                          {triggerLabel(trigger)}
                         </button>
                       {/each}
                     </div>
                   </div>
 
                   <div class="prompt-editor-source">
-                    <span><strong>Source:</strong> {promptEditorSlot.legacy?.source === 'sillytavern' ? 'SillyTavern preset' : 'NanKe profile'}</span>
+                    <span><strong>{t('profile.sourceLabel')}</strong> {promptEditorSlot.legacy?.source === 'sillytavern' ? t('profile.sillyTavernPreset') : t('profile.nankeProfile')}</span>
                     <label class="checkbox-row">
                       <input
                         type="checkbox"
@@ -4598,31 +4633,31 @@
                         disabled={!promptEditorSlot.legacy}
                         on:change={(event) => updateDraftSlotLegacy(promptEditorSlot.id, { forbidOverrides: (event.currentTarget as HTMLInputElement).checked })}
                       />
-                      <span>Forbid Overrides</span>
+                      <span>{t('profile.forbidOverrides')}</span>
                     </label>
                   </div>
 
                   <label class="profile-textarea-label prompt-content-label">
-                    <span>Prompt</span>
+                    <span>{t('common.prompt')}</span>
                     <textarea
                       rows="14"
                       value={promptEditorSlot.content ?? ''}
-                      placeholder="The prompt to be sent."
+                      placeholder={t('profile.promptContentPlaceholder')}
                       on:input={(event) => updateDraftSlot(promptEditorSlot.id, { content: (event.currentTarget as HTMLTextAreaElement).value })}
                     ></textarea>
                   </label>
 
                   <footer class="prompt-editor-footer">
-                    <button class="secondary" type="button" on:click={closePromptEditor}><X size={16} />Close</button>
-                    <button class="secondary" type="button" on:click={resetPromptEditor}><RotateCcw size={16} />Reset</button>
-                    <button class="primary" type="submit"><Save size={16} />Save</button>
+                    <button class="secondary" type="button" on:click={closePromptEditor}><X size={16} />{t('common.close')}</button>
+                    <button class="secondary" type="button" on:click={resetPromptEditor}><RotateCcw size={16} />{t('common.reset')}</button>
+                    <button class="primary" type="submit"><Save size={16} />{t('common.save')}</button>
                   </footer>
                 </form>
               </div>
             {/if}
           {/if}
 
-          <section class="profile-list-section" aria-label="Profiles">
+          <section class="profile-list-section" aria-label={t('nav.profiles')}>
             <div class="profile-list">
               {#each filteredProfiles as profile}
                 {@const stats = profileStats(profile)}
@@ -4642,23 +4677,23 @@
                   </span>
                 </button>
               {:else}
-                <div class="drawer-empty">No matching profiles</div>
+                <div class="drawer-empty">{t('profile.noMatchingProfiles')}</div>
               {/each}
             </div>
           </section>
         </div>
       {:else if activeDrawer === 'settings'}
         <div class="settings-panel">
-          <section class="settings-section" aria-label="Interface typography">
+          <section class="settings-section" aria-label={t('settings.interfaceTypography')}>
             <div class="settings-section-head">
               <div>
-                <strong>Typography</strong>
-                <span>Applied locally to this workspace</span>
+                <strong>{t('settings.typography')}</strong>
+                <span>{t('settings.localOnly')}</span>
               </div>
               <Type size={18} />
             </div>
 
-            <div class="font-choice-grid" aria-label="Font family">
+            <div class="font-choice-grid" aria-label={t('settings.fontFamily')}>
               {#each appFontFamilies as font}
                 <button
                   class:active={appSettings.fontFamily === font.value}
@@ -4673,7 +4708,7 @@
 
             <label class="settings-range">
               <span>
-                <strong>Interface size</strong>
+                <strong>{t('settings.interfaceSize')}</strong>
                 <output>{appSettings.uiFontSize}px</output>
               </span>
               <input
@@ -4688,7 +4723,7 @@
 
             <label class="settings-range">
               <span>
-                <strong>Chat text size</strong>
+                <strong>{t('settings.chatTextSize')}</strong>
                 <output>{appSettings.chatFontSize}px</output>
               </span>
               <input
@@ -4702,29 +4737,29 @@
             </label>
 
             <div class="settings-preview">
-              <strong>Preview</strong>
-              <p>Character dialogue, narration, and markdown output use the selected reading size.</p>
+              <strong>{t('settings.preview')}</strong>
+              <p>{t('settings.previewText')}</p>
             </div>
           </section>
 
           <button class="secondary full" type="button" on:click={resetAppSettings}>
-            <RotateCcw size={16} />Reset Interface
+            <RotateCcw size={16} />{t('settings.resetInterface')}
           </button>
         </div>
       {:else if activeDrawer === 'import'}
         <div class="import-panel">
-          <select aria-label="Import kind" bind:value={importKind}>
-            <option value="preset">Preset</option>
-            <option value="character-card-json">Character JSON</option>
-            <option value="character-card-png">Character PNG</option>
-            <option value="worldbook">World Book</option>
-            <option value="chat-jsonl">Chat JSONL</option>
-            <option value="conversation-snapshot">NanKe Chat Snapshot</option>
+          <select aria-label={t('import.kind')} bind:value={importKind}>
+            <option value="preset">{t('import.kind.preset')}</option>
+            <option value="character-card-json">{t('import.kind.characterJson')}</option>
+            <option value="character-card-png">{t('import.kind.characterPng')}</option>
+            <option value="worldbook">{t('import.kind.worldbook')}</option>
+            <option value="chat-jsonl">{t('import.kind.chatJsonl')}</option>
+            <option value="conversation-snapshot">{t('import.kind.snapshot')}</option>
           </select>
-          <input bind:value={importName} placeholder="Name" />
+          <input bind:value={importName} placeholder={t('import.namePlaceholder')} />
           <label class="file-picker">
             <Upload size={16} />
-            <span>{importFileName || (importKind === 'character-card-png' ? 'Choose PNG character card' : 'Choose import file')}</span>
+            <span>{importFileName || (importKind === 'character-card-png' ? t('import.choosePng') : t('import.chooseFile'))}</span>
             <input
               type="file"
               accept={importKind === 'character-card-png' ? 'image/png,.png' : importKind === 'chat-jsonl' ? '.jsonl,.ndjson,.txt' : '.json,application/json,.txt'}
@@ -4734,13 +4769,13 @@
           <textarea
             bind:value={importText}
             rows="10"
-            placeholder={importKind === 'character-card-png' ? 'Optional base64 PNG data' : 'JSON or JSONL'}
+            placeholder={importKind === 'character-card-png' ? t('import.placeholderPng') : t('import.placeholderText')}
           ></textarea>
-          <button class="secondary full" type="button" on:click={runImport}><Download size={16} />Import</button>
+          <button class="secondary full" type="button" on:click={runImport}><Download size={16} />{t('common.import')}</button>
         </div>
       {:else if activeDrawer === 'inspector'}
         <div class="inspector-panel">
-          <button class="secondary full" type="button" on:click={inspectCurrentPrompt}><ClipboardList size={16} />Inspect</button>
+          <button class="secondary full" type="button" on:click={inspectCurrentPrompt}><ClipboardList size={16} />{t('inspector.inspect')}</button>
           <pre>{inspector}</pre>
         </div>
       {/if}

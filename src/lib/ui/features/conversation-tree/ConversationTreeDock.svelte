@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '$lib/i18n';
   import { GitBranch, LocateFixed, MessageSquare, RefreshCw, Trash2, X } from '@lucide/svelte';
   import {
     Background,
@@ -93,9 +94,9 @@
         draggable: false,
         selectable: false,
         data: {
-          label: 'Start',
+          label: t('tree.start'),
           role: 'root',
-          meta: `${tree.nodes.length} messages`,
+          meta: t('tree.messages', { count: tree.nodes.length }),
           preview: tree.conversation.title,
           childCount: rootChildren,
           branchCount: tree.conversation.branchCount ?? 0,
@@ -112,7 +113,7 @@
         data: {
           label: node.speakerName ?? labelRole(node.role),
           role: node.role,
-          meta: `Depth ${node.depth}`,
+          meta: t('tree.depth', { depth: node.depth }),
           preview: shortPreview(node.preview),
           childCount: node.childCount,
           branchCount: node.branchCount,
@@ -139,8 +140,10 @@
   }
 
   function labelRole(role: string) {
-    if (role === 'assistant') return 'Assistant';
-    if (role === 'user') return 'User';
+    if (role === 'assistant') return t('role.assistant');
+    if (role === 'user') return t('role.user');
+    if (role === 'system') return t('role.system');
+    if (role === 'root') return t('role.root');
     return role;
   }
 
@@ -150,7 +153,7 @@
   }
 
   function selectedNodeTime(node: TreeNode) {
-    return new Date(node.updatedAt).toLocaleString(undefined, {
+    return new Date(node.updatedAt).toLocaleString(t('date.locale'), {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -164,17 +167,17 @@
   }
 </script>
 
-<aside class="tree-dock" aria-label="Conversation tree">
+<aside class="tree-dock" aria-label={t('tree.title')}>
   <header class="tree-dock-header">
     <div>
-      <span><GitBranch size={15} /> Chat Tree</span>
-      <strong>{summary?.conversation.title ?? 'Loading'}</strong>
+      <span><GitBranch size={15} /> {t('tree.title')}</span>
+      <strong>{summary?.conversation.title ?? t('common.loading')}</strong>
     </div>
     <div class="tree-dock-actions">
-      <button type="button" title="Refresh tree" aria-label="Refresh tree" disabled={loading} onclick={() => onRefresh?.()}>
+      <button type="button" title={t('tree.refresh')} aria-label={t('tree.refresh')} disabled={loading} onclick={() => onRefresh?.()}>
         <RefreshCw size={15} />
       </button>
-      <button type="button" title="Close tree" aria-label="Close tree" onclick={() => onClose?.()}>
+      <button type="button" title={t('tree.close')} aria-label={t('tree.close')} onclick={() => onClose?.()}>
         <X size={15} />
       </button>
     </div>
@@ -184,12 +187,12 @@
     {#if loading}
       <div class="empty-tree">
         <RefreshCw size={22} />
-        <span>Loading tree</span>
+        <span>{t('tree.loading')}</span>
       </div>
     {:else if !summary || summary.nodes.length === 0}
       <div class="empty-tree">
         <MessageSquare size={22} />
-        <span>No persisted messages yet.</span>
+        <span>{t('tree.empty')}</span>
       </div>
     {:else}
       <SvelteFlow
@@ -213,42 +216,42 @@
     {/if}
   </div>
 
-  <section class="node-detail" aria-label="Selected node detail">
+  <section class="node-detail" aria-label={t('tree.selected')}>
     <div class="detail-heading">
-      <span><LocateFixed size={15} /> Selected</span>
+      <span><LocateFixed size={15} /> {t('tree.selected')}</span>
       {#if summary}
-        <small>{summary.nodes.length} nodes · {summary.conversation.branchCount ?? 0} branches</small>
+        <small>{t('tree.nodesBranches', { nodes: summary.nodes.length, branches: summary.conversation.branchCount ?? 0 })}</small>
       {/if}
     </div>
 
     {#if selectedNode}
       <section class="detail-section">
         <strong>{selectedNode.speakerName ?? labelRole(selectedNode.role)}</strong>
-        <small>{selectedNode.role} · depth {selectedNode.depth} · {selectedNodeTime(selectedNode)}</small>
-        <p>{selectedNode.preview || '(empty)'}</p>
+        <small>{labelRole(selectedNode.role)} · {t('tree.depth', { depth: selectedNode.depth })} · {selectedNodeTime(selectedNode)}</small>
+        <p>{selectedNode.preview || t('tree.emptyPreview')}</p>
       </section>
       <section class="detail-grid">
-        <span>Children <strong>{selectedNode.childCount}</strong></span>
-        <span>Branches <strong>{selectedNode.branchCount}</strong></span>
-        <span>Sibling <strong>{selectedNode.siblingOrder + 1}</strong></span>
-        <span>Status <strong>{selectedNode.status}</strong></span>
+        <span>{t('tree.children')} <strong>{selectedNode.childCount}</strong></span>
+        <span>{t('tree.branchLabel')} <strong>{selectedNode.branchCount}</strong></span>
+        <span>{t('tree.sibling')} <strong>{selectedNode.siblingOrder + 1}</strong></span>
+        <span>{t('tree.status')} <strong>{selectedNode.status}</strong></span>
       </section>
       <div class="detail-actions">
         <button type="button" disabled={Boolean(actionStatus)} onclick={() => onFocusNode?.(selectedNode, true)}>
-          <LocateFixed size={14} /> Focus
+          <LocateFixed size={14} /> {t('tree.focus')}
         </button>
         <button type="button" disabled={Boolean(actionStatus)} onclick={() => onFocusNode?.(selectedNode, false)}>
-          <GitBranch size={14} /> Continue
+          <GitBranch size={14} /> {t('tree.continue')}
         </button>
         <button class="danger" type="button" disabled={Boolean(actionStatus)} onclick={() => onDeleteNode?.(selectedNode)}>
-          <Trash2 size={14} /> Delete
+          <Trash2 size={14} /> {t('tree.delete')}
         </button>
       </div>
       {#if actionStatus}
         <small class="action-status">{actionStatus}</small>
       {/if}
     {:else}
-      <div class="empty-detail">Click a node to inspect it.</div>
+      <div class="empty-detail">{t('tree.inspectHint')}</div>
     {/if}
   </section>
 </aside>

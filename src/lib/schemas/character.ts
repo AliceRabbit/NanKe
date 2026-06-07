@@ -7,6 +7,14 @@ export const characterDepthPromptSchema = z.object({
   role: z.enum(['system', 'user', 'assistant']).default('system')
 });
 
+export const characterWorldBookBindingSchema = z.object({
+  worldBookId: z.string(),
+  enabled: z.boolean().default(true),
+  primary: z.boolean().default(false)
+});
+
+export type CharacterWorldBookBinding = z.infer<typeof characterWorldBookBindingSchema>;
+
 export const characterSchema = z.object({
   id: z.string(),
   name: z.string().min(1),
@@ -28,6 +36,7 @@ export const characterSchema = z.object({
   favorite: z.boolean().default(false),
   extensions: z.record(z.string(), z.unknown()).default({}),
   worldBookIds: z.array(z.string()).default([]),
+  worldBookBindings: z.array(characterWorldBookBindingSchema).optional(),
   characterBook: worldBookSchema.optional(),
   depthPrompt: characterDepthPromptSchema.optional(),
   avatarAssetId: z.string().optional(),
@@ -44,8 +53,38 @@ export const characterSchema = z.object({
 
 export type Character = z.infer<typeof characterSchema>;
 
+export function normalizeWorldBookBindings(input: {
+  worldBookIds?: string[];
+  worldBookBindings?: CharacterWorldBookBinding[];
+  characterBook?: { id: string };
+}): CharacterWorldBookBinding[] {
+  const hasExplicitBindings = input.worldBookBindings !== undefined;
+  const bindings = new Map<string, CharacterWorldBookBinding>();
+  for (const id of input.worldBookIds ?? []) {
+    if (!id || bindings.has(id)) continue;
+    bindings.set(id, { worldBookId: id, enabled: true, primary: false });
+  }
+  for (const binding of input.worldBookBindings ?? []) {
+    if (!binding.worldBookId) continue;
+    bindings.set(binding.worldBookId, {
+      worldBookId: binding.worldBookId,
+      enabled: binding.enabled !== false,
+      primary: binding.primary === true
+    });
+  }
+  if (input.characterBook?.id && !bindings.has(input.characterBook.id) && !hasExplicitBindings) {
+    bindings.set(input.characterBook.id, {
+      worldBookId: input.characterBook.id,
+      enabled: true,
+      primary: true
+    });
+  }
+  return [...bindings.values()];
+}
+
 export function createCharacter(input: Partial<Character> & Pick<Character, 'name'>): Character {
   const now = Date.now();
+  const worldBookBindings = normalizeWorldBookBindings(input);
   return characterSchema.parse({
     id: input.id ?? crypto.randomUUID(),
     name: input.name,
@@ -66,7 +105,8 @@ export function createCharacter(input: Partial<Character> & Pick<Character, 'nam
     talkativeness: input.talkativeness,
     favorite: input.favorite ?? false,
     extensions: input.extensions ?? {},
-    worldBookIds: input.worldBookIds ?? [],
+    worldBookIds: worldBookBindings.map((binding) => binding.worldBookId),
+    worldBookBindings,
     characterBook: input.characterBook,
     depthPrompt: input.depthPrompt,
     avatarAssetId: input.avatarAssetId,

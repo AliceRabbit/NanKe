@@ -1,6 +1,7 @@
 import { GenerationPipeline, inspectPrompt } from '$lib/core';
 import { applyRegexScripts, hasRegexScriptForPlacement, REGEX_PLACEMENT } from '$lib/core/regex';
 import { renderPromptTemplate } from '$lib/core/prompt/PromptCompiler';
+import type { Character } from '$lib/schemas/character';
 import { createConversation } from '$lib/schemas/conversation';
 import { createMessage } from '$lib/schemas/message';
 import type { NankeMessage } from '$lib/schemas/message';
@@ -9,6 +10,17 @@ import type { RegexScript } from '$lib/schemas/regex';
 import { createDefaultProviderRegistry, type ProviderRegistry } from '$lib/providers';
 import type { createRequestContext } from '$lib/server/request-context';
 import { AppError } from '$lib/server/errors';
+
+export function activeCharacterWorldBookIds(character?: Character): string[] {
+  if (!character) return [];
+  const bindings = character.worldBookBindings ?? [];
+  if (character.worldBookBindings !== undefined) {
+    return bindings.filter((binding) => binding.enabled !== false).map((binding) => binding.worldBookId);
+  }
+  const ids = new Set(character.worldBookIds ?? []);
+  if (character.characterBook?.id) ids.add(character.characterBook.id);
+  return [...ids];
+}
 
 export type GenerateInput = {
   conversationId?: string;
@@ -154,13 +166,14 @@ export class GenerationAppService {
       if (userMessage) this.context.conversations.appendMessage(userMessage);
     }
 
+    const characterWorldBookIds = activeCharacterWorldBookIds(character);
     const worldBooksById = new Map(
-      [...(character?.worldBookIds ?? []), ...(conversation?.worldBookIds ?? [])]
+      [...characterWorldBookIds, ...(conversation?.worldBookIds ?? [])]
         .map((id) => this.context.worldBooks.get(id))
         .filter((item) => item !== undefined)
         .map((item) => [item.id, item])
     );
-    if (character?.characterBook && !worldBooksById.has(character.characterBook.id)) {
+    if (character?.characterBook && characterWorldBookIds.includes(character.characterBook.id) && !worldBooksById.has(character.characterBook.id)) {
       worldBooksById.set(character.characterBook.id, this.context.worldBooks.get(character.characterBook.id) ?? character.characterBook);
     }
     const worldBooks = [...worldBooksById.values()];

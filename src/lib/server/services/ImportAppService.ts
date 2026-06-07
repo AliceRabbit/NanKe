@@ -7,7 +7,7 @@ import {
   readSillyTavernCardJsonFromPng
 } from '$lib/compat/sillytavern';
 import { createConversation } from '$lib/schemas/conversation';
-import type { Character } from '$lib/schemas/character';
+import { normalizeWorldBookBindings, type Character } from '$lib/schemas/character';
 import type { WorldBook } from '$lib/schemas/worldbook';
 import type { createRequestContext } from '$lib/server/request-context';
 import { AppError } from '$lib/server/errors';
@@ -45,6 +45,10 @@ export class ImportAppService {
     return this.context.characters.save({
       ...character,
       worldBookIds: [...worldBookIds],
+      worldBookBindings: normalizeWorldBookBindings({
+        ...character,
+        worldBookIds: [...worldBookIds]
+      }),
       characterBook: embeddedBook
     });
   }

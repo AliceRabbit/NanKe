@@ -1,4 +1,5 @@
 import { json } from '@sveltejs/kit';
+import { normalizeWorldBookBindings } from '$lib/schemas/character';
 import { createWorldBook } from '$lib/schemas/worldbook';
 import { createRequestContext } from '$lib/server/request-context';
 import { errorResponse } from '$lib/server/errors';
@@ -26,6 +27,10 @@ export async function POST({ request }) {
         context.characters.save({
           ...character,
           worldBookIds: [...worldBookIds],
+          worldBookBindings: normalizeWorldBookBindings({
+            ...character,
+            worldBookIds: [...worldBookIds]
+          }),
           characterBook: character.characterBook?.id === saved.id ? saved : character.characterBook
         });
       }

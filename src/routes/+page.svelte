@@ -27,10 +27,13 @@
     GitBranch,
     GripHorizontal,
     Image,
+    Link2,
     MessageCircle,
     MessageSquare,
     Pencil,
     Plus,
+    Power,
+    PowerOff,
     RefreshCw,
     RotateCcw,
     Search,
@@ -41,6 +44,7 @@
     Star,
     Trash2,
     Type,
+    Unlink,
     Upload,
     UserRound,
     Wrench,
@@ -460,6 +464,7 @@
   let activeWorldBookEntryId = '';
   let worldBookEntryQuery = '';
   let worldBookSortMode = 'order-desc';
+  let worldBookBindingCharacterId = '';
   let openingPreviewCharacterId = '';
   let zoomedAvatar: ZoomedAvatar | null = null;
   let profileQuery = '';
@@ -549,6 +554,9 @@
   $: activeCharacterStats = characterStats(activeCharacter);
   $: createCharacterStats = characterCreateStats();
   $: activeWorldBook = worldBooks.find((worldBook) => worldBook.id === activeWorldBookId);
+  $: worldBookBindingCharacter = characters.find((character) => character.id === worldBookBindingCharacterId);
+  $: worldBookBoundCharacters = characters.filter((character) => (activeWorldBook ? isWorldBookBoundToCharacter(character, activeWorldBook.id) : false));
+  $: worldBookEnabledCharacters = characters.filter((character) => (activeWorldBook ? isWorldBookEnabledForCharacter(character, activeWorldBook.id) : false));
   $: filteredWorldBookEntries = filterWorldBookEntries(worldBookDraftEntries, worldBookEntryQuery, worldBookSortMode);
   $: activeWorldBookEntry = worldBookDraftEntries.find((entry) => entry.id === activeWorldBookEntryId);
   $: activePersona = personas.find((persona) => persona.id === activePersonaId);
@@ -608,6 +616,9 @@
   }
   $: if (activeWorldBookId !== worldBookDraftId) {
     loadWorldBookDraft(activeWorldBook);
+  }
+  $: if (activeWorldBook && (!worldBookBindingCharacterId || !characters.some((character) => character.id === worldBookBindingCharacterId))) {
+    worldBookBindingCharacterId = activeCharacterId || characters[0]?.id || '';
   }
   $: if (worldBookDraftEntries.length && !worldBookDraftEntries.some((entry) => entry.id === activeWorldBookEntryId)) {
     activeWorldBookEntryId = worldBookDraftEntries[0].id;
@@ -940,6 +951,7 @@
     await refreshConversations({ reset: true });
     activeProfileId ||= profiles[0]?.id ?? '';
     activeCharacterId ||= characters[0]?.id ?? '';
+    worldBookBindingCharacterId ||= activeCharacterId || characters[0]?.id || '';
     activePersonaId ||= personas.find((persona) => persona.isDefault)?.id ?? personas[0]?.id ?? '';
     if (!activeWorldBookId || !worldBooks.some((worldBook) => worldBook.id === activeWorldBookId)) {
       activeWorldBookId = worldBooks[0]?.id ?? '';
@@ -974,11 +986,47 @@
     return parts.join(' · ') || t('profile.noSamplerDetails');
   }
 
+  function normalizedWorldBookBindingsForCharacter(character?: Character) {
+    const bindings = new Map<string, { worldBookId: string; enabled: boolean; primary: boolean }>();
+    for (const id of character?.worldBookIds ?? []) {
+      if (!id || bindings.has(id)) continue;
+      bindings.set(id, { worldBookId: id, enabled: true, primary: false });
+    }
+    for (const binding of character?.worldBookBindings ?? []) {
+      if (!binding.worldBookId) continue;
+      bindings.set(binding.worldBookId, {
+        worldBookId: binding.worldBookId,
+        enabled: binding.enabled !== false,
+        primary: binding.primary === true
+      });
+    }
+    if (character?.characterBook?.id && !bindings.has(character.characterBook.id) && character.worldBookBindings === undefined) {
+      bindings.set(character.characterBook.id, {
+        worldBookId: character.characterBook.id,
+        enabled: true,
+        primary: true
+      });
+    }
+    return [...bindings.values()];
+  }
+
+  function worldBookBindingForCharacter(character: Character | undefined, worldBookId: string) {
+    return normalizedWorldBookBindingsForCharacter(character).find((binding) => binding.worldBookId === worldBookId);
+  }
+
+  function isWorldBookBoundToCharacter(character: Character | undefined, worldBookId: string) {
+    return Boolean(worldBookBindingForCharacter(character, worldBookId));
+  }
+
+  function isWorldBookEnabledForCharacter(character: Character | undefined, worldBookId: string) {
+    const binding = worldBookBindingForCharacter(character, worldBookId);
+    return Boolean(binding && binding.enabled !== false);
+  }
+
   function boundWorldBooksForCharacter(character?: Character) {
     if (!character) return [];
-    const ids = new Set(character.worldBookIds ?? []);
-    if (character.characterBook?.id) ids.add(character.characterBook.id);
-    return worldBooks.filter((worldBook) => ids.has(worldBook.id) || worldBook.metadata?.characterId === character.id);
+    const ids = new Set(normalizedWorldBookBindingsForCharacter(character).map((binding) => binding.worldBookId));
+    return worldBooks.filter((worldBook) => ids.has(worldBook.id) || (!character.worldBookBindings?.length && worldBook.metadata?.characterId === character.id));
   }
 
   function characterAvatarUrl(character?: Character): string {
@@ -1153,8 +1201,16 @@
   }
 
   function worldBookLine(worldBook: WorldBook) {
+    const bound = characters.filter((character) => isWorldBookBoundToCharacter(character, worldBook.id));
+    const enabled = bound.filter((character) => isWorldBookEnabledForCharacter(character, worldBook.id));
     if (worldBook.metadata?.source === 'character-card') {
-      return t('worldbook.boundToCharacter', { count: worldBook.entries.length, character: worldBook.metadata.characterName ?? t('common.character') });
+      const characterLabel = bound.length
+        ? t('worldbook.boundCharacterSummary', { enabled: enabled.length, total: bound.length })
+        : t('worldbook.boundToCharacter', { count: worldBook.entries.length, character: worldBook.metadata.characterName ?? t('common.character') });
+      return `${t('worldbook.entries', { count: worldBook.entries.length })} · ${characterLabel}`;
+    }
+    if (bound.length) {
+      return `${t('worldbook.entries', { count: worldBook.entries.length })} · ${t('worldbook.boundCharacterSummary', { enabled: enabled.length, total: bound.length })}`;
     }
     return t('worldbook.entries', { count: worldBook.entries.length });
   }
@@ -1311,6 +1367,76 @@
   function moveWorldBookEntryOrder(entry: WorldBookEntry | undefined, delta: number) {
     if (!entry) return;
     updateWorldBookEntry(entry.id, { order: Math.max(0, entry.order + delta) });
+  }
+
+  async function saveCharacterWorldBookBindings(character: Character, bindings: Array<{ worldBookId: string; enabled: boolean; primary: boolean }>) {
+    const unique = new Map<string, { worldBookId: string; enabled: boolean; primary: boolean }>();
+    for (const binding of bindings) {
+      if (!binding.worldBookId) continue;
+      unique.set(binding.worldBookId, {
+        worldBookId: binding.worldBookId,
+        enabled: binding.enabled !== false,
+        primary: binding.primary === true
+      });
+    }
+    const nextBindings = [...unique.values()];
+    status = t('status.saving');
+    const saved = await fetchJson<Character>('/api/characters', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...character,
+        worldBookIds: nextBindings.map((binding) => binding.worldBookId),
+        worldBookBindings: nextBindings,
+        updatedAt: Date.now()
+      })
+    });
+    characters = characters.map((item) => (item.id === saved.id ? saved : item));
+    if (activeCharacterId === saved.id) {
+      loadCharacterDraft(saved);
+    }
+    status = t('status.ready');
+    return saved;
+  }
+
+  async function bindWorldBookToCharacter(character: Character | undefined = worldBookBindingCharacter, worldBook: WorldBook | undefined = activeWorldBook) {
+    if (!character || !worldBook) return;
+    const bindings = normalizedWorldBookBindingsForCharacter(character);
+    const current = bindings.find((binding) => binding.worldBookId === worldBook.id);
+    const next = current
+      ? bindings.map((binding) => (binding.worldBookId === worldBook.id ? { ...binding, enabled: true } : binding))
+      : [
+          ...bindings,
+          {
+            worldBookId: worldBook.id,
+            enabled: true,
+            primary: character.characterBook?.id === worldBook.id
+          }
+        ];
+    await saveCharacterWorldBookBindings(character, next);
+  }
+
+  async function setWorldBookBindingEnabled(character: Character | undefined, worldBook: WorldBook | undefined, enabled: boolean) {
+    if (!character || !worldBook) return;
+    const bindings = normalizedWorldBookBindingsForCharacter(character);
+    const current = bindings.find((binding) => binding.worldBookId === worldBook.id);
+    const next = current
+      ? bindings.map((binding) => (binding.worldBookId === worldBook.id ? { ...binding, enabled } : binding))
+      : [
+          ...bindings,
+          {
+            worldBookId: worldBook.id,
+            enabled,
+            primary: character.characterBook?.id === worldBook.id
+          }
+        ];
+    await saveCharacterWorldBookBindings(character, next);
+  }
+
+  async function unbindWorldBookFromCharacter(character: Character | undefined, worldBook: WorldBook | undefined) {
+    if (!character || !worldBook) return;
+    const bindings = normalizedWorldBookBindingsForCharacter(character).filter((binding) => binding.worldBookId !== worldBook.id);
+    await saveCharacterWorldBookBindings(character, bindings);
   }
 
   function regexScriptSurface(script: RegexScript) {
@@ -2777,6 +2903,7 @@
     if (!activeCharacter) return;
     status = t('status.saving');
     const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, characterBook: _characterBook, ...rest } = structuredClone(activeCharacter);
+    const worldBookBindings = normalizedWorldBookBindingsForCharacter(activeCharacter);
     const character = await fetchJson<Character>('/api/characters', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2784,7 +2911,8 @@
         ...rest,
         name: t('profile.copySuffix', { name: activeCharacter.name }),
         favorite: false,
-        worldBookIds: boundWorldBooksForCharacter(activeCharacter).map((worldBook) => worldBook.id)
+        worldBookIds: worldBookBindings.map((binding) => binding.worldBookId),
+        worldBookBindings
       })
     });
     characters = [...characters, character];
@@ -3704,13 +3832,35 @@
                   {#if activeCharacterWorldBooks.length}
                     <div class="character-lore-list">
                       {#each activeCharacterWorldBooks as worldBook}
-                        <button type="button" on:click={() => { activeWorldBookId = worldBook.id; activeView = 'worldbooks'; activeDrawer = 'worldbooks'; }}>
-                          <BookOpen size={16} />
-                          <span>
-                            <strong>{worldBook.name}</strong>
-                            <small>{t('worldbook.entries', { count: worldBook.entries.length })} · {metadataSourceLabel(worldBook.metadata?.source)}</small>
-                          </span>
-                        </button>
+                        {@const binding = worldBookBindingForCharacter(activeCharacter, worldBook.id)}
+                        <article class:disabled={binding?.enabled === false}>
+                          <button type="button" on:click={() => { activeWorldBookId = worldBook.id; activeView = 'worldbooks'; activeDrawer = 'worldbooks'; worldBookBindingCharacterId = activeCharacter?.id ?? ''; }}>
+                            <BookOpen size={16} />
+                            <span>
+                              <strong>{worldBook.name}</strong>
+                              <small>
+                                {t('worldbook.entries', { count: worldBook.entries.length })} · {metadataSourceLabel(worldBook.metadata?.source)} · {binding?.enabled === false ? t('worldbook.bindingDisabled') : t('worldbook.bindingEnabled')}
+                              </small>
+                            </span>
+                          </button>
+                          <div class="character-lore-actions">
+                            <button
+                              type="button"
+                              title={binding?.enabled === false ? t('worldbook.enableForCharacter') : t('worldbook.disableForCharacter')}
+                              aria-label={binding?.enabled === false ? t('worldbook.enableForCharacter') : t('worldbook.disableForCharacter')}
+                              on:click={() => setWorldBookBindingEnabled(activeCharacter, worldBook, binding?.enabled === false)}
+                            >
+                              {#if binding?.enabled === false}
+                                <PowerOff size={14} />
+                              {:else}
+                                <Power size={14} />
+                              {/if}
+                            </button>
+                            <button type="button" title={t('worldbook.unbind')} aria-label={t('worldbook.unbind')} on:click={() => unbindWorldBookFromCharacter(activeCharacter, worldBook)}>
+                              <Unlink size={14} />
+                            </button>
+                          </div>
+                        </article>
                       {/each}
                     </div>
                   {:else}
@@ -3804,6 +3954,7 @@
 
             <div class="worldbook-list">
               {#each worldBooks as worldBook}
+                {@const boundCount = characters.filter((character) => isWorldBookBoundToCharacter(character, worldBook.id)).length}
                 <button
                   class="worldbook-row"
                   class:active={worldBook.id === activeWorldBookId}
@@ -3814,8 +3965,8 @@
                     <strong>{worldBook.name}</strong>
                     <small>{worldBookLine(worldBook)}</small>
                   </span>
-                  {#if worldBook.metadata?.source === 'character-card'}
-                    <em>{t('worldbook.bound')}</em>
+                  {#if boundCount}
+                    <em>{t('worldbook.boundCount', { count: boundCount })}</em>
                   {/if}
                 </button>
               {:else}
@@ -3855,6 +4006,83 @@
                   {/if}
                 </div>
               </div>
+
+              <section class="worldbook-binding-panel" aria-label={t('worldbook.binding')}>
+                <header>
+                  <div>
+                    <strong>{t('worldbook.binding')}</strong>
+                    <span>{t('worldbook.bindingStats', { enabled: worldBookEnabledCharacters.length, total: worldBookBoundCharacters.length })}</span>
+                  </div>
+                  <select bind:value={worldBookBindingCharacterId} aria-label={t('worldbook.selectCharacter')}>
+                    {#each characters as character}
+                      <option value={character.id}>{character.name}</option>
+                    {/each}
+                  </select>
+                </header>
+                {#if worldBookBindingCharacter}
+                  {@const selectedBinding = worldBookBindingForCharacter(worldBookBindingCharacter, activeWorldBook.id)}
+                  <div class="worldbook-binding-selected">
+                    <span class="character-avatar-small compact">
+                      {#if characterAvatarUrl(worldBookBindingCharacter)}
+                        <img src={characterAvatarUrl(worldBookBindingCharacter)} alt={t('chat.avatarAlt', { name: worldBookBindingCharacter.name })} />
+                      {:else}
+                        <span>{characterInitials(worldBookBindingCharacter)}</span>
+                      {/if}
+                    </span>
+                    <div>
+                      <strong>{worldBookBindingCharacter.name}</strong>
+                      <small>
+                        {selectedBinding
+                          ? selectedBinding.enabled !== false
+                            ? t('worldbook.bindingEnabled')
+                            : t('worldbook.bindingDisabled')
+                          : t('worldbook.notBound')}
+                      </small>
+                    </div>
+                    <div class="worldbook-binding-actions">
+                      {#if selectedBinding}
+                        <button
+                          class="tool-button"
+                          type="button"
+                          on:click={() => setWorldBookBindingEnabled(worldBookBindingCharacter, activeWorldBook, selectedBinding.enabled === false)}
+                          title={selectedBinding.enabled !== false ? t('worldbook.disableForCharacter') : t('worldbook.enableForCharacter')}
+                          aria-label={selectedBinding.enabled !== false ? t('worldbook.disableForCharacter') : t('worldbook.enableForCharacter')}
+                        >
+                          {#if selectedBinding.enabled !== false}
+                            <Power size={16} />
+                          {:else}
+                            <PowerOff size={16} />
+                          {/if}
+                        </button>
+                        <button class="tool-button danger" type="button" on:click={() => unbindWorldBookFromCharacter(worldBookBindingCharacter, activeWorldBook)} title={t('worldbook.unbind')} aria-label={t('worldbook.unbind')}>
+                          <Unlink size={16} />
+                        </button>
+                      {:else}
+                        <button class="secondary" type="button" on:click={() => bindWorldBookToCharacter(worldBookBindingCharacter, activeWorldBook)}>
+                          <Link2 size={16} />{t('worldbook.bindToCharacter')}
+                        </button>
+                      {/if}
+                    </div>
+                  </div>
+                  <div class="worldbook-binding-list" aria-label={t('worldbook.boundCharacters')}>
+                    {#each characters as character}
+                      {@const binding = worldBookBindingForCharacter(character, activeWorldBook.id)}
+                      <button
+                        type="button"
+                        class:active={character.id === worldBookBindingCharacterId}
+                        class:enabled={binding?.enabled !== false && Boolean(binding)}
+                        class:disabled={binding?.enabled === false}
+                        on:click={() => (worldBookBindingCharacterId = character.id)}
+                      >
+                        <span>{character.name}</span>
+                        <small>{binding ? (binding.enabled !== false ? t('common.on') : t('common.off')) : t('worldbook.notBound')}</small>
+                      </button>
+                    {/each}
+                  </div>
+                {:else}
+                  <div class="drawer-empty compact">{t('worldbook.noCharacters')}</div>
+                {/if}
+              </section>
 
               <div class="worldbook-entry-toolbar">
                 <input class="profile-search" bind:value={worldBookEntryQuery} placeholder={t('worldbook.searchEntries')} aria-label={t('worldbook.searchEntries')} />
@@ -6722,28 +6950,62 @@
     gap: 8px;
   }
 
-  .character-lore-list button {
+  .character-lore-list article {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #dfe3dc;
+    border-radius: 8px;
+    background: #fff;
+    padding: 6px;
+  }
+
+  .character-lore-list article.disabled {
+    background: #fafafa;
+    opacity: 0.74;
+  }
+
+  .character-lore-list article > button:first-child {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 9px;
-    border: 1px solid #dfe3dc;
-    border-radius: 8px;
-    background: #fff;
+    min-height: 46px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
     color: #202823;
-    padding: 10px;
+    padding: 8px;
     text-align: left;
   }
 
-  .character-lore-list button:hover {
+  .character-lore-list article:hover {
     border-color: #9dc7ad;
     background: #edf6f0;
   }
 
-  .character-lore-list button span {
+  .character-lore-list article > button:first-child span {
     display: grid;
     min-width: 0;
     gap: 3px;
+  }
+
+  .character-lore-actions {
+    display: flex;
+    gap: 4px;
+  }
+
+  .character-lore-actions button {
+    display: inline-grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid #d9ddd7;
+    border-radius: 7px;
+    background: #fff;
+    color: #47534c;
+    padding: 0;
   }
 
   .character-source-panel {
@@ -6855,6 +7117,9 @@
   .worldbook-editor-header span,
   .worldbook-source span,
   .worldbook-source small,
+  .worldbook-binding-panel span,
+  .worldbook-binding-panel small,
+  .worldbook-binding-list small,
   .worldbook-entry-row small,
   .worldbook-entry-editor-head span,
   .worldbook-entry-fields span {
@@ -6873,7 +7138,7 @@
 
   .worldbook-editor {
     display: grid;
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto minmax(0, 1fr);
     gap: 12px;
     min-height: 0;
     overflow: hidden;
@@ -6928,6 +7193,109 @@
     border-radius: 8px;
     background: #fbfcfa;
     padding: 8px 10px;
+  }
+
+  .worldbook-binding-panel {
+    display: grid;
+    gap: 10px;
+    border: 1px solid #e0e4df;
+    border-radius: 8px;
+    background: #fbfcfa;
+    padding: 10px;
+  }
+
+  .worldbook-binding-panel header,
+  .worldbook-binding-selected {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .worldbook-binding-panel header > div,
+  .worldbook-binding-selected > div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .worldbook-binding-panel select {
+    min-width: 180px;
+    min-height: 36px;
+    border-radius: 7px;
+    padding: 7px 9px;
+    font-size: 13px;
+  }
+
+  .worldbook-binding-selected {
+    justify-content: flex-start;
+    border: 1px solid #e2e6e1;
+    border-radius: 8px;
+    background: #fff;
+    padding: 8px;
+  }
+
+  .character-avatar-small.compact {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 42px;
+    border-radius: 7px;
+    font-size: 13px;
+  }
+
+  .worldbook-binding-actions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .worldbook-binding-actions .secondary {
+    min-height: 34px;
+    padding: 0 10px;
+  }
+
+  .tool-button.danger,
+  .character-lore-actions button:last-child {
+    border-color: #ead0cc;
+    color: #8d2f26;
+  }
+
+  .worldbook-binding-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    gap: 6px;
+  }
+
+  .worldbook-binding-list button {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+    border: 1px solid #dfe3dc;
+    border-radius: 7px;
+    background: #fff;
+    color: #26332c;
+    padding: 7px 8px;
+    text-align: left;
+  }
+
+  .worldbook-binding-list button.active {
+    border-color: #8fbea2;
+    box-shadow: 0 0 0 2px rgb(143 190 162 / 18%);
+  }
+
+  .worldbook-binding-list button.enabled {
+    background: #edf6f0;
+  }
+
+  .worldbook-binding-list button.disabled {
+    background: #f7f4f1;
+  }
+
+  .worldbook-binding-list span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .worldbook-entry-toolbar {

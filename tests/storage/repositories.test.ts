@@ -115,6 +115,29 @@ describe('storage repositories', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('continues an assistant message by appending to the active leaf', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const repository = new ConversationRepository(db, sqlite);
+
+    const conversation = repository.save(createConversation({ title: 'Continue chat' }));
+    repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Keep going.' }));
+    const assistant = repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'assistant', content: 'First part' }));
+
+    const loaded = repository.appendToMessage(conversation.id, assistant.id, ' and second part.', 'thoughts');
+    expect(loaded?.messages.map((message) => message.content)).toEqual(['Keep going.', 'First part and second part.']);
+    expect(loaded?.messages.at(-1)?.thinking).toBe('thoughts');
+    expect(loaded?.nodeCount).toBe(2);
+    expect(loaded?.branchCount).toBe(0);
+    expect(loaded?.activeLeafId).toBe(assistant.id);
+    expect(repository.getMessageNode(assistant.id)?.content).toBe('First part and second part.');
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('can focus an exact historical node without restoring its subtree', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
     const sqlite = new Database(path.join(dir, 'test.db'));

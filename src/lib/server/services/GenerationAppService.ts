@@ -17,6 +17,7 @@ export type GenerateInput = {
   personaId?: string;
   message?: string;
   regenerateNodeId?: string;
+  continueNodeId?: string;
   dryRun?: boolean;
 };
 
@@ -39,14 +40,27 @@ export class GenerationAppService {
 
     const existingConversation = input.conversationId ? this.context.conversations.get(input.conversationId) : undefined;
     const regenerateNode = input.regenerateNodeId ? this.context.conversations.getMessageNode(input.regenerateNodeId) : undefined;
+    const continueNode = input.continueNodeId ? this.context.conversations.getMessageNode(input.continueNodeId) : undefined;
+    if (input.regenerateNodeId && input.continueNodeId) {
+      throw new AppError('Regenerate and continue cannot be used together.', 400, 'generation_mode_conflict');
+    }
     if (input.regenerateNodeId && (!regenerateNode || regenerateNode.kind !== 'message' || regenerateNode.role !== 'assistant')) {
       throw new AppError('Regeneration target must be an assistant message.', 400, 'regenerate_target_invalid');
+    }
+    if (input.continueNodeId && (!continueNode || continueNode.kind !== 'message' || continueNode.role !== 'assistant')) {
+      throw new AppError('Continuation target must be an assistant message.', 400, 'continue_target_invalid');
     }
     if (regenerateNode && regenerateNode.conversationId !== input.conversationId) {
       throw new AppError('Regeneration target does not belong to the requested conversation.', 400, 'regenerate_conversation_mismatch');
     }
+    if (continueNode && continueNode.conversationId !== input.conversationId) {
+      throw new AppError('Continuation target does not belong to the requested conversation.', 400, 'continue_conversation_mismatch');
+    }
+    if (continueNode && existingConversation?.activeLeafId !== continueNode.id) {
+      throw new AppError('Continuation target must be the active leaf.', 400, 'continue_target_not_active');
+    }
     const userInput = input.message?.trim() ?? '';
-    if (!regenerateNode && !userInput) {
+    if (!regenerateNode && !continueNode && !userInput) {
       throw new AppError('Message is required for generation.', 400, 'message_required');
     }
     const defaultPersona = this.context.personas.getDefault();
@@ -93,11 +107,24 @@ export class GenerationAppService {
               metadata: node.metadata
             })
           )
+        : conversationId && continueNode
+          ? this.context.conversations.getPathNodesTo(conversationId, continueNode.id).map((node) =>
+              createMessage({
+                id: node.id,
+                conversationId: node.conversationId,
+                role: node.role ?? 'system',
+                name: node.speakerName,
+                content: node.content,
+                thinking: node.thinking,
+                createdAt: node.createdAt,
+                metadata: node.metadata
+              })
+            )
         : conversationId
           ? this.context.conversations.listMessages(conversationId)
           : [];
     const openingMessage =
-      !regenerateNode && character?.firstMessage && existingMessages.length === 0
+      !regenerateNode && !continueNode && character?.firstMessage && existingMessages.length === 0
         ? createMessage({
             conversationId,
             role: 'assistant',
@@ -109,7 +136,7 @@ export class GenerationAppService {
             name: character.name
           })
         : undefined;
-    const userMessage = regenerateNode
+    const userMessage = regenerateNode || continueNode
       ? undefined
       : createMessage({
           conversationId,
@@ -198,10 +225,15 @@ export class GenerationAppService {
 
     if (assistantText || assistantThinking) {
       if (!conversationId) throw new AppError('Assistant response has no conversation target.', 500, 'conversation_missing');
-      this.context.conversations.appendMessage(
-        createMessage({ conversationId, role: 'assistant', name: character?.name, content: assistantText, thinking: assistantThinking || undefined }),
-        regenerateNode?.parentId ?? undefined
-      );
+      if (continueNode) {
+        const continued = this.context.conversations.appendToMessage(conversationId, continueNode.id, assistantText, assistantThinking || undefined);
+        if (!continued) throw new AppError('Could not append continuation.', 500, 'continue_save_failed');
+      } else {
+        this.context.conversations.appendMessage(
+          createMessage({ conversationId, role: 'assistant', name: character?.name, content: assistantText, thinking: assistantThinking || undefined }),
+          regenerateNode?.parentId ?? undefined
+        );
+      }
     }
 
     const savedConversation = conversationId ? this.context.conversations.get(conversationId) : undefined;

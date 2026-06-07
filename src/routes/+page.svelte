@@ -18,8 +18,10 @@
     ChevronRight,
     ClipboardList,
     CircleStop,
+    CornerDownRight,
     Copy,
     Download,
+    Eraser,
     FileInput,
     GitBranch,
     GripHorizontal,
@@ -40,6 +42,7 @@
     Type,
     Upload,
     UserRound,
+    Wrench,
     SquarePen,
     X
   } from '@lucide/svelte';
@@ -382,6 +385,7 @@
   let ConversationTreeDockComponent: ConversationTreeDockComponent | null = null;
   let messages: ChatMessage[] = [];
   let input = '';
+  let composerToolsOpen = false;
   let status = 'Ready';
   let generationAbortController: AbortController | null = null;
   let isGenerating = false;
@@ -543,6 +547,14 @@
   $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId) ?? (activeConversationRecord?.id === activeConversationId ? activeConversationRecord : undefined);
   $: conversationGroups = groupConversations(conversations, showArchivedConversations);
   $: isGenerating = generationAbortController !== null;
+  $: activeLeafMessage = messages[messages.length - 1];
+  $: canContinueActiveLeaf =
+    Boolean(activeConversationId) &&
+    activeLeafMessage?.role === 'assistant' &&
+    Boolean(messageNodeId(activeLeafMessage)) &&
+    !isGenerating &&
+    !editingMessageSaving &&
+    !deletingMessageNode;
   $: drawerTitle =
     activeDrawer === 'chats'
       ? 'Chats'
@@ -1935,6 +1947,7 @@
     const content = input.trim();
     if (!content) return;
     input = '';
+    composerToolsOpen = false;
     inspector = '';
     const conversationId = await ensureConversation();
     messages = [
@@ -1951,7 +1964,35 @@
     });
   }
 
-  async function streamGeneration(body: Record<string, unknown>) {
+  function clearComposerInput() {
+    input = '';
+    composerToolsOpen = false;
+  }
+
+  async function continueActiveLeaf() {
+    const target = activeLeafMessage;
+    const nodeId = target ? messageNodeId(target) : '';
+    if (!target || !canContinueActiveLeaf || !nodeId || !activeConversationId) return;
+    composerToolsOpen = false;
+    inspector = '';
+    status = 'Continuing';
+    await streamGeneration(
+      {
+        conversationId: activeConversationId,
+        profileId: activeProfileId || undefined,
+        characterId: activeCharacterId || undefined,
+        personaId: activePersonaId || undefined,
+        continueNodeId: nodeId
+      },
+      { preserveAssistantOnError: true }
+    );
+  }
+
+  function showAssistantStreamError(content: string, preserveAssistantOnError = false) {
+    if (!preserveAssistantOnError) replaceAssistantDraft(content);
+  }
+
+  async function streamGeneration(body: Record<string, unknown>, options: { preserveAssistantOnError?: boolean } = {}) {
     status = 'Generating';
     const controller = new AbortController();
     generationAbortController = controller;
@@ -1967,7 +2008,7 @@
 
       if (!response.body || !response.ok) {
         const errorMessage = await responseErrorMessage(response);
-        replaceAssistantDraft(`Provider error: ${errorMessage}`);
+        showAssistantStreamError(`Provider error: ${errorMessage}`, options.preserveAssistantOnError);
         status = 'Provider error';
         return;
       }
@@ -1981,7 +2022,7 @@
         if (event.type === 'text') appendAssistantDraftText(event.text ?? '');
         if (event.type === 'done') completedConversationId = event.conversationId ?? completedConversationId;
         if (event.type === 'error') {
-          replaceAssistantDraft(`Generation error: ${event.text ?? 'Unknown error'}`);
+          showAssistantStreamError(`Generation error: ${event.text ?? 'Unknown error'}`, options.preserveAssistantOnError);
           status = 'Generation error';
         }
       };
@@ -2008,7 +2049,7 @@
         removeEmptyAssistantDraft();
         status = 'Stopped';
       } else {
-        replaceAssistantDraft(`Generation error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        showAssistantStreamError(`Generation error: ${error instanceof Error ? error.message : 'Unknown error'}`, options.preserveAssistantOnError);
         status = 'Generation error';
       }
     } finally {
@@ -3044,24 +3085,57 @@
     </div>
 
     <form class="composer" on:submit|preventDefault={sendMessage}>
-      <textarea bind:value={input} rows="3" placeholder="Message"></textarea>
-      <button
-        class="composer-action"
-        class:stopping={isGenerating}
-        type={isGenerating ? 'button' : 'submit'}
-        title={isGenerating ? 'Stop generation' : 'Send message'}
-        aria-label={isGenerating ? 'Stop generation' : 'Send message'}
-        disabled={!isGenerating && !input.trim()}
-        on:click={() => {
-          if (isGenerating) stopGeneration();
-        }}
-      >
-        {#if isGenerating}
-          <CircleStop size={20} />
-        {:else}
-          <Send size={20} />
-        {/if}
-      </button>
+      <div class="composer-dock">
+        <div class="composer-toolbox">
+          <button
+            class="composer-toolbox-trigger"
+            class:active={composerToolsOpen}
+            type="button"
+            title="Tools"
+            aria-label="Tools"
+            aria-expanded={composerToolsOpen}
+            on:click={() => (composerToolsOpen = !composerToolsOpen)}
+          >
+            <Wrench size={18} />
+          </button>
+          {#if composerToolsOpen}
+            <div class="composer-menu" role="menu" aria-label="Composer tools">
+              <button type="button" role="menuitem" disabled={!canContinueActiveLeaf} on:click={continueActiveLeaf}>
+                <CornerDownRight size={16} />
+                <span>
+                  <strong>Continue</strong>
+                  <small>Extend last reply</small>
+                </span>
+              </button>
+              <button type="button" role="menuitem" disabled={!input.trim()} on:click={clearComposerInput}>
+                <Eraser size={16} />
+                <span>
+                  <strong>Clear</strong>
+                  <small>Discard draft</small>
+                </span>
+              </button>
+            </div>
+          {/if}
+        </div>
+        <textarea class="composer-input" bind:value={input} rows="1" placeholder="Message" aria-label="Message"></textarea>
+        <button
+          class="composer-action"
+          class:stopping={isGenerating}
+          type={isGenerating ? 'button' : 'submit'}
+          title={isGenerating ? 'Stop generation' : 'Send message'}
+          aria-label={isGenerating ? 'Stop generation' : 'Send message'}
+          disabled={!isGenerating && !input.trim()}
+          on:click={() => {
+            if (isGenerating) stopGeneration();
+          }}
+        >
+          {#if isGenerating}
+            <CircleStop size={20} />
+          {:else}
+            <Send size={20} />
+          {/if}
+        </button>
+      </div>
     </form>
 
     {#if conversationTreeLoading || conversationTreeSummary}
@@ -5398,29 +5472,145 @@
   }
 
   .composer {
-    display: grid;
-    grid-template-columns: minmax(0, 820px) auto;
+    display: flex;
     justify-content: center;
-    gap: 12px;
     border-top: 1px solid #dfe1dc;
-    padding: 14px 20px;
+    padding: 12px 20px 18px;
+    background: linear-gradient(180deg, rgb(245 246 244 / 72%), #fff 34%);
+  }
+
+  .composer-dock {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 8px;
+    width: min(100%, 880px);
+    border: 1px solid #d6ded5;
+    border-radius: 12px;
     background: #fff;
+    box-shadow:
+      0 12px 30px rgb(31 36 33 / 10%),
+      0 1px 0 rgb(31 36 33 / 4%);
+    padding: 8px;
   }
 
-  .composer textarea {
-    font-size: var(--app-chat-font-size);
-    line-height: 1.55;
+  .composer-toolbox {
+    position: relative;
+    display: grid;
   }
 
+  .composer-toolbox-trigger,
   .composer-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    align-self: stretch;
-    width: 52px;
-    min-height: 52px;
-    border: 1px solid #1c6b43;
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+  }
+
+  .composer-toolbox-trigger {
+    border: 1px solid #d7ded5;
+    background: #f7f9f6;
+    color: #435149;
+  }
+
+  .composer-toolbox-trigger:hover,
+  .composer-toolbox-trigger:focus-visible,
+  .composer-toolbox-trigger.active {
+    border-color: #a9c8b3;
+    background: #eaf6ee;
+    color: #174b32;
+    outline: 0;
+  }
+
+  .composer-menu {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 0;
+    z-index: 20;
+    display: grid;
+    width: 210px;
+    border: 1px solid #d8dfd6;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 16px 36px rgb(25 33 28 / 18%);
+    padding: 6px;
+  }
+
+  .composer-menu button {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    align-items: center;
+    gap: 9px;
+    min-height: 46px;
+    border: 0;
     border-radius: 8px;
+    background: transparent;
+    color: #2f3d35;
+    padding: 7px 9px;
+    text-align: left;
+  }
+
+  .composer-menu button:not(:disabled):hover,
+  .composer-menu button:not(:disabled):focus-visible {
+    background: #edf6f0;
+    color: #174b32;
+    outline: 0;
+  }
+
+  .composer-menu button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  .composer-menu span {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .composer-menu strong {
+    font-size: 13px;
+  }
+
+  .composer-menu small {
+    overflow: hidden;
+    color: #6b756e;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .composer-input {
+    min-height: 42px;
+    max-height: 38vh;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+    field-sizing: content;
+    font-size: var(--app-chat-font-size);
+    line-height: 1.55;
+    overflow: auto;
+    padding: 9px 6px;
+    resize: vertical;
+  }
+
+  .composer-input:focus {
+    outline: 0;
+  }
+
+  .composer-dock:has(.composer-input:focus) {
+    border-color: #9fc7aa;
+    box-shadow:
+      0 0 0 3px rgb(127 178 141 / 18%),
+      0 12px 30px rgb(31 36 33 / 10%);
+  }
+
+  .composer-action {
+    border: 1px solid #1c6b43;
     background: #1c6b43;
     color: #fff;
   }
@@ -7712,8 +7902,17 @@
     }
 
     .composer {
-      grid-template-columns: minmax(0, 1fr);
-      padding: 12px;
+      padding: 10px;
+    }
+
+    .composer-dock {
+      border-radius: 10px;
+      gap: 6px;
+      padding: 6px;
+    }
+
+    .composer-menu {
+      width: min(210px, calc(100vw - 84px));
     }
 
     .stage.tree-open {

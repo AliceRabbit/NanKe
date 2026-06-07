@@ -842,6 +842,55 @@ export class ConversationRepository {
     return this.getWithMessages(conversation.id);
   }
 
+  appendToMessage(conversationId: string, nodeId: string, content: string, thinking?: string): ConversationWithMessages | undefined {
+    const conversation = this.get(conversationId);
+    const source = this.getMessageNode(nodeId);
+    if (
+      !conversation ||
+      !source ||
+      source.conversationId !== conversationId ||
+      source.kind !== 'message' ||
+      source.status === 'deleted' ||
+      source.role !== 'assistant' ||
+      conversation.activeLeafId !== source.id ||
+      (!content && !thinking)
+    ) {
+      return undefined;
+    }
+
+    const now = Date.now();
+    const nextContent = `${source.content}${content}`;
+    const nextThinking = thinking ? `${source.thinking ?? ''}${thinking}` : source.thinking;
+    const node = messageNodeSchema.parse({
+      ...source,
+      content: nextContent,
+      thinking: nextThinking || undefined,
+      tokenEstimate: estimateStoredNodeTokens({ ...source, content: nextContent, thinking: nextThinking || undefined }),
+      metadata: {
+        ...source.metadata,
+        continuedAt: now
+      },
+      updatedAt: now
+    });
+    const updatedConversation = conversationSchema.parse({
+      ...conversation,
+      activeLeafId: node.id,
+      activeDepth: node.depth,
+      lastPreview: previewText(node.content),
+      revision: conversation.revision + 1,
+      updatedAt: now
+    });
+
+    const transaction = this.sqlite.transaction(() => {
+      this.insertNode(node);
+      if (node.parentId) this.updateAncestorsLastLeaf(node.parentId, node.id, now);
+      this.persistConversation(updatedConversation);
+    });
+    transaction();
+
+    return this.getWithMessages(conversation.id);
+  }
+
   setActiveLeaf(conversationId: string, leafId: string, options: ActiveLeafOptions = {}): ConversationWithMessages | undefined {
     const conversation = this.get(conversationId);
     const node = this.getMessageNode(leafId);

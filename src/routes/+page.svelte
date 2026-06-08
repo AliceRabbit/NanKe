@@ -224,6 +224,13 @@
   type ImportScope = 'character' | 'profile' | 'worldbook';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
   type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'settings' | 'import' | 'inspector' | null;
+  type WorldBookDeleteResult = {
+    deleted: boolean;
+    id: string;
+    affectedCharacterIds: string[];
+    removedCharacterBindings: number;
+    removedEmbeddedCharacterBooks: number;
+  };
   type AppFontFamily = 'system' | 'source-han-sans' | 'source-han-serif' | 'serif' | 'mono';
   type AppSettings = {
     fontFamily: AppFontFamily;
@@ -465,6 +472,7 @@
   let worldBookEntryQuery = '';
   let worldBookSortMode = 'order-desc';
   let worldBookBindingCharacterId = '';
+  let deletingWorldBook = false;
   let openingPreviewCharacterId = '';
   let zoomedAvatar: ZoomedAvatar | null = null;
   let profileQuery = '';
@@ -3036,6 +3044,40 @@
     loadWorldBookDraft(saved);
     status = t('status.ready');
   }
+
+  async function deleteActiveWorldBook() {
+    const worldBook = activeWorldBook;
+    if (!worldBook || deletingWorldBook) return;
+    const boundCount = characters.filter((character) => isWorldBookBoundToCharacter(character, worldBook.id)).length;
+    const confirmed = window.confirm(
+      t('worldbook.deleteConfirm', {
+        name: worldBook.name,
+        entries: worldBook.entries.length,
+        characters: boundCount
+      })
+    );
+    if (!confirmed) return;
+
+    deletingWorldBook = true;
+    status = t('status.deleting');
+    try {
+      const result = await fetchJson<WorldBookDeleteResult>(`/api/worldbooks?id=${encodeURIComponent(worldBook.id)}`, {
+        method: 'DELETE'
+      });
+      worldBooks = worldBooks.filter((item) => item.id !== result.id);
+      characters = await fetchJson<Character[]>('/api/characters');
+      activeWorldBookId = worldBooks[0]?.id ?? '';
+      loadWorldBookDraft(worldBooks.find((item) => item.id === activeWorldBookId));
+      status = t('worldbook.deleteDone', {
+        characters: result.affectedCharacterIds.length,
+        bindings: result.removedCharacterBindings
+      });
+    } catch (error) {
+      status = error instanceof Error ? error.message : t('worldbook.deleteFailed');
+    } finally {
+      deletingWorldBook = false;
+    }
+  }
 </script>
 
 <svelte:head>
@@ -3989,6 +4031,9 @@
                   </button>
                   <button class="tool-button" type="button" on:click={saveActiveWorldBook} title={t('worldbook.save')} aria-label={t('worldbook.save')}>
                     <Save size={16} />
+                  </button>
+                  <button class="tool-button danger" type="button" on:click={deleteActiveWorldBook} disabled={deletingWorldBook} title={t('worldbook.delete')} aria-label={t('worldbook.delete')}>
+                    <Trash2 size={16} />
                   </button>
                 </div>
               </header>

@@ -4,11 +4,13 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { describe, expect, it } from 'vitest';
+import { createCharacter } from '$lib/schemas/character';
 import { createConversation } from '$lib/schemas/conversation';
 import { createMessage } from '$lib/schemas/message';
 import { createUserPersona } from '$lib/schemas/user-persona';
+import { createWorldBook } from '$lib/schemas/worldbook';
 import { initializeDatabase } from '$lib/storage/db';
-import { ConversationRepository, UserPersonaRepository } from '$lib/storage/repositories';
+import { CharacterRepository, ConversationRepository, UserPersonaRepository, WorldBookRepository } from '$lib/storage/repositories';
 import * as schema from '$lib/storage/schema';
 
 describe('storage repositories', () => {
@@ -435,6 +437,46 @@ describe('storage repositories', () => {
     expect(repository.get(conversation.id)).toBeUndefined();
     expect(repository.getWithMessages(conversation.id)).toBeUndefined();
     expect(repository.delete(conversation.id)).toBe(false);
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('deletes world books and detaches character bindings', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const characters = new CharacterRepository(db);
+    const worldBooks = new WorldBookRepository(db);
+
+    const lore = worldBooks.save(createWorldBook({ id: 'lore', name: 'Lore' }));
+    const embedded = createWorldBook({ id: 'embedded-lore', name: 'Embedded Lore' });
+    const character = characters.save(
+      createCharacter({
+        name: 'Mira',
+        worldBookIds: [lore.id, 'shared-lore'],
+        worldBookBindings: [
+          { worldBookId: lore.id, enabled: true, primary: false },
+          { worldBookId: 'shared-lore', enabled: false, primary: false }
+        ],
+        characterBook: embedded
+      })
+    );
+
+    const deleted = worldBooks.delete(lore.id);
+    expect(deleted.deleted).toBe(true);
+    expect(deleted.affectedCharacterIds).toEqual([character.id]);
+    expect(worldBooks.get(lore.id)).toBeUndefined();
+    expect(characters.get(character.id)?.worldBookIds).toEqual(['shared-lore']);
+    expect(characters.get(character.id)?.worldBookBindings).toEqual([{ worldBookId: 'shared-lore', enabled: false, primary: false }]);
+
+    const embeddedDeleted = worldBooks.delete(embedded.id);
+    expect(embeddedDeleted.deleted).toBe(true);
+    expect(embeddedDeleted.removedEmbeddedCharacterBooks).toBe(1);
+    expect(worldBooks.get(embedded.id)).toBeUndefined();
+    expect(characters.get(character.id)?.characterBook).toBeUndefined();
+    expect(worldBooks.delete('missing-lore').deleted).toBe(false);
 
     sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });

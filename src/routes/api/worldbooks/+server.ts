@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import { normalizeWorldBookBindings } from '$lib/schemas/character';
 import { createWorldBook } from '$lib/schemas/worldbook';
 import { createRequestContext } from '$lib/server/request-context';
-import { errorResponse } from '$lib/server/errors';
+import { AppError, errorResponse } from '$lib/server/errors';
 
 export function GET() {
   try {
@@ -36,6 +36,18 @@ export async function POST({ request }) {
       }
     }
     return json(saved, { status: 201 });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export function DELETE({ url }) {
+  try {
+    const id = url.searchParams.get('id');
+    if (!id) throw new AppError('World book id is required.', 400, 'worldbook_delete_required');
+    const result = createRequestContext().worldBooks.delete(id);
+    if (!result.deleted) throw new AppError('World book not found.', 404, 'worldbook_not_found');
+    return json(result);
   } catch (error) {
     return errorResponse(error);
   }

@@ -1,0 +1,26 @@
+:root {
+  --nanke-font-sans:
+    Inter, "Noto Sans SC", "Source Han Sans SC", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --nanke-font-serif:
+    "Noto Serif SC", "Source Han Serif SC", ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  --nanke-page: #f5f6f4;
+  --nanke-surface: #ffffff;
+  --nanke-surface-muted: #f8faf7;
+  --nanke-surface-raised: #fbfcfa;
+  --nanke-ink: #1f2421;
+  --nanke-ink-muted: #68716b;
+  --nanke-ink-subtle: #89928c;
+  --nanke-border: #d8ddd6;
+  --nanke-border-strong: #b9c5bb;
+  --nanke-accent: #2f8a56;
+  --nanke-accent-strong: #256f44;
+  --nanke-accent-soft: #e8f4ed;
+  --nanke-focus: rgb(47 138 86 / 24%);
+  --nanke-danger: #a33227;
+  --nanke-danger-soft: #fff1ef;
+  --nanke-radius-sm: 6px;
+  --nanke-radius-md: 8px;
+  --nanke-shadow-field: 0 1px 0 rgb(31 36 33 / 3%);
+  --nanke-shadow-popover: 0 16px 34px rgb(32 50 41 / 16%);
+}

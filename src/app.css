@@ -1,0 +1,39 @@
+@import "tailwindcss";
+@import "./lib/ui/styles/tokens.css";
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    background: var(--nanke-page);
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    background: var(--nanke-page);
+    color: var(--nanke-ink);
+    font-family: var(--nanke-font-sans);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  ::selection {
+    background: rgb(58 132 84 / 22%);
+  }
+}

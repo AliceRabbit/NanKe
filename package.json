@@ -18,9 +18,12 @@
     "@lucide/svelte": "^1.17.0",
     "@xyflow/svelte": "^1.6.0",
     "better-sqlite3": "^12.10.0",
+    "bits-ui": "^2.18.1",
+    "clsx": "^2.1.1",
     "dompurify": "^3.4.7",
     "drizzle-orm": "^0.45.2",
     "marked": "^18.0.4",
+    "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -28,11 +31,13 @@
     "@sveltejs/adapter-node": "^5.5.4",
     "@sveltejs/kit": "^2.62.0",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@tailwindcss/vite": "^4.3.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.9.1",
     "drizzle-kit": "^0.31.10",
     "svelte": "^5.56.1",
     "svelte-check": "^4.5.0",
+    "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
     "vitest": "^4.1.8"

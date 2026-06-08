@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { applyRegexScripts, REGEX_PLACEMENT } from '$lib/core/regex';
   import { t } from '$lib/i18n';
+  import { RangeField, SecretField, SelectField, TextareaField, TextField } from '$lib/ui/components';
   import { renderMessageMarkdown } from '$lib/ui/markdown';
   import type { Component } from 'svelte';
   import type { ConversationTreeNode, ConversationTreeSummary } from '$lib/ui/features/conversation-tree/types';
@@ -4304,11 +4305,11 @@
         <div class="profile-workspace">
           <div class="profile-panel">
             <div class="preset-toolbar" aria-label={t('profile.presetTools')}>
-              <select aria-label={t('profile.selectedProfile')} bind:value={activeProfileId}>
+              <SelectField aria-label={t('profile.selectedProfile')} bind:value={activeProfileId}>
                 {#each profiles as profile}
                   <option value={profile.id}>{profile.name}</option>
                 {/each}
-              </select>
+              </SelectField>
               <div class="preset-actions">
                 <button class="tool-button" type="button" on:click={openPresetImport} title={t('profile.importPreset')} aria-label={t('profile.importPreset')}>
                   <Upload size={16} />
@@ -4357,7 +4358,7 @@
               </section>
             {/if}
 
-            <input class="profile-search" bind:value={profileQuery} placeholder={t('profile.search')} aria-label={t('profile.search')} />
+            <TextField class="profile-search" bind:value={profileQuery} placeholder={t('profile.search')} aria-label={t('profile.search')} />
           </div>
 
           {#if activeProfile}
@@ -4378,10 +4379,7 @@
               </div>
 
               <section class="provider-editor" aria-label={t('profile.providerSettings')}>
-                <label class="profile-name-field">
-                  <span>{t('common.name')}</span>
-                  <input bind:value={profileDraftName} placeholder={t('profile.presetName')} />
-                </label>
+                <TextField class="profile-name-field" label={t('common.name')} bind:value={profileDraftName} placeholder={t('profile.presetName')} />
 
                 <div class="provider-segment" aria-label={t('profile.providerType')}>
                   <button class:active={profileDraftProviderType === 'openai-compatible'} type="button" on:click={() => changeProfileProviderType('openai-compatible')}>
@@ -4395,17 +4393,12 @@
                 </div>
 
                 <div class="provider-config">
-                  <label>
-                    <span>{t('profile.model')}</span>
-                    <input bind:value={profileDraftProviderModel} placeholder={profileDraftProviderType === 'gemini' ? 'gemini-2.5-pro' : 'gpt-4o-mini'} />
-                  </label>
-                  <label>
-                    <span>{t('profile.endpoint')}</span>
-                    <input
-                      bind:value={profileDraftProviderEndpoint}
-                      placeholder={profileDraftProviderType === 'gemini' ? t('profile.optionalStreamUrl') : 'https://api.openai.com/v1'}
-                    />
-                  </label>
+                  <TextField label={t('profile.model')} bind:value={profileDraftProviderModel} placeholder={profileDraftProviderType === 'gemini' ? 'gemini-2.5-pro' : 'gpt-4o-mini'} />
+                  <TextField
+                    label={t('profile.endpoint')}
+                    bind:value={profileDraftProviderEndpoint}
+                    placeholder={profileDraftProviderType === 'gemini' ? t('profile.optionalStreamUrl') : 'https://api.openai.com/v1'}
+                  />
                 </div>
 
                 {#if profileDraftProviderType === 'gemini'}
@@ -4422,14 +4415,8 @@
                   </div>
                   {#if profileDraftVertexEnabled}
                     <div class="provider-config">
-                      <label>
-                        <span>{profileDraftVertexMode === 'oauth' ? t('profile.project') : t('profile.projectOptional')}</span>
-                        <input bind:value={profileDraftVertexProjectId} placeholder="project-id" />
-                      </label>
-                      <label>
-                        <span>{t('profile.location')}</span>
-                        <input bind:value={profileDraftVertexLocation} placeholder="us-central1" />
-                      </label>
+                      <TextField label={profileDraftVertexMode === 'oauth' ? t('profile.project') : t('profile.projectOptional')} bind:value={profileDraftVertexProjectId} placeholder="project-id" />
+                      <TextField label={t('profile.location')} bind:value={profileDraftVertexLocation} placeholder="us-central1" />
                     </div>
                   {/if}
                 {/if}
@@ -4441,10 +4428,7 @@
                       <span>{t('profile.bearerApiKey')}</span>
                     </div>
                     <div class="credential-grid single">
-                      <label>
-                        <span>{t('profile.apiKey')}</span>
-                        <input bind:value={profileDraftApiKey} type="password" autocomplete="off" placeholder="sk-..." />
-                      </label>
+                      <SecretField label={t('profile.apiKey')} bind:value={profileDraftApiKey} autocomplete="off" placeholder="sk-..." />
                     </div>
                     <div class="compatibility-strip" aria-label={t('profile.requestMode')}>
                       <button class:active={profileDraftOpenAICompatibility === 'strict-openai'} type="button" on:click={() => (profileDraftOpenAICompatibility = 'strict-openai')}>
@@ -4464,10 +4448,7 @@
                       <span>{t('profile.aiStudioKeyHint')}</span>
                     </div>
                     <div class="credential-grid single">
-                      <label>
-                        <span>{t('profile.apiKey')}</span>
-                        <input bind:value={profileDraftApiKey} type="password" autocomplete="off" placeholder="AIza..." />
-                      </label>
+                      <SecretField label={t('profile.apiKey')} bind:value={profileDraftApiKey} autocomplete="off" placeholder="AIza..." />
                     </div>
                   </div>
                 {:else}
@@ -4478,15 +4459,9 @@
                     </div>
                     <div class="credential-grid single">
                       {#if profileDraftVertexMode === 'express'}
-                        <label>
-                          <span>{t('profile.apiKey')}</span>
-                          <input bind:value={profileDraftVertexApiKey} type="password" autocomplete="off" placeholder="AIza..." />
-                        </label>
+                        <SecretField label={t('profile.apiKey')} bind:value={profileDraftVertexApiKey} autocomplete="off" placeholder="AIza..." />
                       {:else}
-                        <label>
-                          <span>{t('profile.accessToken')}</span>
-                          <input bind:value={profileDraftVertexAccessToken} type="password" autocomplete="off" placeholder="ya29..." />
-                        </label>
+                        <SecretField label={t('profile.accessToken')} bind:value={profileDraftVertexAccessToken} autocomplete="off" placeholder="ya29..." />
                       {/if}
                     </div>
                   </div>
@@ -4560,8 +4535,8 @@
                         </div>
                         {#if profileDraftGeminiThinkingMode === 'budget'}
                           <span class="sampler-control-body">
-                            <input class="sampler-range" type="range" min="0" max="32768" step="128" value={profileDraftGeminiThinkingBudget || '1024'} on:input={(event) => (profileDraftGeminiThinkingBudget = (event.currentTarget as HTMLInputElement).value)} />
-                            <input class="sampler-number" value={profileDraftGeminiThinkingBudget} inputmode="numeric" placeholder="1024" on:input={(event) => (profileDraftGeminiThinkingBudget = (event.currentTarget as HTMLInputElement).value)} />
+                            <RangeField min="0" max="32768" step="128" value={profileDraftGeminiThinkingBudget || '1024'} oninput={(event) => (profileDraftGeminiThinkingBudget = (event.currentTarget as HTMLInputElement).value)} />
+                            <TextField controlClass="sampler-number" value={profileDraftGeminiThinkingBudget} inputmode="numeric" placeholder="1024" oninput={(event) => (profileDraftGeminiThinkingBudget = (event.currentTarget as HTMLInputElement).value)} />
                           </span>
                         {/if}
                       </div>
@@ -4577,8 +4552,8 @@
                         <output>{profileDraftTemperature || '1'}</output>
                       </span>
                       <span class="sampler-control-body">
-                        <input class="sampler-range" type="range" min="0" max="2" step="0.01" value={profileDraftTemperature || '1'} on:input={(event) => (profileDraftTemperature = (event.currentTarget as HTMLInputElement).value)} />
-                        <input class="sampler-number" value={profileDraftTemperature} inputmode="decimal" placeholder="1" on:input={(event) => (profileDraftTemperature = (event.currentTarget as HTMLInputElement).value)} />
+                        <RangeField min="0" max="2" step="0.01" value={profileDraftTemperature || '1'} oninput={(event) => (profileDraftTemperature = (event.currentTarget as HTMLInputElement).value)} />
+                        <TextField controlClass="sampler-number" value={profileDraftTemperature} inputmode="decimal" placeholder="1" oninput={(event) => (profileDraftTemperature = (event.currentTarget as HTMLInputElement).value)} />
                       </span>
                     </label>
                   {/if}
@@ -4590,8 +4565,8 @@
                         <output>{profileDraftTopP || '1'}</output>
                       </span>
                       <span class="sampler-control-body">
-                        <input class="sampler-range" type="range" min="0" max="1" step="0.01" value={profileDraftTopP || '1'} on:input={(event) => (profileDraftTopP = (event.currentTarget as HTMLInputElement).value)} />
-                        <input class="sampler-number" value={profileDraftTopP} inputmode="decimal" placeholder="1" on:input={(event) => (profileDraftTopP = (event.currentTarget as HTMLInputElement).value)} />
+                        <RangeField min="0" max="1" step="0.01" value={profileDraftTopP || '1'} oninput={(event) => (profileDraftTopP = (event.currentTarget as HTMLInputElement).value)} />
+                        <TextField controlClass="sampler-number" value={profileDraftTopP} inputmode="decimal" placeholder="1" oninput={(event) => (profileDraftTopP = (event.currentTarget as HTMLInputElement).value)} />
                       </span>
                     </label>
                   {/if}
@@ -4603,8 +4578,8 @@
                         <output>{profileDraftTopK || t('reasoning.default')}</output>
                       </span>
                       <span class="sampler-control-body">
-                        <input class="sampler-range" type="range" min="1" max="200" step="1" value={profileDraftTopK || '40'} on:input={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
-                        <input class="sampler-number" value={profileDraftTopK} inputmode="numeric" placeholder={t('reasoning.default')} on:input={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
+                        <RangeField min="1" max="200" step="1" value={profileDraftTopK || '40'} oninput={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
+                        <TextField controlClass="sampler-number" value={profileDraftTopK} inputmode="numeric" placeholder={t('reasoning.default')} oninput={(event) => (profileDraftTopK = (event.currentTarget as HTMLInputElement).value)} />
                       </span>
                     </label>
                   {/if}
@@ -4616,8 +4591,8 @@
                         <output>{profileDraftMaxTokens || '512'}</output>
                       </span>
                       <span class="sampler-control-body">
-                        <input class="sampler-range" type="range" min="16" max={maxOutputTokenRange} step="16" value={profileDraftMaxTokens || '512'} on:input={(event) => (profileDraftMaxTokens = (event.currentTarget as HTMLInputElement).value)} />
-                        <input class="sampler-number" value={profileDraftMaxTokens} inputmode="numeric" placeholder="512" on:input={(event) => (profileDraftMaxTokens = (event.currentTarget as HTMLInputElement).value)} />
+                        <RangeField min="16" max={maxOutputTokenRange} step="16" value={profileDraftMaxTokens || '512'} oninput={(event) => (profileDraftMaxTokens = (event.currentTarget as HTMLInputElement).value)} />
+                        <TextField controlClass="sampler-number" value={profileDraftMaxTokens} inputmode="numeric" placeholder="512" oninput={(event) => (profileDraftMaxTokens = (event.currentTarget as HTMLInputElement).value)} />
                       </span>
                     </label>
                   {/if}
@@ -4628,23 +4603,15 @@
                       <output>{profileDraftContextTokens || '8192'}</output>
                     </span>
                     <span class="sampler-control-body">
-                      <input
-                        class="sampler-range"
-                        type="range"
-                        min="1024"
-                        max={maxContextTokens}
-                        step="1024"
-                        value={profileDraftContextTokens || '8192'}
-                        on:input={(event) => (profileDraftContextTokens = (event.currentTarget as HTMLInputElement).value)}
-                      />
-                      <input
-                        class="sampler-number"
+                      <RangeField min="1024" max={maxContextTokens} step="1024" value={profileDraftContextTokens || '8192'} oninput={(event) => (profileDraftContextTokens = (event.currentTarget as HTMLInputElement).value)} />
+                      <TextField
+                        controlClass="sampler-number"
                         value={profileDraftContextTokens}
                         inputmode="numeric"
                         min="1024"
                         max={maxContextTokens}
                         placeholder="8192"
-                        on:input={(event) => (profileDraftContextTokens = (event.currentTarget as HTMLInputElement).value)}
+                        oninput={(event) => (profileDraftContextTokens = (event.currentTarget as HTMLInputElement).value)}
                       />
                     </span>
                   </label>
@@ -4655,55 +4622,31 @@
                     <summary>{t('common.advanced')}</summary>
                     <div class="advanced-sampler-grid">
                       {#if samplerVisible.topA}
-                        <label>
-                          <span>{t('profile.topA')}</span>
-                          <input bind:value={profileDraftTopA} inputmode="decimal" />
-                        </label>
+                        <TextField label={t('profile.topA')} bind:value={profileDraftTopA} inputmode="decimal" />
                       {/if}
                       {#if samplerVisible.minP}
-                        <label>
-                          <span>{t('profile.minP')}</span>
-                          <input bind:value={profileDraftMinP} inputmode="decimal" />
-                        </label>
+                        <TextField label={t('profile.minP')} bind:value={profileDraftMinP} inputmode="decimal" />
                       {/if}
                       {#if samplerVisible.frequencyPenalty}
-                        <label>
-                          <span>{t('profile.freqPenalty')}</span>
-                          <input bind:value={profileDraftFrequencyPenalty} inputmode="decimal" />
-                        </label>
+                        <TextField label={t('profile.freqPenalty')} bind:value={profileDraftFrequencyPenalty} inputmode="decimal" />
                       {/if}
                       {#if samplerVisible.presencePenalty}
-                        <label>
-                          <span>{t('profile.presencePenalty')}</span>
-                          <input bind:value={profileDraftPresencePenalty} inputmode="decimal" />
-                        </label>
+                        <TextField label={t('profile.presencePenalty')} bind:value={profileDraftPresencePenalty} inputmode="decimal" />
                       {/if}
                       {#if samplerVisible.repetitionPenalty}
-                        <label>
-                          <span>{t('profile.repPenalty')}</span>
-                          <input bind:value={profileDraftRepetitionPenalty} inputmode="decimal" />
-                        </label>
+                        <TextField label={t('profile.repPenalty')} bind:value={profileDraftRepetitionPenalty} inputmode="decimal" />
                       {/if}
                       {#if samplerVisible.seed}
-                        <label>
-                          <span>{t('profile.seed')}</span>
-                          <input bind:value={profileDraftSeed} inputmode="numeric" />
-                        </label>
+                        <TextField label={t('profile.seed')} bind:value={profileDraftSeed} inputmode="numeric" />
                       {/if}
                       {#if samplerVisible.n}
-                        <label>
-                          <span>{candidateCountFieldLabel}</span>
-                          <input bind:value={profileDraftN} inputmode="numeric" />
-                        </label>
+                        <TextField label={candidateCountFieldLabel} bind:value={profileDraftN} inputmode="numeric" />
                       {/if}
                     </div>
                   </details>
                 {/if}
 
-                <label class="profile-textarea-label">
-                  <span>{t('profile.stopStrings')}</span>
-                  <textarea bind:value={profileDraftStop} rows="3" placeholder={t('profile.stopPlaceholder')}></textarea>
-                </label>
+                <TextareaField class="profile-textarea-label" label={t('profile.stopStrings')} bind:value={profileDraftStop} rows={3} placeholder={t('profile.stopPlaceholder')} />
               </section>
 
               <div class="profile-mode-strip">
@@ -5020,35 +4963,27 @@
               {/each}
             </div>
 
-            <label class="settings-range">
-              <span>
-                <strong>{t('settings.interfaceSize')}</strong>
-                <output>{appSettings.uiFontSize}px</output>
-              </span>
-              <input
-                type="range"
-                min="12"
-                max="18"
-                step="1"
-                value={appSettings.uiFontSize}
-                on:input={(event) => updateAppSettings({ uiFontSize: (event.currentTarget as HTMLInputElement).valueAsNumber })}
-              />
-            </label>
+            <RangeField
+              class="settings-range"
+              label={t('settings.interfaceSize')}
+              valueLabel={`${appSettings.uiFontSize}px`}
+              min="12"
+              max="18"
+              step="1"
+              value={appSettings.uiFontSize}
+              oninput={(event) => updateAppSettings({ uiFontSize: (event.currentTarget as HTMLInputElement).valueAsNumber })}
+            />
 
-            <label class="settings-range">
-              <span>
-                <strong>{t('settings.chatTextSize')}</strong>
-                <output>{appSettings.chatFontSize}px</output>
-              </span>
-              <input
-                type="range"
-                min="13"
-                max="24"
-                step="1"
-                value={appSettings.chatFontSize}
-                on:input={(event) => updateAppSettings({ chatFontSize: (event.currentTarget as HTMLInputElement).valueAsNumber })}
-              />
-            </label>
+            <RangeField
+              class="settings-range"
+              label={t('settings.chatTextSize')}
+              valueLabel={`${appSettings.chatFontSize}px`}
+              min="13"
+              max="24"
+              step="1"
+              value={appSettings.chatFontSize}
+              oninput={(event) => updateAppSettings({ chatFontSize: (event.currentTarget as HTMLInputElement).valueAsNumber })}
+            />
 
             <div class="settings-preview">
               <strong>{t('settings.preview')}</strong>
@@ -6347,29 +6282,6 @@
     gap: 8px;
   }
 
-  .settings-range > span {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    color: #34433b;
-    font-size: 13px;
-  }
-
-  .settings-range output {
-    color: #607067;
-    font-variant-numeric: tabular-nums;
-    font-weight: 700;
-  }
-
-  .settings-range input[type='range'] {
-    height: 28px;
-    border: 0;
-    background: transparent;
-    accent-color: #2f8a56;
-    padding: 0;
-  }
-
   .settings-preview {
     display: grid;
     gap: 6px;
@@ -7524,11 +7436,6 @@
     gap: 8px;
   }
 
-  .preset-toolbar select {
-    min-height: 40px;
-    padding-block: 8px;
-  }
-
   .preset-actions {
     display: flex;
     gap: 6px;
@@ -7723,13 +7630,6 @@
   .vertex-strip {
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
-  }
-
-  .provider-config label,
-  .credential-grid label {
-    display: grid;
-    min-width: 0;
-    gap: 5px;
   }
 
   .vertex-strip > button {
@@ -7937,22 +7837,10 @@
   }
 
   .profile-textarea-label,
-  .advanced-sampler-grid label,
   .segmented-field {
     display: grid;
     min-width: 0;
     gap: 5px;
-  }
-
-  .profile-name-field input,
-  .provider-config input,
-  .credential-grid input,
-  .advanced-sampler-grid input,
-  .profile-textarea-label textarea {
-    min-height: 36px;
-    border-radius: 7px;
-    padding: 8px 10px;
-    font-size: 13px;
   }
 
   .profile-mode-strip {

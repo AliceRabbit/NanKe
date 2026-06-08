@@ -22,19 +22,20 @@
   }: Props = $props();
 </script>
 
-<label class={cn('grid min-w-0 gap-1.5 text-[13px] text-[var(--nanke-ink)]', className)}>
+<label class={cn('group/grid grid min-w-0 gap-1.5 text-[13px] text-[var(--nanke-ink)]', className)}>
   {#if label}
-    <span class="font-semibold text-[var(--nanke-ink)]">{label}</span>
+    <span class="text-[12px] font-semibold leading-5 text-[var(--nanke-ink-muted)] transition group-focus-within/grid:text-[var(--nanke-accent-strong)]">{label}</span>
   {/if}
   <textarea
     {...rest}
     bind:value
     aria-invalid={error ? 'true' : undefined}
     class={cn(
-      'min-h-24 w-full min-w-0 resize-y rounded-[var(--nanke-radius-md)] border border-[var(--nanke-border)] bg-[var(--nanke-surface)] px-3 py-2.5 text-[13px] leading-6 text-[var(--nanke-ink)] shadow-[var(--nanke-shadow-field)] outline-none transition',
+      'min-h-24 w-full min-w-0 resize-y rounded-[var(--nanke-radius-md)] border border-[var(--nanke-border)] bg-[var(--nanke-field)] px-3 py-2.5 text-[13px] leading-6 text-[var(--nanke-ink)] shadow-[var(--nanke-shadow-field)] outline-none transition',
+      'hover:border-[var(--nanke-border-strong)] hover:bg-[var(--nanke-field-hover)]',
       'placeholder:text-[var(--nanke-ink-subtle)]',
-      'focus:border-[var(--nanke-accent)] focus:ring-4 focus:ring-[var(--nanke-focus)]',
-      'disabled:bg-[var(--nanke-surface-muted)] disabled:text-[var(--nanke-ink-subtle)] disabled:opacity-70',
+      'focus:border-[var(--nanke-accent)] focus:shadow-[var(--nanke-shadow-field-focus)] focus:ring-4 focus:ring-[var(--nanke-focus)]',
+      'disabled:bg-[var(--nanke-field-disabled)] disabled:text-[var(--nanke-ink-subtle)] disabled:opacity-70',
       error && 'border-[var(--nanke-danger)] focus:border-[var(--nanke-danger)] focus:ring-[rgb(163_50_39_/_18%)]',
       controlClass
     )}

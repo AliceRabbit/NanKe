@@ -6,12 +6,16 @@
     "Noto Serif SC", "Source Han Serif SC", ui-serif, Georgia, Cambria, "Times New Roman", serif;
   --nanke-page: #f5f6f4;
   --nanke-surface: #ffffff;
+  --nanke-field: #fcfdfb;
+  --nanke-field-hover: #ffffff;
+  --nanke-field-disabled: #f1f4ef;
   --nanke-surface-muted: #f8faf7;
   --nanke-surface-raised: #fbfcfa;
   --nanke-ink: #1f2421;
   --nanke-ink-muted: #68716b;
   --nanke-ink-subtle: #89928c;
   --nanke-border: #d8ddd6;
+  --nanke-border-soft: #e5e9e3;
   --nanke-border-strong: #b9c5bb;
   --nanke-accent: #2f8a56;
   --nanke-accent-strong: #256f44;
@@ -21,6 +25,7 @@
   --nanke-danger-soft: #fff1ef;
   --nanke-radius-sm: 6px;
   --nanke-radius-md: 8px;
-  --nanke-shadow-field: 0 1px 0 rgb(31 36 33 / 3%);
+  --nanke-shadow-field: inset 0 1px 0 rgb(255 255 255 / 80%), 0 1px 2px rgb(31 36 33 / 4%);
+  --nanke-shadow-field-focus: inset 0 1px 0 rgb(255 255 255 / 90%), 0 8px 18px rgb(47 138 86 / 10%);
   --nanke-shadow-popover: 0 16px 34px rgb(32 50 41 / 16%);
 }

@@ -5257,7 +5257,7 @@
 
   button,
   select,
-  input,
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
   textarea {
     font: inherit;
   }
@@ -5266,11 +5266,33 @@
   input,
   textarea {
     width: 100%;
-    border: 1px solid #cfd4cd;
-    border-radius: 8px;
-    background: #fff;
-    color: #1f2421;
+    border: 1px solid var(--nanke-border);
+    border-radius: var(--nanke-radius-md);
+    background: var(--nanke-field);
+    color: var(--nanke-ink);
+    box-shadow: var(--nanke-shadow-field);
     padding: 10px 12px;
+    outline: 0;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  select:hover,
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):hover,
+  textarea:hover {
+    border-color: var(--nanke-border-strong);
+    background: var(--nanke-field-hover);
+  }
+
+  select:focus,
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):focus,
+  textarea:focus {
+    border-color: var(--nanke-accent);
+    box-shadow:
+      var(--nanke-shadow-field-focus),
+      0 0 0 4px var(--nanke-focus);
   }
 
   textarea {

@@ -33,6 +33,41 @@
     cursor: not-allowed;
   }
 
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  select,
+  textarea {
+    border-color: var(--nanke-border);
+    background: var(--nanke-field);
+    box-shadow: var(--nanke-shadow-field);
+    color: var(--nanke-ink);
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):hover,
+  select:hover,
+  textarea:hover {
+    border-color: var(--nanke-border-strong);
+    background: var(--nanke-field-hover);
+  }
+
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--nanke-accent);
+    box-shadow:
+      var(--nanke-shadow-field-focus),
+      0 0 0 4px var(--nanke-focus);
+    outline: 0;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--nanke-ink-subtle);
+  }
+
   ::selection {
     background: rgb(58 132 84 / 22%);
   }

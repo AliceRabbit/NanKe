@@ -94,6 +94,17 @@ export async function PATCH({ request }) {
       return json(conversation);
     }
 
+    if (body?.action === 'set-persona') {
+      if (typeof body.conversationId !== 'string') {
+        throw new AppError('conversationId is required.', 400, 'conversation_persona_required');
+      }
+      const conversation = context.conversations.get(body.conversationId);
+      if (!conversation) throw new AppError('Conversation not found.', 404, 'conversation_not_found');
+      const personaId = typeof body.personaId === 'string' && body.personaId.trim() ? body.personaId.trim() : undefined;
+      if (personaId && !context.personas.get(personaId)) throw new AppError('Persona not found.', 404, 'persona_not_found');
+      return json(context.conversations.save({ ...conversation, personaId }));
+    }
+
     if (body?.action === 'clone') {
       if (typeof body.conversationId !== 'string') {
         throw new AppError('conversationId is required.', 400, 'conversation_clone_required');

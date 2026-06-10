@@ -178,11 +178,28 @@
   type UserPersona = {
     id: string;
     name: string;
+    title?: string;
     description: string;
     avatarAssetId?: string;
     isDefault: boolean;
+    metadata?: Record<string, unknown>;
     createdAt: number;
     updatedAt: number;
+  };
+  type PersonaCharacterBinding = {
+    personaId: string;
+    characterId: string;
+    enabled: boolean;
+    createdAt: number;
+    updatedAt: number;
+  };
+  type UserPersonaDeleteResult = {
+    deleted: boolean;
+    id: string;
+    affectedConversationIds: string[];
+    affectedCharacterIds: string[];
+    removedCharacterBindings: number;
+    defaultCleared: boolean;
   };
   type MessageBranch = {
     nodeId: string;
@@ -213,7 +230,9 @@
     id?: string;
     conversationId?: string;
     role: 'user' | 'assistant' | 'system';
+    speakerId?: string;
     name?: string;
+    speakerAvatarAssetId?: string;
     content: string;
     thinking?: string;
     branch?: MessageBranch;
@@ -381,6 +400,7 @@
   let profiles: Profile[] = [];
   let characters: Character[] = [];
   let personas: UserPersona[] = [];
+  let personaCharacterBindings: PersonaCharacterBinding[] = [];
   let worldBooks: WorldBook[] = [];
   let conversations: Conversation[] = [];
   let conversationQuery = '';
@@ -458,12 +478,18 @@
   let characterDraftTalkativeness = '';
   let characterDraftFavorite = false;
   let newPersonaName = '';
+  let newPersonaTitle = '';
   let newPersonaDescription = '';
   let newPersonaDefault = false;
+  let personaQuery = '';
   let personaDraftId = '';
   let personaDraftName = '';
+  let personaDraftTitle = '';
   let personaDraftDescription = '';
   let personaDraftDefault = false;
+  let personaAvatarUploading = false;
+  let personaDeleting = false;
+  let lastPersonaAutoCharacterId = '';
   let newWorldBookName = '';
   let activeWorldBookId = '';
   let worldBookDraftId = '';
@@ -569,6 +595,15 @@
   $: filteredWorldBookEntries = filterWorldBookEntries(worldBookDraftEntries, worldBookEntryQuery, worldBookSortMode);
   $: activeWorldBookEntry = worldBookDraftEntries.find((entry) => entry.id === activeWorldBookEntryId);
   $: activePersona = personas.find((persona) => persona.id === activePersonaId);
+  $: filteredPersonas = filterPersonas(personas, personaQuery);
+  $: activeCharacterPersonaBinding = activeCharacter
+    ? personaCharacterBindings.find((binding) => binding.characterId === activeCharacter.id && binding.enabled)
+    : undefined;
+  $: activeCharacterPersona = activeCharacterPersonaBinding ? personas.find((persona) => persona.id === activeCharacterPersonaBinding.personaId) : undefined;
+  $: activePersonaBoundToActiveCharacter = Boolean(
+    activePersona && activeCharacter && personaCharacterBindings.some((binding) => binding.personaId === activePersona.id && binding.characterId === activeCharacter.id && binding.enabled)
+  );
+  $: activePersonaLockedToConversation = Boolean(activeConversationId && activeConversationRecord?.personaId === activePersonaId);
   $: activeConversation = conversations.find((conversation) => conversation.id === activeConversationId) ?? (activeConversationRecord?.id === activeConversationId ? activeConversationRecord : undefined);
   $: conversationGroups = groupConversations(conversations, showArchivedConversations);
   $: isGenerating = generationAbortController !== null;
@@ -620,8 +655,13 @@
   $: if (activePersonaId !== personaDraftId) {
     personaDraftId = activePersonaId;
     personaDraftName = activePersona?.name ?? '';
+    personaDraftTitle = activePersona?.title ?? '';
     personaDraftDescription = activePersona?.description ?? '';
     personaDraftDefault = activePersona?.isDefault ?? false;
+  }
+  $: if (!activeConversationId && activeCharacterId && activeCharacterId !== lastPersonaAutoCharacterId) {
+    lastPersonaAutoCharacterId = activeCharacterId;
+    if (activeCharacterPersona) activePersonaId = activeCharacterPersona.id;
   }
   $: if (activeWorldBookId !== worldBookDraftId) {
     loadWorldBookDraft(activeWorldBook);
@@ -794,6 +834,8 @@
     activeConversationRecord = null;
     openingPreviewCharacterId = '';
     messages = [];
+    activePersonaId = activeCharacterPersona?.id ?? personas.find((persona) => persona.isDefault)?.id ?? personas[0]?.id ?? '';
+    lastPersonaAutoCharacterId = activeCharacterId;
     activeView = 'chat';
     closeDrawer();
   }
@@ -956,6 +998,7 @@
     profiles = await fetchJson<Profile[]>('/api/profiles');
     characters = await fetchJson<Character[]>('/api/characters');
     personas = await fetchJson<UserPersona[]>('/api/personas');
+    personaCharacterBindings = await fetchJson<PersonaCharacterBinding[]>('/api/personas/bindings');
     worldBooks = await fetchJson<WorldBook[]>('/api/worldbooks');
     await refreshConversations({ reset: true });
     activeProfileId ||= profiles[0]?.id ?? '';
@@ -1463,6 +1506,50 @@
     const text = query.trim().toLowerCase();
     if (!text) return items;
     return items.filter((profile) => [profile.name, profile.provider.type, profile.provider.model, profileOrigin(profile)].join(' ').toLowerCase().includes(text));
+  }
+
+  function filterPersonas(items: UserPersona[], query: string) {
+    const text = query.trim().toLowerCase();
+    const sorted = [...items].sort((a, b) => {
+      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    if (!text) return sorted;
+    return sorted.filter((persona) => [persona.name, persona.title, persona.description].join(' ').toLowerCase().includes(text));
+  }
+
+  function personaAvatarUrl(persona?: UserPersona): string {
+    return persona?.avatarAssetId ? `/api/assets/${persona.avatarAssetId}` : '';
+  }
+
+  function personaInitials(persona?: UserPersona): string {
+    return Array.from(persona?.name?.trim() || t('role.user'))[0]?.toUpperCase() ?? '?';
+  }
+
+  function personaTokenEstimate(persona?: UserPersona): number {
+    if (!persona?.description.trim()) return 0;
+    return Math.ceil(persona.description.trim().length / 3.6);
+  }
+
+  function personaBindingLabel(persona: UserPersona): string {
+    const labels = [
+      persona.isDefault ? t('persona.default') : '',
+      activeCharacter && personaCharacterBindings.some((binding) => binding.personaId === persona.id && binding.characterId === activeCharacter.id && binding.enabled)
+        ? t('persona.boundToCurrentCharacter')
+        : '',
+      activeConversationRecord?.personaId === persona.id ? t('persona.lockedToCurrentChat') : ''
+    ].filter(Boolean);
+    return labels.join(' · ') || persona.title || persona.id;
+  }
+
+  function upsertPersona(persona: UserPersona) {
+    personas = [
+      persona,
+      ...personas.filter((item) => item.id !== persona.id).map((item) => (persona.isDefault ? { ...item, isDefault: false } : item))
+    ].sort((a, b) => {
+      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
   }
 
   function numberToDraft(value: number | undefined) {
@@ -2036,9 +2123,18 @@
       })
     });
     activeConversationId = conversation.id;
+    activeConversationRecord = conversation;
     rememberConversation(conversation);
     if (activeCharacter?.firstMessage && messages.length === 0) {
-      messages = [{ role: 'assistant', name: activeCharacter.name, content: renderCharacterTemplate(activeCharacter.firstMessage) }];
+      messages = [
+        {
+          role: 'assistant',
+          speakerId: activeCharacter.id,
+          name: activeCharacter.name,
+          speakerAvatarAssetId: activeCharacter.avatarAssetId,
+          content: renderCharacterTemplate(activeCharacter.firstMessage)
+        }
+      ];
     }
     return activeConversationId;
   }
@@ -2157,8 +2253,20 @@
     const conversationId = await ensureConversation();
     messages = [
       ...messages,
-      { role: 'user', name: activePersona?.name, content },
-      { role: 'assistant', name: activeCharacter?.name, content: '' }
+      {
+        role: 'user',
+        speakerId: activePersona?.id,
+        name: activePersona?.name,
+        speakerAvatarAssetId: activePersona?.avatarAssetId,
+        content
+      },
+      {
+        role: 'assistant',
+        speakerId: activeCharacter?.id,
+        name: activeCharacter?.name,
+        speakerAvatarAssetId: activeCharacter?.avatarAssetId,
+        content: ''
+      }
     ];
     await streamGeneration({
       conversationId,
@@ -2299,7 +2407,16 @@
       messages = next;
       return;
     }
-    messages = [...messages, { role: 'assistant', name: activeCharacter?.name, content }];
+    messages = [
+      ...messages,
+      {
+        role: 'assistant',
+        speakerId: activeCharacter?.id,
+        name: activeCharacter?.name,
+        speakerAvatarAssetId: activeCharacter?.avatarAssetId,
+        content
+      }
+    ];
   }
 
   function appendAssistantDraftThinking(thinking: string) {
@@ -2311,7 +2428,17 @@
       messages = next;
       return;
     }
-    messages = [...messages, { role: 'assistant', name: activeCharacter?.name, content: '', thinking }];
+    messages = [
+      ...messages,
+      {
+        role: 'assistant',
+        speakerId: activeCharacter?.id,
+        name: activeCharacter?.name,
+        speakerAvatarAssetId: activeCharacter?.avatarAssetId,
+        content: '',
+        thinking
+      }
+    ];
   }
 
   function replaceAssistantDraft(content: string) {
@@ -2322,7 +2449,16 @@
       messages = next;
       return;
     }
-    messages = [...messages, { role: 'assistant', name: activeCharacter?.name, content }];
+    messages = [
+      ...messages,
+      {
+        role: 'assistant',
+        speakerId: activeCharacter?.id,
+        name: activeCharacter?.name,
+        speakerAvatarAssetId: activeCharacter?.avatarAssetId,
+        content
+      }
+    ];
   }
 
   function removeEmptyAssistantDraft() {
@@ -2624,6 +2760,7 @@
   }
 
   function messageAvatarUrl(message: ChatMessage): string {
+    if (message.speakerAvatarAssetId) return `/api/assets/${message.speakerAvatarAssetId}`;
     if (message.role === 'assistant' && activeCharacter?.avatarAssetId) return `/api/assets/${activeCharacter.avatarAssetId}`;
     if (message.role === 'user' && activePersona?.avatarAssetId) return `/api/assets/${activePersona.avatarAssetId}`;
     return '';
@@ -2962,13 +3099,12 @@
     const persona = await fetchJson<UserPersona>('/api/personas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description: newPersonaDescription.trim(), isDefault: newPersonaDefault })
+      body: JSON.stringify({ name, title: newPersonaTitle.trim(), description: newPersonaDescription.trim(), isDefault: newPersonaDefault })
     });
-    personas = newPersonaDefault
-      ? [persona, ...personas.filter((item) => item.id !== persona.id).map((item) => ({ ...item, isDefault: false }))]
-      : [...personas, persona];
+    upsertPersona(persona);
     activePersonaId = persona.id;
     newPersonaName = '';
+    newPersonaTitle = '';
     newPersonaDescription = '';
     newPersonaDefault = false;
     status = t('status.ready');
@@ -2980,24 +3116,154 @@
     if (!name) return;
     status = t('status.saving');
     const persona = await fetchJson<UserPersona>('/api/personas', {
-      method: 'POST',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ...activePersona,
+        id: activePersona.id,
         name,
+        title: personaDraftTitle.trim(),
         description: personaDraftDescription.trim(),
         isDefault: personaDraftDefault
       })
     });
-    personas = personas.map((item) => {
-      if (item.id === persona.id) return persona;
-      return persona.isDefault ? { ...item, isDefault: false } : item;
-    });
+    upsertPersona(persona);
     personaDraftId = persona.id;
     personaDraftName = persona.name;
+    personaDraftTitle = persona.title ?? '';
     personaDraftDescription = persona.description;
     personaDraftDefault = persona.isDefault;
     status = t('status.ready');
+  }
+
+  async function setActivePersonaDefault() {
+    if (!activePersona) return;
+    status = t('status.saving');
+    const persona = await fetchJson<UserPersona>('/api/personas', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: activePersona.id, isDefault: true })
+    });
+    upsertPersona(persona);
+    personaDraftDefault = true;
+    status = t('status.ready');
+  }
+
+  async function uploadActivePersonaAvatar(event: Event) {
+    if (!activePersona) return;
+    const inputElement = event.currentTarget as HTMLInputElement;
+    const file = inputElement.files?.[0];
+    inputElement.value = '';
+    if (!file) return;
+    personaAvatarUploading = true;
+    status = t('status.uploading');
+    try {
+      const form = new FormData();
+      form.set('personaId', activePersona.id);
+      form.set('avatar', file);
+      const persona = await fetchJson<UserPersona>('/api/personas/avatar', {
+        method: 'POST',
+        body: form
+      });
+      upsertPersona(persona);
+      status = t('status.ready');
+    } finally {
+      personaAvatarUploading = false;
+    }
+  }
+
+  async function clearActivePersonaAvatar() {
+    if (!activePersona?.avatarAssetId) return;
+    status = t('status.saving');
+    const persona = await fetchJson<UserPersona>(`/api/personas/avatar?personaId=${encodeURIComponent(activePersona.id)}`, {
+      method: 'DELETE'
+    });
+    upsertPersona(persona);
+    status = t('status.ready');
+  }
+
+  async function refreshPersonaBindings(characterId?: string) {
+    const query = characterId ? `?characterId=${encodeURIComponent(characterId)}` : '';
+    const bindings = await fetchJson<PersonaCharacterBinding[]>(`/api/personas/bindings${query}`);
+    if (characterId) {
+      personaCharacterBindings = [...personaCharacterBindings.filter((binding) => binding.characterId !== characterId), ...bindings];
+    } else {
+      personaCharacterBindings = bindings;
+    }
+  }
+
+  async function toggleActivePersonaCharacterBinding() {
+    if (!activePersona || !activeCharacter) return;
+    status = t('status.saving');
+    if (activePersonaBoundToActiveCharacter) {
+      await fetchJson<{ deleted: boolean }>(
+        `/api/personas/bindings?personaId=${encodeURIComponent(activePersona.id)}&characterId=${encodeURIComponent(activeCharacter.id)}`,
+        { method: 'DELETE' }
+      );
+    } else {
+      await fetchJson<PersonaCharacterBinding>('/api/personas/bindings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personaId: activePersona.id, characterId: activeCharacter.id, enabled: true })
+      });
+    }
+    await refreshPersonaBindings(activeCharacter.id);
+    status = t('status.ready');
+  }
+
+  async function lockActivePersonaToCurrentChat() {
+    if (!activePersona || !activeConversationId) {
+      status = t('persona.noActiveConversation');
+      return;
+    }
+    status = t('status.saving');
+    const conversation = await fetchJson<Conversation>('/api/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'set-persona', conversationId: activeConversationId, personaId: activePersona.id })
+    });
+    activeConversationRecord = conversation;
+    rememberConversation(conversation);
+    status = t('status.ready');
+  }
+
+  async function duplicateActivePersona() {
+    if (!activePersona) return;
+    status = t('status.saving');
+    const persona = await fetchJson<UserPersona>('/api/personas', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'duplicate', id: activePersona.id })
+    });
+    upsertPersona(persona);
+    activePersonaId = persona.id;
+    status = t('status.ready');
+  }
+
+  async function deleteActivePersona() {
+    if (!activePersona) return;
+    if (!window.confirm(t('persona.deleteConfirm', { name: activePersona.name }))) return;
+    personaDeleting = true;
+    status = t('status.deleting');
+    try {
+      const result = await fetchJson<UserPersonaDeleteResult>(`/api/personas?id=${encodeURIComponent(activePersona.id)}`, {
+        method: 'DELETE'
+      });
+      const remaining = personas.filter((persona) => persona.id !== result.id);
+      personas = remaining;
+      personaCharacterBindings = personaCharacterBindings.filter((binding) => binding.personaId !== result.id);
+      if (activePersonaId === result.id) {
+        activePersonaId = remaining.find((persona) => persona.isDefault)?.id ?? remaining[0]?.id ?? '';
+      }
+      if (activeConversationRecord?.personaId === result.id) {
+        activeConversationRecord = { ...activeConversationRecord, personaId: undefined };
+      }
+      status = t('persona.deleteResult', {
+        conversations: result.affectedConversationIds.length,
+        bindings: result.removedCharacterBindings
+      });
+    } finally {
+      personaDeleting = false;
+    }
   }
 
   async function createWorldBook() {
@@ -3452,6 +3718,7 @@
       class="drawer"
       class:right={drawerIsRight}
       class:characters={activeDrawer === 'characters'}
+      class:personas={activeDrawer === 'personas'}
       class:profiles={activeDrawer === 'profiles'}
       class:worldbooks={activeDrawer === 'worldbooks'}
       aria-label={drawerTitle}
@@ -3947,40 +4214,130 @@
           {/if}
         </div>
       {:else if activeDrawer === 'personas'}
-        <form class="editor" on:submit|preventDefault={createPersona}>
-          <input bind:value={newPersonaName} placeholder={t('persona.namePlaceholder')} />
-          <textarea bind:value={newPersonaDescription} rows="5" placeholder={t('persona.descriptionPlaceholder')}></textarea>
-          <label class="checkbox-row">
-            <input type="checkbox" bind:checked={newPersonaDefault} />
-            <span>{t('persona.default')}</span>
-          </label>
-          <button class="primary full" type="submit"><UserRound size={16} />{t('common.create')}</button>
-        </form>
+        <div class="persona-workspace">
+          <section class="persona-library" aria-label={t('persona.library')}>
+            <form class="persona-create" on:submit|preventDefault={createPersona}>
+              <div class="persona-section-head">
+                <strong>{t('persona.create')}</strong>
+                <small>{t('persona.createHint')}</small>
+              </div>
+              <TextField bind:value={newPersonaName} label={t('common.name')} placeholder={t('persona.namePlaceholder')} />
+              <TextField bind:value={newPersonaTitle} label={t('persona.title')} placeholder={t('persona.titlePlaceholder')} />
+              <TextareaField bind:value={newPersonaDescription} label={t('persona.description')} rows={4} placeholder={t('persona.descriptionPlaceholder')} />
+              <label class="checkbox-row compact">
+                <input type="checkbox" bind:checked={newPersonaDefault} />
+                <span>{t('persona.default')}</span>
+              </label>
+              <button class="primary full" type="submit"><UserRound size={16} />{t('common.create')}</button>
+            </form>
 
-        {#if activePersona}
-          <form class="editor compact-editor" on:submit|preventDefault={saveActivePersona}>
-            <input bind:value={personaDraftName} placeholder={t('persona.namePlaceholder')} />
-            <textarea bind:value={personaDraftDescription} rows="6" placeholder={t('persona.descriptionPlaceholder')}></textarea>
-            <label class="checkbox-row">
-              <input type="checkbox" bind:checked={personaDraftDefault} />
-              <span>{t('persona.default')}</span>
+            <label class="search-field persona-search">
+              <Search size={15} />
+              <input bind:value={personaQuery} placeholder={t('persona.search')} aria-label={t('persona.search')} />
             </label>
-            <button class="secondary full" type="submit"><UserRound size={16} />{t('common.save')}</button>
-          </form>
-        {/if}
 
-        <div class="item-list">
-          {#each personas as persona}
-            <button
-              class="drawer-item"
-              class:active={persona.id === activePersonaId}
-              type="button"
-              on:click={() => (activePersonaId = persona.id)}
-            >
-              <strong>{persona.name}</strong>
-              <span>{persona.isDefault ? t('persona.default') : persona.id}</span>
-            </button>
-          {/each}
+            <div class="persona-list">
+              {#each filteredPersonas as persona}
+                <button
+                  class="persona-row"
+                  class:active={persona.id === activePersonaId}
+                  type="button"
+                  on:click={() => (activePersonaId = persona.id)}
+                >
+                  <span class="persona-row-avatar">
+                    {#if personaAvatarUrl(persona)}
+                      <img src={personaAvatarUrl(persona)} alt="" />
+                    {:else}
+                      <span>{personaInitials(persona)}</span>
+                    {/if}
+                  </span>
+                  <span class="persona-row-copy">
+                    <strong>{persona.name}</strong>
+                    <small>{personaBindingLabel(persona)}</small>
+                  </span>
+                </button>
+              {/each}
+            </div>
+          </section>
+
+          <section class="persona-detail" aria-label={t('persona.current')}>
+            {#if activePersona}
+              <div class="persona-identity">
+                <label class="persona-avatar-uploader" title={t('persona.changeAvatar')}>
+                  {#if personaAvatarUrl(activePersona)}
+                    <img src={personaAvatarUrl(activePersona)} alt="" />
+                  {:else}
+                    <span>{personaInitials(activePersona)}</span>
+                  {/if}
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={personaAvatarUploading} on:change={uploadActivePersonaAvatar} />
+                </label>
+                <div>
+                  <span>{t('persona.current')}</span>
+                  <h3>{activePersona.name}</h3>
+                  <p>{activePersona.title || personaBindingLabel(activePersona)}</p>
+                </div>
+              </div>
+
+              <div class="persona-action-grid">
+                <button class:active={activePersona.isDefault} type="button" on:click={setActivePersonaDefault}>
+                  <Star size={15} />{t('persona.setDefault')}
+                </button>
+                <button class:active={activePersonaBoundToActiveCharacter} type="button" disabled={!activeCharacter} on:click={toggleActivePersonaCharacterBinding}>
+                  {#if activePersonaBoundToActiveCharacter}
+                    <Unlink size={15} />{t('persona.unbindCharacter')}
+                  {:else}
+                    <Link2 size={15} />{t('persona.bindCharacter')}
+                  {/if}
+                </button>
+                <button class:active={activePersonaLockedToConversation} type="button" disabled={!activeConversationId} on:click={lockActivePersonaToCurrentChat}>
+                  <Link2 size={15} />{t('persona.lockChat')}
+                </button>
+                <button type="button" on:click={duplicateActivePersona}>
+                  <Copy size={15} />{t('persona.duplicate')}
+                </button>
+                <button type="button" disabled={!activePersona.avatarAssetId || personaAvatarUploading} on:click={clearActivePersonaAvatar}>
+                  <Image size={15} />{t('persona.clearAvatar')}
+                </button>
+                <button class="danger" type="button" disabled={personaDeleting} on:click={deleteActivePersona}>
+                  <Trash2 size={15} />{t('common.delete')}
+                </button>
+              </div>
+
+              <form class="persona-editor" on:submit|preventDefault={saveActivePersona}>
+                <TextField bind:value={personaDraftName} label={t('common.name')} placeholder={t('persona.namePlaceholder')} />
+                <TextField bind:value={personaDraftTitle} label={t('persona.title')} placeholder={t('persona.titlePlaceholder')} />
+                <TextareaField bind:value={personaDraftDescription} label={t('persona.description')} rows={9} placeholder={t('persona.descriptionPlaceholder')} />
+                <div class="persona-editor-meta">
+                  <span>{t('persona.tokenEstimate', { count: personaTokenEstimate(activePersona) })}</span>
+                  <label class="checkbox-row compact">
+                    <input type="checkbox" bind:checked={personaDraftDefault} />
+                    <span>{t('persona.default')}</span>
+                  </label>
+                </div>
+                <button class="primary full" type="submit"><Save size={16} />{t('common.save')}</button>
+              </form>
+
+              <section class="persona-connections">
+                <div class="persona-section-head">
+                  <strong>{t('persona.connections')}</strong>
+                  <small>{activeCharacter ? t('persona.currentCharacter', { name: activeCharacter.name }) : t('character.noCharacter')}</small>
+                </div>
+                <div class="persona-connection-row">
+                  <span>{t('persona.characterBinding')}</span>
+                  <strong>{activeCharacterPersona?.name ?? t('persona.noCharacterBinding')}</strong>
+                </div>
+                <div class="persona-connection-row">
+                  <span>{t('persona.chatLock')}</span>
+                  <strong>{activeConversationRecord?.personaId ? personas.find((persona) => persona.id === activeConversationRecord?.personaId)?.name ?? t('persona.missingPersona') : t('persona.noChatLock')}</strong>
+                </div>
+              </section>
+            {:else}
+              <div class="persona-empty">
+                <UserRound size={30} />
+                <strong>{t('persona.selectOrCreate')}</strong>
+              </div>
+            {/if}
+          </section>
         </div>
       {:else if activeDrawer === 'worldbooks'}
         <div class="worldbook-workspace">
@@ -6197,6 +6554,10 @@
     width: min(1040px, calc(100vw - 64px));
   }
 
+  .drawer.personas {
+    width: min(920px, calc(100vw - 64px));
+  }
+
   .drawer.worldbooks {
     width: min(1040px, calc(100vw - 64px));
   }
@@ -6451,6 +6812,282 @@
     color: #6c756f;
     font-size: 12px;
     overflow-wrap: anywhere;
+  }
+
+  .persona-workspace {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.35fr);
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .persona-library,
+  .persona-detail {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 16px;
+  }
+
+  .persona-library {
+    border-right: 1px solid #e1e6df;
+    background: #fbfcfa;
+  }
+
+  .persona-create,
+  .persona-editor,
+  .persona-connections {
+    display: grid;
+    gap: 12px;
+    border: 1px solid #dfe5dc;
+    border-radius: 8px;
+    background: #fff;
+    padding: 14px;
+  }
+
+  .persona-section-head {
+    display: grid;
+    gap: 2px;
+  }
+
+  .persona-section-head strong {
+    color: #26352d;
+    font-size: 14px;
+  }
+
+  .persona-section-head small {
+    color: #6a756e;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .persona-search {
+    background: #fff;
+  }
+
+  .persona-list {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    min-height: 0;
+  }
+
+  .persona-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    border: 1px solid #dde4dc;
+    border-radius: 8px;
+    background: #fff;
+    color: #223029;
+    padding: 9px;
+    text-align: left;
+  }
+
+  .persona-row.active,
+  .persona-row:hover {
+    border-color: #91bfa0;
+    background: #edf6f0;
+  }
+
+  .persona-row-avatar,
+  .persona-avatar-uploader {
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid #d8ddd6;
+    background: #eef3ef;
+    color: #1c6b43;
+    font-weight: 800;
+  }
+
+  .persona-row-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    font-size: 15px;
+  }
+
+  .persona-row-avatar img,
+  .persona-avatar-uploader img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .persona-row-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .persona-row-copy strong,
+  .persona-row-copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .persona-row-copy strong {
+    font-size: 13px;
+  }
+
+  .persona-row-copy small {
+    color: #67736b;
+    font-size: 11px;
+  }
+
+  .persona-detail {
+    background: #fff;
+  }
+
+  .persona-identity {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 14px;
+  }
+
+  .persona-avatar-uploader {
+    position: relative;
+    width: 96px;
+    height: 112px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 28px;
+  }
+
+  .persona-avatar-uploader input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .persona-avatar-uploader:hover {
+    border-color: #9abcaa;
+    box-shadow: 0 0 0 4px rgb(28 107 67 / 10%);
+  }
+
+  .persona-identity span {
+    color: #69756d;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .persona-identity h3 {
+    margin: 2px 0;
+    color: #1f2d25;
+    font-size: 22px;
+    letter-spacing: 0;
+  }
+
+  .persona-identity p {
+    margin: 0;
+    color: #647069;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .persona-action-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .persona-action-grid button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 38px;
+    border: 1px solid #d8dfd6;
+    border-radius: 8px;
+    background: #f9fbf8;
+    color: #2c3a32;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 0 10px;
+  }
+
+  .persona-action-grid button.active {
+    border-color: #87b99a;
+    background: #e8f5ed;
+    color: #18432b;
+  }
+
+  .persona-action-grid button.danger {
+    border-color: #e2bbb4;
+    background: #fff8f7;
+    color: #9b3128;
+  }
+
+  .persona-action-grid button:not(:disabled):hover {
+    border-color: #abc9b4;
+    background: #eef7f1;
+  }
+
+  .persona-action-grid button:disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
+  }
+
+  .persona-editor-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: #6a756d;
+    font-size: 12px;
+  }
+
+  .persona-connections {
+    background: #fbfcfa;
+  }
+
+  .persona-connection-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 34px;
+    border-top: 1px solid #e6ebe4;
+    color: #68746c;
+    font-size: 12px;
+  }
+
+  .persona-connection-row strong {
+    color: #28362e;
+    font-size: 13px;
+  }
+
+  .persona-empty {
+    display: grid;
+    place-items: center;
+    gap: 8px;
+    min-height: 280px;
+    color: #758079;
+    text-align: center;
+  }
+
+  @media (max-width: 820px) {
+    .persona-workspace {
+      grid-template-columns: 1fr;
+    }
+
+    .persona-library {
+      border-right: 0;
+      border-bottom: 1px solid #e1e6df;
+    }
+
+    .persona-action-grid {
+      grid-template-columns: 1fr 1fr;
+    }
   }
 
   .conversation-list {

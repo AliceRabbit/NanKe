@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type { Character } from '$lib/schemas/character';
 import type { Conversation } from '$lib/schemas/conversation';
 import type { MessageNode, NankeMessage } from '$lib/schemas/message';
@@ -98,6 +98,18 @@ export const userPersonas = sqliteTable('user_personas', {
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull()
 });
+
+export const personaCharacterBindings = sqliteTable(
+  'persona_character_bindings',
+  {
+    personaId: text('persona_id').notNull(),
+    characterId: text('character_id').notNull(),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull()
+  },
+  (table) => [primaryKey({ columns: [table.personaId, table.characterId] })]
+);
 
 export const importReports = sqliteTable('import_reports', {
   id: text('id').primaryKey(),

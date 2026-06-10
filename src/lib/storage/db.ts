@@ -161,6 +161,20 @@ export function initializeDatabase(sqlite: Database.Database = getDatabaseHandle
       updated_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS persona_character_bindings (
+      persona_id TEXT NOT NULL,
+      character_id TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (persona_id, character_id),
+      FOREIGN KEY (persona_id) REFERENCES user_personas(id) ON DELETE CASCADE,
+      FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS persona_character_bindings_character_idx
+      ON persona_character_bindings (character_id, enabled, updated_at DESC);
+
     CREATE TABLE IF NOT EXISTS import_reports (
       id TEXT PRIMARY KEY,
       kind TEXT NOT NULL,

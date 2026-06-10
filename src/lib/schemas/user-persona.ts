@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const userPersonaSchema = z.object({
   id: z.string(),
   name: z.string().min(1),
+  title: z.string().default(''),
   description: z.string().default(''),
   avatarAssetId: z.string().optional(),
   isDefault: z.boolean().default(false),
@@ -18,6 +19,7 @@ export function createUserPersona(input: Partial<UserPersona> & Pick<UserPersona
   return userPersonaSchema.parse({
     id: input.id ?? crypto.randomUUID(),
     name: input.name,
+    title: input.title ?? '',
     description: input.description ?? '',
     avatarAssetId: input.avatarAssetId,
     isDefault: input.isDefault ?? false,

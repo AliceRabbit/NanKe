@@ -19,18 +19,64 @@ describe('storage repositories', () => {
     const sqlite = new Database(path.join(dir, 'test.db'));
     initializeDatabase(sqlite);
     const db = drizzle(sqlite, { schema });
-    const personas = new UserPersonaRepository(db);
+    const personas = new UserPersonaRepository(db, sqlite);
     const repository = new ConversationRepository(db, sqlite);
 
     const persona = personas.save(createUserPersona({ name: 'Mira', description: 'Careful archivist.', isDefault: true }));
     const conversation = repository.save(createConversation({ title: 'Test chat', personaId: persona.id }));
-    repository.appendMessage(createMessage({ conversationId: conversation.id, role: 'user', content: 'Hello' }));
+    repository.appendMessage(
+      createMessage({
+        conversationId: conversation.id,
+        role: 'user',
+        speakerId: persona.id,
+        name: persona.name,
+        speakerAvatarAssetId: 'avatar-asset',
+        content: 'Hello'
+      })
+    );
 
     const loaded = repository.getWithMessages(conversation.id);
     expect(loaded?.title).toBe('Test chat');
     expect(loaded?.personaId).toBe(persona.id);
     expect(loaded?.messages[0].content).toBe('Hello');
+    expect(loaded?.messages[0].speakerId).toBe(persona.id);
+    expect(loaded?.messages[0].speakerAvatarAssetId).toBe('avatar-asset');
     expect(personas.getDefault()?.name).toBe('Mira');
+
+    sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('resolves persona character bindings and safely deletes personas', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nanke-test-'));
+    const sqlite = new Database(path.join(dir, 'test.db'));
+    initializeDatabase(sqlite);
+    const db = drizzle(sqlite, { schema });
+    const personas = new UserPersonaRepository(db, sqlite);
+    const characters = new CharacterRepository(db);
+    const conversations = new ConversationRepository(db, sqlite);
+
+    const character = characters.save(createCharacter({ name: 'Archivist' }));
+    const persona = personas.save(createUserPersona({ name: 'Mira', title: 'Reader', description: 'Careful archivist.', isDefault: true }));
+    const binding = personas.setCharacterBinding(persona.id, character.id, true);
+    const conversation = conversations.save(createConversation({ title: 'Persona chat', characterId: character.id, personaId: persona.id }));
+
+    expect(binding.enabled).toBe(true);
+    expect(personas.resolveForCharacter(character.id)?.id).toBe(persona.id);
+    expect(personas.listCharacterBindings(character.id)).toMatchObject([{ personaId: persona.id, characterId: character.id, enabled: true }]);
+
+    const result = personas.delete(persona.id);
+    expect(result).toMatchObject({
+      deleted: true,
+      id: persona.id,
+      affectedConversationIds: [conversation.id],
+      affectedCharacterIds: [character.id],
+      removedCharacterBindings: 1,
+      defaultCleared: true
+    });
+    expect(personas.get(persona.id)).toBeUndefined();
+    expect(personas.resolveForCharacter(character.id)).toBeUndefined();
+    expect(conversations.get(conversation.id)?.personaId).toBeUndefined();
 
     sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });

@@ -10,6 +10,7 @@ import type { RegexScript } from '$lib/schemas/regex';
 import { createDefaultProviderRegistry, type ProviderRegistry } from '$lib/providers';
 import type { createRequestContext } from '$lib/server/request-context';
 import { AppError } from '$lib/server/errors';
+import { resolvePersonaForGeneration } from './PersonaResolver';
 
 export function activeCharacterWorldBookIds(character?: Character): string[] {
   if (!character) return [];
@@ -75,8 +76,15 @@ export class GenerationAppService {
     if (!regenerateNode && !continueNode && !userInput) {
       throw new AppError('Message is required for generation.', 400, 'message_required');
     }
-    const defaultPersona = this.context.personas.getDefault();
-    const personaId = input.personaId ?? existingConversation?.personaId ?? defaultPersona?.id;
+    const resolvedCharacterId = input.characterId ?? existingConversation?.characterId;
+    const character = resolvedCharacterId ? this.context.characters.get(resolvedCharacterId) : undefined;
+    const personaResolution = resolvePersonaForGeneration(this.context, {
+      explicitPersonaId: input.personaId,
+      conversationPersonaId: existingConversation?.personaId,
+      characterId: character?.id
+    });
+    const persona = personaResolution.persona;
+    const personaId = persona?.id;
     const conversation =
       existingConversation ??
       (input.dryRun
@@ -92,8 +100,6 @@ export class GenerationAppService {
           }));
 
     const conversationId = conversation?.id ?? input.conversationId;
-    const character = input.characterId ? this.context.characters.get(input.characterId) : conversation?.characterId ? this.context.characters.get(conversation.characterId) : undefined;
-    const persona = personaId ? this.context.personas.get(personaId) : undefined;
     const regexScripts = profile.regex.enabled === false ? [] : profile.regex.scripts;
     const regexMacros = {
       char: character?.name ?? 'Assistant',
@@ -101,8 +107,8 @@ export class GenerationAppService {
       user: persona?.name ?? 'User'
     };
 
-    if (!input.dryRun && conversation && input.personaId && input.personaId !== conversation.personaId) {
-      this.context.conversations.save({ ...conversation, personaId: input.personaId });
+    if (!input.dryRun && conversation && personaId && personaId !== conversation.personaId && (input.personaId || !conversation.personaId)) {
+      this.context.conversations.save({ ...conversation, personaId });
     }
 
     const existingMessages =
@@ -112,7 +118,9 @@ export class GenerationAppService {
               id: node.id,
               conversationId: node.conversationId,
               role: node.role ?? 'system',
+              speakerId: node.speakerId,
               name: node.speakerName,
+              speakerAvatarAssetId: node.speakerAvatarAssetId,
               content: node.content,
               thinking: node.thinking,
               createdAt: node.createdAt,
@@ -125,7 +133,9 @@ export class GenerationAppService {
                 id: node.id,
                 conversationId: node.conversationId,
                 role: node.role ?? 'system',
+                speakerId: node.speakerId,
                 name: node.speakerName,
+                speakerAvatarAssetId: node.speakerAvatarAssetId,
                 content: node.content,
                 thinking: node.thinking,
                 createdAt: node.createdAt,
@@ -140,12 +150,14 @@ export class GenerationAppService {
         ? createMessage({
             conversationId,
             role: 'assistant',
+            speakerId: character.id,
             content: renderPromptTemplate(character.firstMessage, {
               character,
               persona: persona?.description,
               userName: persona?.name
             }),
-            name: character.name
+            name: character.name,
+            speakerAvatarAssetId: character.avatarAssetId
           })
         : undefined;
     const userMessage = regenerateNode || continueNode
@@ -153,11 +165,13 @@ export class GenerationAppService {
       : createMessage({
           conversationId,
           role: 'user',
+          speakerId: persona?.id,
           content: applyRegexScripts(userInput, regexScripts, {
             placement: REGEX_PLACEMENT.USER_INPUT,
             macros: regexMacros
           }),
-          name: persona?.name
+          name: persona?.name,
+          speakerAvatarAssetId: persona?.avatarAssetId
         });
     const messages = [...existingMessages, ...(openingMessage ? [openingMessage] : []), ...(userMessage ? [userMessage] : [])];
     if (!input.dryRun) {
@@ -243,7 +257,15 @@ export class GenerationAppService {
         if (!continued) throw new AppError('Could not append continuation.', 500, 'continue_save_failed');
       } else {
         this.context.conversations.appendMessage(
-          createMessage({ conversationId, role: 'assistant', name: character?.name, content: assistantText, thinking: assistantThinking || undefined }),
+          createMessage({
+            conversationId,
+            role: 'assistant',
+            speakerId: character?.id,
+            name: character?.name,
+            speakerAvatarAssetId: character?.avatarAssetId,
+            content: assistantText,
+            thinking: assistantThinking || undefined
+          }),
           regenerateNode?.parentId ?? undefined
         );
       }

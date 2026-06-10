@@ -3,6 +3,7 @@ export const zhCN = {
 
   'nav.navigation': '导航',
   'nav.chat': '聊天',
+  'nav.chatHistory': '聊天记录',
   'nav.characters': '角色',
   'nav.personas': '用户设定',
   'nav.worldbooks': '世界书',
@@ -88,8 +89,10 @@ export const zhCN = {
 
   'chat.workspace': '聊天工作区',
   'chat.currentContext': '当前上下文',
+  'chat.currentConversation': '当前聊天',
   'chat.actions': '聊天操作',
   'chat.newChat': '新聊天',
+  'chat.unsavedChat': '未保存聊天',
   'chat.noCharacter': '未选择角色',
   'chat.noProfile': '未选择预设',
   'chat.noProfileSelected': '未选择预设',
@@ -101,6 +104,8 @@ export const zhCN = {
   'chat.renamePrompt': '重命名聊天',
   'chat.deleteConfirm': '删除“{title}”？此操作无法撤销。',
   'chat.search': '搜索聊天',
+  'chat.groupCount': '{count} 条聊天',
+  'chat.groupSummary': '{count} 条 · 最近 {time}',
   'chat.showArchived': '显示已归档聊天',
   'chat.noChats': '没有找到聊天。',
   'chat.loadMore': '加载更多',

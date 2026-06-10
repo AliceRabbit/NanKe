@@ -16,6 +16,7 @@
     ArrowUp,
     Bot,
     BookOpen,
+    ChevronDown,
     ChevronLeft,
     ChevronRight,
     ClipboardList,
@@ -239,7 +240,7 @@
   };
   type ZoomedAvatar = { key: string; name: string; role: ChatMessage['role']; src: string; initials: string };
   type GenerationStreamEvent = { type: 'text' | 'thinking' | 'inspector' | 'done' | 'error'; text?: string; conversationId?: string; activeLeafId?: string };
-  type ConversationGroup = { key: string; label: string; avatarUrl: string; count: number; conversations: Conversation[] };
+  type ConversationGroup = { key: string; label: string; avatarUrl: string; count: number; latestUpdatedAt?: number; conversations: Conversation[] };
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl' | 'conversation-snapshot';
   type ImportScope = 'character' | 'profile' | 'worldbook';
   type View = 'chat' | 'characters' | 'personas' | 'worldbooks' | 'profiles';
@@ -364,6 +365,7 @@
     'n'
   ];
   const appSettingsStorageKey = 'nanke.interface-settings.v1';
+  const conversationGroupStateStorageKey = 'nanke.conversation-groups.v1';
   const appFontFamilies: Array<{ value: AppFontFamily; label: string; description: string; css: string }> = [
     {
       value: 'system',
@@ -409,6 +411,7 @@
   let conversationSearchTimer: ReturnType<typeof setTimeout> | undefined;
   const conversationPageSize = 80;
   let showArchivedConversations = false;
+  let conversationGroupExpanded: Record<string, boolean> = {};
   let activeView: View = 'chat';
   let activeDrawer: Drawer = null;
   let appSettings: AppSettings = defaultAppSettings();
@@ -687,6 +690,7 @@
 
   onMount(() => {
     loadAppSettings();
+    loadConversationGroupState();
     void refreshAll();
   });
 
@@ -743,6 +747,29 @@
 
   function resetAppSettings() {
     saveAppSettings(defaultAppSettings());
+  }
+
+  function normalizeConversationGroupState(value: unknown): Record<string, boolean> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, boolean] => typeof entry[0] === 'string' && typeof entry[1] === 'boolean'));
+  }
+
+  function loadConversationGroupState() {
+    try {
+      const raw = localStorage.getItem(conversationGroupStateStorageKey);
+      conversationGroupExpanded = raw ? normalizeConversationGroupState(JSON.parse(raw)) : {};
+    } catch {
+      conversationGroupExpanded = {};
+    }
+  }
+
+  function saveConversationGroupState(next: Record<string, boolean>) {
+    conversationGroupExpanded = normalizeConversationGroupState(next);
+    try {
+      localStorage.setItem(conversationGroupStateStorageKey, JSON.stringify(conversationGroupExpanded));
+    } catch {
+      // The current interaction should still work when browser storage is unavailable.
+    }
   }
 
   function formatLocalTime(value: number) {
@@ -966,13 +993,37 @@
           label: character?.name ?? t('chat.noCharacter'),
           avatarUrl: characterAvatarUrl(character),
           count: 0,
+          latestUpdatedAt: undefined,
           conversations: []
         } satisfies ConversationGroup);
       group.count += 1;
+      group.latestUpdatedAt = Math.max(group.latestUpdatedAt ?? 0, conversation.updatedAt ?? 0);
       group.conversations.push(conversation);
       groups.set(key, group);
     }
     return [...groups.values()];
+  }
+
+  function isConversationGroupExpanded(group: ConversationGroup) {
+    if (conversationQuery.trim()) return true;
+    return conversationGroupExpanded[group.key] ?? false;
+  }
+
+  function setConversationGroupExpanded(group: ConversationGroup, expanded: boolean) {
+    if (conversationQuery.trim()) return;
+    saveConversationGroupState({
+      ...conversationGroupExpanded,
+      [group.key]: expanded
+    });
+  }
+
+  function conversationGroupDomId(group: ConversationGroup) {
+    return `conversation-group-${group.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  }
+
+  function conversationGroupSummary(group: ConversationGroup) {
+    const latest = group.latestUpdatedAt ? formatLocalTime(group.latestUpdatedAt) : '';
+    return latest ? t('chat.groupSummary', { count: group.count, time: latest }) : t('chat.groupCount', { count: group.count });
   }
 
   function conversationSummary(conversation: Conversation) {
@@ -3365,6 +3416,19 @@
         closeDrawer();
       }}
     >
+      <MessageCircle size={20} />
+    </button>
+    <button
+      class="icon-button"
+      class:active={activeDrawer === 'chats'}
+      title={t('nav.chatHistory')}
+      aria-label={t('nav.chatHistory')}
+      aria-pressed={activeDrawer === 'chats'}
+      on:click={() => {
+        activeView = 'chat';
+        openDrawer('chats');
+      }}
+    >
       <MessageSquare size={20} />
     </button>
     <button
@@ -3433,10 +3497,10 @@
   <section class="stage" class:tree-open={conversationTreeLoading || Boolean(conversationTreeSummary)} aria-label={t('chat.workspace')}>
     <header class="chatbar">
       <div class="scene">
-        <button class="conversation-button" type="button" on:click={() => openDrawer('chats')}>
-          <MessageSquare size={16} />
-          <span>{activeConversation?.title ?? t('chat.newChat')}</span>
-        </button>
+        <div class="conversation-title-card" aria-label={t('chat.currentConversation')}>
+          <MessageCircle size={16} />
+          <span>{activeConversation?.title ?? t('chat.unsavedChat')}</span>
+        </div>
       </div>
 
       <div class="context-strip" aria-label={t('chat.currentContext')}>
@@ -3749,8 +3813,13 @@
             <div class="drawer-empty compact">{t('chat.noChats')}</div>
           {/if}
           {#each conversationGroups as group}
-            <section class="conversation-group" aria-label={group.label}>
-              <header>
+            <details
+              class="conversation-group"
+              aria-label={group.label}
+              open={isConversationGroupExpanded(group)}
+              on:toggle={(event) => setConversationGroupExpanded(group, event.currentTarget.open)}
+            >
+              <summary class="conversation-group-toggle" aria-controls={conversationGroupDomId(group)}>
                 <span class="conversation-group-avatar">
                   {#if group.avatarUrl}
                     <img src={group.avatarUrl} alt="" />
@@ -3758,10 +3827,15 @@
                     <Bot size={15} />
                   {/if}
                 </span>
-                <strong>{group.label}</strong>
-                <small>{group.count}</small>
-              </header>
-              <div class="conversation-group-items">
+                <span class="conversation-group-copy">
+                  <strong>{group.label}</strong>
+                  <small>{conversationGroupSummary(group)}</small>
+                </span>
+                <span class="conversation-group-chevron">
+                  <ChevronDown size={16} />
+                </span>
+              </summary>
+              <div class="conversation-group-items" id={conversationGroupDomId(group)}>
                 {#each group.conversations as conversation}
                   <article class="conversation-row" class:active={conversation.id === activeConversationId} class:archived={Boolean(conversation.archivedAt)}>
                     <button class="conversation-row-main" type="button" on:click={() => loadConversation(conversation.id)}>
@@ -3804,7 +3878,7 @@
                   </article>
                 {/each}
               </div>
-            </section>
+            </details>
           {/each}
           {#if conversationHasMore}
             <button class="secondary full" type="button" on:click={loadMoreConversations}>
@@ -5533,7 +5607,7 @@
     min-width: 0;
   }
 
-  .conversation-button {
+  .conversation-title-card {
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -5543,15 +5617,10 @@
     padding: 9px 10px;
     background: #fff;
     color: #1f2924;
-    font: inherit;
     font-weight: 700;
   }
 
-  .conversation-button:hover {
-    background: #f0f2ee;
-  }
-
-  .conversation-button span,
+  .conversation-title-card span,
   .context-chip span,
   .status-pill {
     min-width: 0;
@@ -7105,25 +7174,64 @@
     gap: 8px;
   }
 
-  .conversation-group > header {
+  .conversation-group-toggle {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: 8px;
+    width: 100%;
+    gap: 9px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
     color: #3b463f;
-    font-size: 13px;
+    cursor: pointer;
+    list-style: none;
+    padding: 5px 6px;
   }
 
-  .conversation-group > header strong {
+  .conversation-group-toggle::-webkit-details-marker {
+    display: none;
+  }
+
+  .conversation-group-toggle:hover,
+  .conversation-group-toggle:focus-visible {
+    border-color: #d9e3dc;
+    background: #f4f7f3;
+    outline: 0;
+  }
+
+  .conversation-group-copy {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .conversation-group-copy strong,
+  .conversation-group-copy small {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .conversation-group > header small {
+  .conversation-group-copy strong {
+    font-size: 13px;
+  }
+
+  .conversation-group-copy small {
     color: #78817b;
     font-size: 12px;
-    font-variant-numeric: tabular-nums;
+  }
+
+  .conversation-group-chevron {
+    display: grid;
+    place-items: center;
+    color: #7a867f;
+    transition: transform 140ms ease;
+  }
+
+  .conversation-group:not([open]) .conversation-group-chevron {
+    transform: rotate(-90deg);
   }
 
   .conversation-group-avatar {
@@ -7147,6 +7255,10 @@
   .conversation-group-items {
     display: grid;
     gap: 7px;
+  }
+
+  .conversation-group:not([open]) .conversation-group-items {
+    display: none;
   }
 
   .conversation-row {
@@ -8943,7 +9055,7 @@
       align-items: stretch;
     }
 
-    .conversation-button {
+    .conversation-title-card {
       max-width: 100%;
     }
 

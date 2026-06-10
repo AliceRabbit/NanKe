@@ -438,6 +438,9 @@
   let pendingMessageDelete: PendingMessageDelete | null = null;
   let deletingMessageNode = false;
   let messageDeleteStatus = '';
+  let pendingConversationDelete: Conversation | null = null;
+  let deletingConversation = false;
+  let conversationDeleteStatus = '';
   let importKind: ImportKind = 'preset';
   let importScope: ImportScope = 'profile';
   let importName = '';
@@ -2245,19 +2248,47 @@
     status = t('status.ready');
   }
 
-  async function deleteConversation(event: MouseEvent, conversation: Conversation) {
+  function openConversationDeleteDialog(event: MouseEvent, conversation: Conversation) {
     event.stopPropagation();
-    if (!window.confirm(t('chat.deleteConfirm', { title: conversation.title }))) return;
-    await fetchJson<{ deleted: boolean; id: string }>(`/api/conversations?id=${encodeURIComponent(conversation.id)}`, {
-      method: 'DELETE'
-    });
-    conversations = conversations.filter((item) => item.id !== conversation.id);
-    if (activeConversationId === conversation.id) {
-      activeConversationId = '';
-      activeConversationRecord = null;
-      openingPreviewCharacterId = '';
-      messages = [];
-      activeView = 'chat';
+    pendingConversationDelete = conversation;
+    conversationDeleteStatus = '';
+  }
+
+  function closeConversationDeleteDialog() {
+    if (deletingConversation) return;
+    pendingConversationDelete = null;
+    conversationDeleteStatus = '';
+  }
+
+  async function confirmConversationDelete() {
+    const conversation = pendingConversationDelete;
+    if (!conversation || deletingConversation) return;
+
+    deletingConversation = true;
+    conversationDeleteStatus = '';
+    status = t('status.deleting');
+    try {
+      await fetchJson<{ deleted: boolean; id: string }>(`/api/conversations?id=${encodeURIComponent(conversation.id)}`, {
+        method: 'DELETE'
+      });
+      conversations = conversations.filter((item) => item.id !== conversation.id);
+      if (activeConversationId === conversation.id) {
+        activeConversationId = '';
+        activeConversationRecord = null;
+        openingPreviewCharacterId = '';
+        messages = [];
+        activeView = 'chat';
+      }
+      if (conversationTreeSummary?.conversation.id === conversation.id) {
+        closeConversationTree();
+      }
+      pendingConversationDelete = null;
+      status = t('status.ready');
+    } catch (error) {
+      conversationDeleteStatus = error instanceof Error ? error.message : t('chat.deleteConversationFailed');
+      status = conversationDeleteStatus;
+    } finally {
+      deletingConversation = false;
     }
   }
 
@@ -3776,6 +3807,32 @@
     </section>
   {/if}
 
+  {#if pendingConversationDelete}
+    <section class="delete-dialog-backdrop" role="presentation">
+      <div class="delete-dialog" role="dialog" aria-modal="true" aria-label={t('chat.delete')}>
+        <header>
+          <Trash2 size={17} />
+          <strong>{t('chat.deleteConversationTitle')}</strong>
+        </header>
+        <p>
+          <strong>{pendingConversationDelete.title}</strong>
+          <span>{t('chat.deleteConversationBody')}</span>
+        </p>
+        <div class="delete-dialog-actions conversation-delete-actions">
+          <button type="button" disabled={deletingConversation} on:click={closeConversationDeleteDialog}>
+            {t('common.cancel')}
+          </button>
+          <button class="danger" type="button" disabled={deletingConversation} on:click={confirmConversationDelete}>
+            {deletingConversation ? t('status.deleting') : t('chat.delete')}
+          </button>
+        </div>
+        {#if conversationDeleteStatus}
+          <small>{conversationDeleteStatus}</small>
+        {/if}
+      </div>
+    </section>
+  {/if}
+
   {#if activeDrawer}
     <button class="scrim" type="button" aria-label={t('common.close')} on:click={closeDrawer}></button>
     <aside
@@ -3871,7 +3928,7 @@
                           <Archive size={14} />
                         {/if}
                       </button>
-                      <button class="danger" type="button" title={t('chat.delete')} aria-label={t('chat.delete')} on:click={(event) => deleteConversation(event, conversation)}>
+                      <button class="danger" type="button" title={t('chat.delete')} aria-label={t('chat.delete')} on:click={(event) => openConversationDeleteDialog(event, conversation)}>
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -6509,10 +6566,25 @@
     line-height: 1.55;
   }
 
+  .delete-dialog p strong,
+  .delete-dialog p span {
+    display: block;
+  }
+
+  .delete-dialog p strong {
+    margin-bottom: 4px;
+    color: #27342d;
+    font-size: 14px;
+  }
+
   .delete-dialog-actions {
     display: grid;
     grid-template-columns: auto 1fr 1fr;
     gap: 8px;
+  }
+
+  .delete-dialog-actions.conversation-delete-actions {
+    grid-template-columns: auto minmax(120px, 1fr);
   }
 
   .delete-dialog-actions button {

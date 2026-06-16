@@ -5886,7 +5886,7 @@
     height: 100vh;
     min-height: 100vh;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
     overflow: hidden;
   }
 
@@ -5903,12 +5903,13 @@
   .stage.tree-open .messages,
   .stage.tree-open .composer {
     grid-column: 1;
+    grid-row: 2;
   }
 
   .stage.tree-open :global(.tree-dock),
   .stage.tree-open .tree-dock-loading {
     grid-column: 2;
-    grid-row: 2 / 4;
+    grid-row: 2;
   }
 
   .tree-dock-loading {
@@ -6354,9 +6355,11 @@
   }
 
   .messages {
+    grid-column: 1;
+    grid-row: 2;
     min-height: 0;
     overflow: auto;
-    padding: 24px;
+    padding: 24px 24px 124px;
     overscroll-behavior: contain;
   }
 
@@ -6838,10 +6841,14 @@
   }
 
   .composer {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: end;
     display: flex;
     justify-content: center;
     padding: 6px 20px 18px;
     background: transparent;
+    pointer-events: none;
     z-index: 10;
   }
 
@@ -6859,6 +6866,7 @@
       0 12px 30px rgb(31 36 33 / 10%),
       0 1px 0 rgb(31 36 33 / 4%);
     padding: 8px;
+    pointer-events: auto;
   }
 
   .composer-toolbox {
@@ -9772,7 +9780,7 @@
     }
 
     .messages {
-      padding: 18px 12px;
+      padding: 18px 12px 104px;
     }
 
     .composer {
@@ -9791,13 +9799,13 @@
 
     .stage.tree-open {
       grid-template-columns: 1fr;
-      grid-template-rows: auto minmax(0, 1fr) auto minmax(42vh, 52vh);
+      grid-template-rows: auto minmax(0, 1fr) minmax(42vh, 52vh);
     }
 
     .stage.tree-open :global(.tree-dock),
     .stage.tree-open .tree-dock-loading {
       grid-column: 1;
-      grid-row: 4;
+      grid-row: 3;
       border-top: 1px solid var(--nanke-border);
       border-left: 0;
     }

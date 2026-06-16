@@ -8,14 +8,39 @@
 
   html {
     background: var(--nanke-page);
+    min-height: 100%;
+    color-scheme: light;
     text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   body {
     margin: 0;
+    min-height: 100vh;
     background: var(--nanke-page);
     color: var(--nanke-ink);
     font-family: var(--nanke-font-sans);
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--nanke-border-strong);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--nanke-ink-subtle);
   }
 
   button,
@@ -40,10 +65,11 @@
     background: var(--nanke-field);
     box-shadow: var(--nanke-shadow-field);
     color: var(--nanke-ink);
+    border-radius: var(--nanke-radius-md);
     transition:
-      border-color 120ms ease,
-      background-color 120ms ease,
-      box-shadow 120ms ease;
+      border-color 250ms var(--nanke-ease-apple),
+      background-color 250ms var(--nanke-ease-apple),
+      box-shadow 250ms var(--nanke-ease-apple);
   }
 
   input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):hover,
@@ -59,7 +85,7 @@
     border-color: var(--nanke-accent);
     box-shadow:
       var(--nanke-shadow-field-focus),
-      0 0 0 4px var(--nanke-focus);
+      0 0 0 2px var(--nanke-focus);
     outline: 0;
   }
 
@@ -69,6 +95,7 @@
   }
 
   ::selection {
-    background: rgb(58 132 84 / 22%);
+    background: var(--nanke-ink);
+    color: var(--nanke-page);
   }
 }

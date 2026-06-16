@@ -1,31 +1,77 @@
 :root {
   --nanke-font-sans:
-    Inter, "Noto Sans SC", "Source Han Sans SC", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Plus Jakarta Sans", "Outfit", Inter, "Noto Sans SC", "Source Han Sans SC", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
   --nanke-font-serif:
     "Noto Serif SC", "Source Han Serif SC", ui-serif, Georgia, Cambria, "Times New Roman", serif;
-  --nanke-page: #f5f6f4;
-  --nanke-surface: #ffffff;
-  --nanke-field: #fcfdfb;
-  --nanke-field-hover: #ffffff;
-  --nanke-field-disabled: #f1f4ef;
-  --nanke-surface-muted: #f8faf7;
-  --nanke-surface-raised: #fbfcfa;
-  --nanke-ink: #1f2421;
-  --nanke-ink-muted: #68716b;
-  --nanke-ink-subtle: #89928c;
-  --nanke-border: #d8ddd6;
-  --nanke-border-soft: #e5e9e3;
-  --nanke-border-strong: #b9c5bb;
-  --nanke-accent: #2f8a56;
-  --nanke-accent-strong: #256f44;
-  --nanke-accent-soft: #e8f4ed;
-  --nanke-focus: rgb(47 138 86 / 24%);
-  --nanke-danger: #a33227;
-  --nanke-danger-soft: #fff1ef;
-  --nanke-radius-sm: 6px;
-  --nanke-radius-md: 8px;
-  --nanke-shadow-field: inset 0 1px 0 rgb(255 255 255 / 80%), 0 1px 2px rgb(31 36 33 / 4%);
-  --nanke-shadow-field-focus: inset 0 1px 0 rgb(255 255 255 / 90%), 0 8px 18px rgb(47 138 86 / 10%);
-  --nanke-shadow-popover: 0 16px 34px rgb(32 50 41 / 16%);
+
+  /* Grok/Apple Monochrome - Light Mode */
+  --nanke-page: #ffffff;
+  --nanke-surface: #f9fafb;
+  --nanke-field: #ffffff;
+  --nanke-field-hover: #f3f4f6;
+  --nanke-field-disabled: #f9fafb;
+  --nanke-surface-muted: #f3f4f6;
+  --nanke-surface-raised: #ffffff;
+  --nanke-surface-acrylic: rgba(249, 250, 251, 0.75);
+
+  --nanke-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --nanke-ease-apple: cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  --nanke-ink: #030712;
+  --nanke-ink-muted: #6b7280;
+  --nanke-ink-subtle: #9ca3af;
+
+  --nanke-border: #e5e7eb;
+  --nanke-border-soft: #f3f4f6;
+  --nanke-border-strong: #d1d5db;
+
+  /* Inverse Accent (Black in Light, White in Dark) */
+  --nanke-accent: #000000;
+  --nanke-accent-strong: #111827;
+  --nanke-accent-soft: rgba(0, 0, 0, 0.05);
+  --nanke-focus: rgba(0, 0, 0, 0.15);
+
+  --nanke-danger: #dc2626;
+  --nanke-danger-soft: rgba(220, 38, 38, 0.08);
+
+  --nanke-radius-sm: 8px;
+  --nanke-radius-md: 12px;
+
+  --nanke-shadow-field: inset 0 1px 2px rgba(0, 0, 0, 0.02), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --nanke-shadow-field-focus: inset 0 1px 2px rgba(0, 0, 0, 0.02), 0 0 0 1px var(--nanke-accent), 0 4px 12px rgba(0, 0, 0, 0.08);
+  --nanke-shadow-popover: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 16px 34px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.dark {
+  /* Grok/Apple Monochrome - Dark Mode */
+  --nanke-page: #000000;
+  --nanke-surface: #0a0a0a;
+  --nanke-field: #111111;
+  --nanke-field-hover: #1a1a1a;
+  --nanke-field-disabled: #050505;
+  --nanke-surface-muted: #111111;
+  --nanke-surface-raised: #141414;
+  --nanke-surface-acrylic: rgba(10, 10, 10, 0.75);
+
+  --nanke-ink: #f9fafb;
+  --nanke-ink-muted: #9ca3af;
+  --nanke-ink-subtle: #6b7280;
+
+  --nanke-border: #27272a;
+  --nanke-border-soft: #171717;
+  --nanke-border-strong: #3f3f46;
+
+  /* Inverse Accent */
+  --nanke-accent: #ffffff;
+  --nanke-accent-strong: #f3f4f6;
+  --nanke-accent-soft: rgba(255, 255, 255, 0.1);
+  --nanke-focus: rgba(255, 255, 255, 0.25);
+
+  --nanke-danger: #ef4444;
+  --nanke-danger-soft: rgba(239, 68, 68, 0.15);
+
+  --nanke-shadow-field: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --nanke-shadow-field-focus: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 0 0 1px var(--nanke-accent), 0 4px 12px rgba(255, 255, 255, 0.1);
+  --nanke-shadow-popover: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 16px 34px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
 }

@@ -9,6 +9,7 @@ export const zhCN = {
   'nav.personas': '用户设定',
   'nav.worldbooks': '世界书',
   'nav.profiles': '预设',
+  'nav.theme': '切换主题',
   'nav.settings': '设置',
   'nav.inspector': '提示词检查器',
 

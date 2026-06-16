@@ -25,7 +25,7 @@
 
 <label class={cn('group/grid grid min-w-0 gap-1.5 text-[13px] text-[var(--nanke-ink)]', className)}>
   {#if label}
-    <span class="text-[12px] font-semibold leading-5 text-[var(--nanke-ink-muted)] transition group-focus-within/grid:text-[var(--nanke-accent-strong)]">{label}</span>
+    <span class="text-[12px] font-medium leading-5 text-[var(--nanke-ink-muted)] transition-colors group-focus-within/grid:text-[var(--nanke-accent)]">{label}</span>
   {/if}
   <input
     {...rest}
@@ -33,12 +33,12 @@
     bind:value
     aria-invalid={error ? 'true' : undefined}
     class={cn(
-      'h-10 w-full min-w-0 rounded-[var(--nanke-radius-md)] border border-[var(--nanke-border)] bg-[var(--nanke-field)] px-3 py-2 text-[13px] text-[var(--nanke-ink)] shadow-[var(--nanke-shadow-field)] outline-none transition',
-      'hover:border-[var(--nanke-border-strong)] hover:bg-[var(--nanke-field-hover)]',
+      'h-10 w-full min-w-0 rounded-[var(--nanke-radius-md)] border border-transparent bg-[var(--nanke-field)] px-3 py-2 text-[13px] text-[var(--nanke-ink)] shadow-[var(--nanke-shadow-field)] outline-none transition-all duration-300 ease-out',
+      'hover:bg-[var(--nanke-field-hover)]',
       'placeholder:text-[var(--nanke-ink-subtle)]',
-      'focus:border-[var(--nanke-accent)] focus:shadow-[var(--nanke-shadow-field-focus)] focus:ring-4 focus:ring-[var(--nanke-focus)]',
-      'disabled:bg-[var(--nanke-field-disabled)] disabled:text-[var(--nanke-ink-subtle)] disabled:opacity-70',
-      error && 'border-[var(--nanke-danger)] focus:border-[var(--nanke-danger)] focus:ring-[rgb(163_50_39_/_18%)]',
+      'focus:border-[var(--nanke-accent)] focus:bg-[var(--nanke-field)] focus:shadow-[var(--nanke-shadow-field-focus)] focus:ring-2 focus:ring-[var(--nanke-accent-soft)]',
+      'disabled:bg-[var(--nanke-field-disabled)] disabled:text-[var(--nanke-ink-subtle)] disabled:opacity-50 disabled:pointer-events-none',
+      error && 'border-[var(--nanke-danger)] focus:border-[var(--nanke-danger)] focus:ring-[var(--nanke-danger-soft)]',
       controlClass
     )}
   />

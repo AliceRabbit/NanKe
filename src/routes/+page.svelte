@@ -5961,7 +5961,7 @@
 
   .context-chip:hover,
   .context-chip:focus-visible {
-    border-color: inherit;
+    border-color: var(--nanke-border-strong);
     background: var(--nanke-surface-muted);
     outline: 0;
   }
@@ -5973,7 +5973,7 @@
   .status-pill {
     justify-content: center;
     min-width: 78px;
-    border-color: inherit;
+    border-color: var(--nanke-border);
     background: var(--nanke-surface-muted);
     color: var(--nanke-accent);
     font-weight: 700;
@@ -6112,7 +6112,7 @@
 
   .home-readiness button:hover,
   .home-readiness button:focus-visible {
-    border-color: inherit;
+    border-color: var(--nanke-border-strong);
     background: var(--nanke-surface-muted);
     outline: 0;
   }
@@ -6206,7 +6206,7 @@
   .home-character-row:hover,
   .home-character-row:focus-visible,
   .home-character-row.active {
-    border-color: inherit;
+    border-color: var(--nanke-border-strong);
     background: var(--nanke-surface-muted);
     outline: 0;
   }
@@ -7187,9 +7187,15 @@
   }
 
   .secondary {
-    border-color: inherit;
+    border-color: var(--nanke-border);
     background: var(--nanke-surface);
     color: inherit;
+  }
+
+  .secondary:hover,
+  .secondary:focus-visible {
+    border-color: var(--nanke-border-strong);
+    outline: 0;
   }
 
   .secondary:hover,

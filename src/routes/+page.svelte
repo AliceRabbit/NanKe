@@ -6840,9 +6840,8 @@
   .composer {
     display: flex;
     justify-content: center;
-    border-top: 1px solid var(--nanke-border);
-    padding: 12px 20px 18px;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--nanke-page) 72%, transparent), var(--nanke-page) 34%);
+    padding: 6px 20px 18px;
+    background: transparent;
     z-index: 10;
   }
 

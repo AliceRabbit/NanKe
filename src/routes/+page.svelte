@@ -6919,29 +6919,32 @@
   }
 
   .composer-input {
+    appearance: none;
     min-height: 42px;
     max-height: 38vh;
-    border: 0;
+    border: 0 !important;
     border-radius: 8px;
     background: transparent;
-    box-shadow: none;
+    box-shadow: none !important;
     field-sizing: content;
     font-size: var(--app-chat-font-size);
     line-height: 1.55;
     overflow: auto;
     padding: 9px 6px;
-    resize: vertical;
+    resize: none;
   }
 
-  .composer-input:focus {
-    outline: 0;
+  .composer-input:focus,
+  .composer-input:focus-visible {
+    outline: 0 !important;
+    box-shadow: none !important;
   }
 
-  .composer-dock:has(.composer-input:focus) {
-    border-color: inherit;
+  .composer-dock:focus-within {
+    border-color: var(--nanke-border-strong);
     box-shadow:
-      0 0 0 3px rgb(127 178 141 / 18%),
-      0 12px 30px rgb(31 36 33 / 10%);
+      0 0 0 2px var(--nanke-focus),
+      var(--nanke-shadow-popover);
   }
 
   .composer-action {

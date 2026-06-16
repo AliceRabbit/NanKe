@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { applyRegexScripts, REGEX_PLACEMENT } from '$lib/core/regex';
   import { t } from '$lib/i18n';
   import { RangeField, SecretField, SelectField, TextareaField, TextField } from '$lib/ui/components';
@@ -430,6 +430,8 @@
   let conversationTreeActionStatus = '';
   let ConversationTreeDockComponent: ConversationTreeDockComponent | null = null;
   let messages: ChatMessage[] = [];
+  let messagesContainer: HTMLDivElement | null = null;
+  let messagesScrollFrame: number | null = null;
   let input = '';
   let composerToolsOpen = false;
   let status = t('status.ready');
@@ -462,7 +464,10 @@
       if (theme === 'system') applyTheme('system');
     };
     mediaQuery.addEventListener('change', handleThemePreferenceChange);
-    return () => mediaQuery.removeEventListener('change', handleThemePreferenceChange);
+    return () => {
+      mediaQuery.removeEventListener('change', handleThemePreferenceChange);
+      if (messagesScrollFrame !== null) cancelAnimationFrame(messagesScrollFrame);
+    };
   });
 
   let generationAbortController: AbortController | null = null;
@@ -922,6 +927,21 @@
     const response = await fetch(url, init);
     if (!response.ok) throw new Error(await response.text());
     return (await response.json()) as T;
+  }
+
+  function scrollMessagesToBottom() {
+    if (!messagesContainer) return;
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  async function queueMessagesScrollToBottom() {
+    if (typeof window === 'undefined') return;
+    await tick();
+    if (messagesScrollFrame !== null) cancelAnimationFrame(messagesScrollFrame);
+    messagesScrollFrame = requestAnimationFrame(() => {
+      messagesScrollFrame = null;
+      scrollMessagesToBottom();
+    });
   }
 
   function rememberConversation(conversation: Conversation) {
@@ -2425,6 +2445,7 @@
         content: ''
       }
     ];
+    void queueMessagesScrollToBottom();
     await streamGeneration({
       conversationId,
       profileId: activeProfileId || undefined,
@@ -2513,6 +2534,7 @@
       status = controller.signal.aborted ? t('status.stopped') : t('status.ready');
       if (!controller.signal.aborted && completedConversationId) {
         await refreshConversationState(completedConversationId);
+        void queueMessagesScrollToBottom();
       }
     } catch (error) {
       if (controller.signal.aborted) {
@@ -2562,6 +2584,7 @@
       const next = [...messages];
       next[next.length - 1] = { ...last, content: `${last.content}${content}` };
       messages = next;
+      void queueMessagesScrollToBottom();
       return;
     }
     messages = [
@@ -2574,6 +2597,7 @@
         content
       }
     ];
+    void queueMessagesScrollToBottom();
   }
 
   function appendAssistantDraftThinking(thinking: string) {
@@ -2583,6 +2607,7 @@
       const next = [...messages];
       next[next.length - 1] = { ...last, thinking: `${last.thinking ?? ''}${thinking}` };
       messages = next;
+      void queueMessagesScrollToBottom();
       return;
     }
     messages = [
@@ -2596,6 +2621,7 @@
         thinking
       }
     ];
+    void queueMessagesScrollToBottom();
   }
 
   function replaceAssistantDraft(content: string) {
@@ -2604,6 +2630,7 @@
       const next = [...messages];
       next[next.length - 1] = { ...last, content, thinking: '' };
       messages = next;
+      void queueMessagesScrollToBottom();
       return;
     }
     messages = [
@@ -2616,6 +2643,7 @@
         content
       }
     ];
+    void queueMessagesScrollToBottom();
   }
 
   function removeEmptyAssistantDraft() {
@@ -3799,7 +3827,7 @@
       </div>
     </header>
 
-    <div class="messages" aria-live="polite">
+    <div class="messages" aria-live="polite" bind:this={messagesContainer}>
       <div class="message-stack">
         {#if messages.length === 0}
           <div class="empty-state">
@@ -5855,9 +5883,11 @@
 
   .stage {
     min-width: 0;
+    height: 100vh;
     min-height: 100vh;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
   }
 
   .stage.tree-open {
@@ -6327,6 +6357,7 @@
     min-height: 0;
     overflow: auto;
     padding: 24px;
+    overscroll-behavior: contain;
   }
 
   .message-stack {
@@ -6812,6 +6843,7 @@
     border-top: 1px solid var(--nanke-border);
     padding: 12px 20px 18px;
     background: linear-gradient(180deg, color-mix(in srgb, var(--nanke-page) 72%, transparent), var(--nanke-page) 34%);
+    z-index: 10;
   }
 
   .composer-dock {

@@ -329,7 +329,7 @@
   };
   const maxContextTokens = 2_000_000;
   const maxOutputTokenRange = 65_536;
-  const avatarViewerMinScale = 0.55;
+  const avatarViewerMinScale = 0.1;
   const avatarViewerMaxScale = 2.6;
   const avatarViewerScaleStep = 0.12;
   const openAIStrictSamplerFields = new Set<SamplerField>([

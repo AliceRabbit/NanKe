@@ -181,6 +181,12 @@ export function initializeDatabase(sqlite: Database.Database = getDatabaseHandle
       data TEXT NOT NULL,
       created_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
 
   const conversationColumns = sqlite.prepare(`PRAGMA table_info(conversations)`).all() as Array<{ name: string }>;
@@ -196,7 +202,48 @@ export function initializeDatabase(sqlite: Database.Database = getDatabaseHandle
   addColumnIfMissing(sqlite, conversationColumns, 'revision', `ALTER TABLE conversations ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;`);
   addColumnIfMissing(sqlite, conversationColumns, 'archived_at', `ALTER TABLE conversations ADD COLUMN archived_at INTEGER;`);
 
-  migrateLinearMessagesToNodes(sqlite);
+  runLinearMessageMigrationOnce(sqlite);
+}
+
+function runLinearMessageMigrationOnce(sqlite: Database.Database): void {
+  const key = 'migration.linear_messages_to_nodes.v1';
+  const completed = sqlite.prepare(`SELECT value FROM app_meta WHERE key = ?`).get(key);
+  if (completed) return;
+
+  if (hasPendingLinearMessageMigration(sqlite)) {
+    migrateLinearMessagesToNodes(sqlite);
+  }
+
+  sqlite
+    .prepare(
+      `
+      INSERT INTO app_meta (key, value, updated_at)
+      VALUES (@key, @value, @updatedAt)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `
+    )
+    .run({ key, value: 'complete', updatedAt: Date.now() });
+}
+
+function hasPendingLinearMessageMigration(sqlite: Database.Database): boolean {
+  const row = sqlite
+    .prepare(
+      `
+      SELECT EXISTS (
+        SELECT 1
+        FROM conversations
+        WHERE root_node_id IS NULL
+           OR active_leaf_id IS NULL
+           OR NOT EXISTS (
+             SELECT 1
+             FROM message_nodes
+             WHERE message_nodes.conversation_id = conversations.id
+           )
+      ) AS pending
+    `
+    )
+    .get() as { pending: 0 | 1 };
+  return row.pending === 1;
 }
 
 function addColumnIfMissing(sqlite: Database.Database, columns: Array<{ name: string }>, name: string, sql: string): void {

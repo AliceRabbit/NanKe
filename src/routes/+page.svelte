@@ -9,6 +9,7 @@
   import type { Character } from '$lib/schemas/character';
   import type { RegexPlacement, RegexScript } from '$lib/schemas/regex';
   import type { WorldBook, WorldBookEntry } from '$lib/schemas/worldbook';
+  import type { PageData } from './$types';
   import {
     Archive,
     ArchiveRestore,
@@ -58,6 +59,8 @@
   Moon,
   Monitor,
 } from '@lucide/svelte';
+
+  export let data: PageData;
 
   type ProviderType = 'openai-compatible' | 'gemini';
   type OpenAICompatibility = 'strict-openai' | 'extended';
@@ -410,25 +413,29 @@
     }
   ];
 
-  let profiles: Profile[] = [];
-  let characters: Character[] = [];
-  let personas: UserPersona[] = [];
-  let personaCharacterBindings: PersonaCharacterBinding[] = [];
-  let worldBooks: WorldBook[] = [];
-  let conversations: Conversation[] = [];
+  const initialData = data.initial;
+
+  let profiles: Profile[] = initialData.profiles;
+  let profilesHydrated = initialData.profilesHydrated;
+  let profilesLoadPromise: Promise<void> | null = null;
+  let characters: Character[] = initialData.characters;
+  let personas: UserPersona[] = initialData.personas;
+  let personaCharacterBindings: PersonaCharacterBinding[] = initialData.personaCharacterBindings;
+  let worldBooks: WorldBook[] = initialData.worldBooks;
+  let conversations: Conversation[] = initialData.conversations;
   let conversationQuery = '';
-  let conversationCursor: { updatedAt: number; id: string } | null = null;
-  let conversationHasMore = false;
+  let conversationCursor: { updatedAt: number; id: string } | null = initialData.conversationCursor;
+  let conversationHasMore = initialData.conversationHasMore;
   let conversationSearchTimer: ReturnType<typeof setTimeout> | undefined;
-  const conversationPageSize = 80;
+  const conversationPageSize = initialData.conversationPageSize;
   let showArchivedConversations = false;
   let conversationGroupExpanded: Record<string, boolean> = {};
   let activeView: View = 'home';
   let activeDrawer: Drawer = null;
   let appSettings: AppSettings = defaultAppSettings();
-  let activeProfileId = '';
-  let activeCharacterId = '';
-  let activePersonaId = '';
+  let activeProfileId = profiles[0]?.id ?? '';
+  let activeCharacterId = characters[0]?.id ?? '';
+  let activePersonaId = personas.find((persona) => persona.isDefault)?.id ?? personas[0]?.id ?? '';
   let activeConversationId = '';
   let activeConversationRecord: Conversation | null = null;
   let conversationTreeSummary: ConversationTreeSummary | null = null;
@@ -550,14 +557,14 @@
   let personaDeleting = false;
   let lastPersonaAutoCharacterId = '';
   let newWorldBookName = '';
-  let activeWorldBookId = '';
+  let activeWorldBookId = worldBooks[0]?.id ?? '';
   let worldBookDraftId = '';
   let worldBookDraftName = '';
   let worldBookDraftEntries: WorldBookEntry[] = [];
   let activeWorldBookEntryId = '';
   let worldBookEntryQuery = '';
   let worldBookSortMode = 'order-desc';
-  let worldBookBindingCharacterId = '';
+  let worldBookBindingCharacterId = activeCharacterId || characters[0]?.id || '';
   let deletingWorldBook = false;
   let openingPreviewCharacterId = '';
   let zoomedAvatar: ZoomedAvatar | null = null;
@@ -752,7 +759,6 @@
   onMount(() => {
     loadAppSettings();
     loadConversationGroupState();
-    void refreshAll();
   });
 
   function defaultAppSettings(): AppSettings {
@@ -895,13 +901,17 @@
     closeConversationTree();
   }
 
-  function openChatWorkspace() {
+  async function openChatWorkspace() {
+    await ensureProfilesLoaded();
     activeView = 'chat';
     closeDrawer();
   }
 
   function openLibrary(drawer: Exclude<Drawer, 'chats' | 'settings' | 'import' | 'inspector' | null>) {
     activeDrawer = activeDrawer === drawer ? null : drawer;
+    if (activeDrawer === 'profiles') {
+      void ensureProfilesLoaded();
+    }
   }
 
   function openDrawer(drawer: Exclude<Drawer, null>) {
@@ -929,7 +939,8 @@
     activeDrawer = null;
   }
 
-  function startNewConversation() {
+  async function startNewConversation() {
+    await ensureProfilesLoaded();
     activeConversationId = '';
     activeConversationRecord = null;
     openingPreviewCharacterId = '';
@@ -944,6 +955,22 @@
     const response = await fetch(url, init);
     if (!response.ok) throw new Error(await response.text());
     return (await response.json()) as T;
+  }
+
+  function ensureProfilesLoaded(): Promise<void> {
+    if (profilesHydrated) return Promise.resolve();
+    if (!profilesLoadPromise) {
+      profilesLoadPromise = (async () => {
+        const nextProfiles = await fetchJson<Profile[]>('/api/profiles');
+        profiles = nextProfiles;
+        profilesHydrated = true;
+        activeProfileId ||= profiles[0]?.id ?? '';
+        loadProfileDraft(profiles.find((profile) => profile.id === activeProfileId));
+      })().finally(() => {
+        profilesLoadPromise = null;
+      });
+    }
+    return profilesLoadPromise;
   }
 
   function scrollMessagesToBottom() {
@@ -2439,6 +2466,7 @@
   }
 
   async function loadConversation(id: string) {
+    await ensureProfilesLoaded();
     openingPreviewCharacterId = '';
     activeView = 'chat';
     await refreshConversationState(id, { close: true });
@@ -3203,8 +3231,9 @@
     openImport('worldbook', 'worldbook');
   }
 
-  function startChatWithCharacter(character: Character | undefined = activeCharacter) {
+  async function startChatWithCharacter(character: Character | undefined = activeCharacter) {
     if (!character) return;
+    await ensureProfilesLoaded();
     activeCharacterId = character.id;
     activeConversationId = '';
     openingPreviewCharacterId = '';

@@ -264,6 +264,7 @@
     fontFamily: AppFontFamily;
     uiFontSize: number;
     chatFontSize: number;
+    chatBubbleWidth: number;
   };
   type MessageDeleteMode = 'node' | 'subtree';
   type PendingMessageDelete = {
@@ -701,7 +702,7 @@
   $: if (!importOptions.includes(importKind)) {
     importKind = importOptions[0];
   }
-  $: appSettingsStyle = `--app-font-family: ${appFontFamilyCss(appSettings.fontFamily)}; --app-ui-font-size: ${appSettings.uiFontSize}px; --app-chat-font-size: ${appSettings.chatFontSize}px;`;
+  $: appSettingsStyle = `--app-font-family: ${appFontFamilyCss(appSettings.fontFamily)}; --app-ui-font-size: ${appSettings.uiFontSize}px; --app-chat-font-size: ${appSettings.chatFontSize}px; --app-chat-bubble-width: ${appSettings.chatBubbleWidth}px;`;
   $: if (activeProfileId !== profileDraftId) {
     loadProfileDraft(activeProfile);
   }
@@ -758,7 +759,8 @@
     return {
       fontFamily: 'system',
       uiFontSize: 14,
-      chatFontSize: 15
+      chatFontSize: 15,
+      chatBubbleWidth: 760
     };
   }
 
@@ -783,7 +785,8 @@
     return {
       fontFamily,
       uiFontSize: clampSetting(value?.uiFontSize, 12, 18, defaults.uiFontSize),
-      chatFontSize: clampSetting(value?.chatFontSize, 13, 24, defaults.chatFontSize)
+      chatFontSize: clampSetting(value?.chatFontSize, 13, 24, defaults.chatFontSize),
+      chatBubbleWidth: clampSetting(value?.chatBubbleWidth, 420, 1000, defaults.chatBubbleWidth)
     };
   }
 
@@ -5914,6 +5917,17 @@
               oninput={(event) => updateAppSettings({ chatFontSize: (event.currentTarget as HTMLInputElement).valueAsNumber })}
             />
 
+            <RangeField
+              class="settings-range"
+              label={t('settings.chatBubbleWidth')}
+              valueLabel={`${appSettings.chatBubbleWidth}px`}
+              min="420"
+              max="1000"
+              step="20"
+              value={appSettings.chatBubbleWidth}
+              oninput={(event) => updateAppSettings({ chatBubbleWidth: (event.currentTarget as HTMLInputElement).valueAsNumber })}
+            />
+
             <div class="settings-preview">
               <strong>{t('settings.preview')}</strong>
               <p>{t('settings.previewText')}</p>
@@ -6540,7 +6554,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    width: min(100%, 880px);
+    width: min(100%, calc(var(--app-chat-bubble-width) + 120px));
     min-height: 100%;
     margin: 0 auto;
   }
@@ -6571,7 +6585,7 @@
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    width: min(100%, 760px);
+    width: min(100%, var(--app-chat-bubble-width));
     align-self: flex-start;
   }
 

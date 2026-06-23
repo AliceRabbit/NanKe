@@ -567,6 +567,7 @@ export const zhCN = {
   'settings.interfaceTypography': '界面排版',
   'settings.interfaceSize': '界面字号',
   'settings.chatTextSize': '聊天字号',
+  'settings.chatBubbleWidth': '聊天气泡宽度',
   'settings.preview': '预览',
   'settings.previewText': '角色对白、旁白和 Markdown 输出会使用所选阅读字号。',
   'settings.resetInterface': '重置界面',

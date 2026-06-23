@@ -33,6 +33,7 @@
     Link2,
     MessageCircle,
     MessageSquare,
+    Minus,
     Pencil,
     Plus,
     Power,
@@ -243,6 +244,8 @@
     branch?: MessageBranch;
   };
   type ZoomedAvatar = { key: string; name: string; role: ChatMessage['role']; src: string; initials: string };
+  type AvatarViewerFrame = { x: number; y: number; scale: number };
+  type AvatarViewerDrag = { pointerId: number; startX: number; startY: number; originX: number; originY: number };
   type GenerationStreamEvent = { type: 'text' | 'thinking' | 'inspector' | 'done' | 'error'; text?: string; conversationId?: string; activeLeafId?: string };
   type ConversationGroup = { key: string; label: string; avatarUrl: string; count: number; latestUpdatedAt?: number; conversations: Conversation[] };
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl' | 'conversation-snapshot';
@@ -326,6 +329,9 @@
   };
   const maxContextTokens = 2_000_000;
   const maxOutputTokenRange = 65_536;
+  const avatarViewerMinScale = 0.55;
+  const avatarViewerMaxScale = 2.6;
+  const avatarViewerScaleStep = 0.12;
   const openAIStrictSamplerFields = new Set<SamplerField>([
     'temperature',
     'topP',
@@ -463,9 +469,14 @@
     const handleThemePreferenceChange = () => {
       if (theme === 'system') applyTheme('system');
     };
+    const handleAvatarViewerResize = () => {
+      if (zoomedAvatar) clampCurrentAvatarViewer();
+    };
     mediaQuery.addEventListener('change', handleThemePreferenceChange);
+    window.addEventListener('resize', handleAvatarViewerResize);
     return () => {
       mediaQuery.removeEventListener('change', handleThemePreferenceChange);
+      window.removeEventListener('resize', handleAvatarViewerResize);
       if (messagesScrollFrame !== null) cancelAnimationFrame(messagesScrollFrame);
     };
   });
@@ -549,6 +560,9 @@
   let deletingWorldBook = false;
   let openingPreviewCharacterId = '';
   let zoomedAvatar: ZoomedAvatar | null = null;
+  let avatarViewerElement: HTMLElement | null = null;
+  let avatarViewerFrame: AvatarViewerFrame = defaultAvatarViewerFrame();
+  let avatarViewerDrag: AvatarViewerDrag | null = null;
   let profileQuery = '';
   let profileDraftId = '';
   let profileDraftName = '';
@@ -942,6 +956,139 @@
       messagesScrollFrame = null;
       scrollMessagesToBottom();
     });
+  }
+
+  function clampNumber(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function defaultAvatarViewerFrame(): AvatarViewerFrame {
+    if (typeof window === 'undefined') return { x: 84, y: 78, scale: 1 };
+
+    const compact = window.matchMedia('(max-width: 760px)').matches;
+    const railWidth = compact ? 56 : 64;
+    const viewerWidth = Math.min(420, Math.max(260, Math.min(window.innerWidth * 0.34, window.innerHeight * 0.58)));
+    const stageWidth = Math.max(0, window.innerWidth - railWidth);
+    const chatWidth = Math.min(880, stageWidth);
+    const chatLeft = railWidth + (stageWidth - chatWidth) / 2;
+    const leftGapWidth = Math.max(0, chatLeft - railWidth);
+    const x = leftGapWidth >= viewerWidth + 24 ? railWidth + (leftGapWidth - viewerWidth) / 2 : railWidth + (compact ? 10 : 16);
+
+    return {
+      x: clampNumber(x, 8, Math.max(8, window.innerWidth - viewerWidth - 8)),
+      y: compact ? 72 : 82,
+      scale: 1
+    };
+  }
+
+  function avatarViewerVisualSize(scale = avatarViewerFrame.scale) {
+    const fallbackWidth = typeof window === 'undefined' ? 360 : Math.min(420, Math.max(260, Math.min(window.innerWidth * 0.34, window.innerHeight * 0.58)));
+    const fallbackHeight = fallbackWidth * 1.5;
+    const rect = avatarViewerElement?.getBoundingClientRect();
+    if (!rect || avatarViewerFrame.scale <= 0) return { width: fallbackWidth * scale, height: fallbackHeight * scale };
+
+    return {
+      width: (rect.width / avatarViewerFrame.scale) * scale,
+      height: (rect.height / avatarViewerFrame.scale) * scale
+    };
+  }
+
+  function clampAvatarViewerAxis(value: number, viewportSize: number, contentSize: number, margin: number) {
+    if (contentSize > viewportSize - margin * 2) {
+      return clampNumber(value, viewportSize - contentSize - margin, margin);
+    }
+    return clampNumber(value, margin, viewportSize - contentSize - margin);
+  }
+
+  function clampAvatarViewerFrame(frame: AvatarViewerFrame): AvatarViewerFrame {
+    if (typeof window === 'undefined') return frame;
+    const scale = clampNumber(frame.scale, avatarViewerMinScale, avatarViewerMaxScale);
+    const { width, height } = avatarViewerVisualSize(scale);
+    const margin = 8;
+    return {
+      x: clampAvatarViewerAxis(frame.x, window.innerWidth, width, margin),
+      y: clampAvatarViewerAxis(frame.y, window.innerHeight, height, margin),
+      scale
+    };
+  }
+
+  async function resetAvatarViewerFrame() {
+    avatarViewerDrag = null;
+    avatarViewerFrame = defaultAvatarViewerFrame();
+    await tick();
+    avatarViewerFrame = clampAvatarViewerFrame(avatarViewerFrame);
+  }
+
+  function closeZoomedAvatar() {
+    zoomedAvatar = null;
+    avatarViewerDrag = null;
+  }
+
+  function showZoomedAvatar(avatar: ZoomedAvatar) {
+    zoomedAvatar = avatar;
+    void resetAvatarViewerFrame();
+  }
+
+  function setAvatarViewerScale(nextScale: number) {
+    const scale = clampNumber(Number(nextScale.toFixed(2)), avatarViewerMinScale, avatarViewerMaxScale);
+    const rect = avatarViewerElement?.getBoundingClientRect();
+    if (!rect || avatarViewerFrame.scale <= 0) {
+      avatarViewerFrame = clampAvatarViewerFrame({ ...avatarViewerFrame, scale });
+      return;
+    }
+
+    const baseWidth = rect.width / avatarViewerFrame.scale;
+    const baseHeight = rect.height / avatarViewerFrame.scale;
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    avatarViewerFrame = clampAvatarViewerFrame({
+      x: centerX - (baseWidth * scale) / 2,
+      y: centerY - (baseHeight * scale) / 2,
+      scale
+    });
+  }
+
+  function zoomAvatarViewer(delta: number) {
+    setAvatarViewerScale(avatarViewerFrame.scale + delta);
+  }
+
+  function zoomAvatarViewerWheel(event: WheelEvent) {
+    const direction = event.deltaY < 0 ? 1 : -1;
+    zoomAvatarViewer(direction * avatarViewerScaleStep);
+  }
+
+  function startAvatarViewerDrag(event: PointerEvent) {
+    if (event.button !== 0) return;
+    avatarViewerDrag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: avatarViewerFrame.x,
+      originY: avatarViewerFrame.y
+    };
+    avatarViewerElement?.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function dragAvatarViewer(event: PointerEvent) {
+    if (!avatarViewerDrag || avatarViewerDrag.pointerId !== event.pointerId) return;
+    avatarViewerFrame = clampAvatarViewerFrame({
+      ...avatarViewerFrame,
+      x: avatarViewerDrag.originX + event.clientX - avatarViewerDrag.startX,
+      y: avatarViewerDrag.originY + event.clientY - avatarViewerDrag.startY
+    });
+  }
+
+  function stopAvatarViewerDrag(event: PointerEvent) {
+    if (!avatarViewerDrag || avatarViewerDrag.pointerId !== event.pointerId) return;
+    if (avatarViewerElement?.hasPointerCapture(event.pointerId)) {
+      avatarViewerElement.releasePointerCapture(event.pointerId);
+    }
+    avatarViewerDrag = null;
+  }
+
+  function clampCurrentAvatarViewer() {
+    avatarViewerFrame = clampAvatarViewerFrame(avatarViewerFrame);
   }
 
   function rememberConversation(conversation: Conversation) {
@@ -3015,17 +3162,17 @@
     const key = `${message.role}:${name}:${src}`;
 
     if (zoomedAvatar?.key === key) {
-      zoomedAvatar = null;
+      closeZoomedAvatar();
       return;
     }
 
-    zoomedAvatar = {
+    showZoomedAvatar({
       key,
       name,
       role: message.role,
       src,
       initials: messageInitials(message)
-    };
+    });
   }
 
   function openCharacterAvatar(character: Character | undefined = activeCharacter) {
@@ -3033,16 +3180,16 @@
     const src = characterAvatarUrl(character);
     const key = `character:${character.id}:${src}`;
     if (zoomedAvatar?.key === key) {
-      zoomedAvatar = null;
+      closeZoomedAvatar();
       return;
     }
-    zoomedAvatar = {
+    showZoomedAvatar({
       key,
       name: character.name,
       role: 'assistant',
       src,
       initials: characterInitials(character)
-    };
+    });
   }
 
   function openCharacterImport() {
@@ -3267,7 +3414,7 @@
       messages = [];
     }
     if (zoomedAvatar?.key.startsWith(`character:${character.id}:`)) {
-      zoomedAvatar = null;
+      closeZoomedAvatar();
     }
     loadCharacterDraft(characters.find((item) => item.id === activeCharacterId));
     status = t('status.ready');
@@ -4032,16 +4179,42 @@
   {/if}
 
   {#if zoomedAvatar}
-    <section class="avatar-viewer" aria-label={t('chat.avatarPreview')} title={zoomedAvatar.name}>
+    <section
+      class="avatar-viewer"
+      class:dragging={Boolean(avatarViewerDrag)}
+      aria-label={t('chat.avatarPreview')}
+      title={zoomedAvatar.name}
+      bind:this={avatarViewerElement}
+      style={`--avatar-viewer-x: ${avatarViewerFrame.x}px; --avatar-viewer-y: ${avatarViewerFrame.y}px; --avatar-viewer-scale: ${avatarViewerFrame.scale};`}
+      on:pointermove={dragAvatarViewer}
+      on:pointerup={stopAvatarViewerDrag}
+      on:pointercancel={stopAvatarViewerDrag}
+      on:wheel|preventDefault={zoomAvatarViewerWheel}
+    >
       <div class="avatar-viewer-controls">
-        <span aria-hidden="true"><GripHorizontal size={18} /></span>
-        <button type="button" title={t('chat.closeAvatar')} aria-label={t('chat.closeAvatar')} on:click={() => (zoomedAvatar = null)}>
-          <X size={18} />
+        <button class="avatar-viewer-drag" type="button" title={t('chat.dragAvatar')} aria-label={t('chat.dragAvatar')} on:pointerdown={startAvatarViewerDrag}>
+          <GripHorizontal size={18} />
+          <span>{zoomedAvatar.name}</span>
         </button>
+        <div class="avatar-viewer-tools">
+          <button type="button" title={t('chat.avatarZoomOut')} aria-label={t('chat.avatarZoomOut')} on:click={() => zoomAvatarViewer(-avatarViewerScaleStep)}>
+            <Minus size={17} />
+          </button>
+          <span class="avatar-viewer-scale" aria-hidden="true">{Math.round(avatarViewerFrame.scale * 100)}%</span>
+          <button type="button" title={t('chat.avatarZoomIn')} aria-label={t('chat.avatarZoomIn')} on:click={() => zoomAvatarViewer(avatarViewerScaleStep)}>
+            <Plus size={17} />
+          </button>
+          <button type="button" title={t('chat.avatarZoomReset')} aria-label={t('chat.avatarZoomReset')} on:click={resetAvatarViewerFrame}>
+            <RotateCcw size={16} />
+          </button>
+          <button type="button" title={t('chat.closeAvatar')} aria-label={t('chat.closeAvatar')} on:click={closeZoomedAvatar}>
+            <X size={18} />
+          </button>
+        </div>
       </div>
       <div class="avatar-viewer-image" class:user={zoomedAvatar.role === 'user'}>
         {#if zoomedAvatar.src}
-          <img src={zoomedAvatar.src} alt={t('chat.avatarAlt', { name: zoomedAvatar.name })} />
+          <img src={zoomedAvatar.src} alt={t('chat.avatarAlt', { name: zoomedAvatar.name })} draggable="false" on:load={clampCurrentAvatarViewer} />
         {:else}
           <span>{zoomedAvatar.initials}</span>
         {/if}
@@ -7017,21 +7190,20 @@
 
   .avatar-viewer {
     position: fixed;
-    --rail-width: 64px;
-    --stage-width: calc(100vw - var(--rail-width));
-    --chat-width: min(880px, var(--stage-width));
-    --chat-left: calc(var(--rail-width) + (var(--stage-width) - var(--chat-width)) / 2);
-    --left-gap-width: calc(var(--chat-left) - var(--rail-width));
-    --viewer-margin: 12px;
-    --max-avatar-viewer-width: min(430px, calc(90vh * 0.666));
-    top: 78px;
-    left: calc(var(--rail-width) + max(var(--viewer-margin), calc((var(--left-gap-width) - var(--max-avatar-viewer-width)) / 2)));
+    top: 0;
+    left: 0;
     z-index: 25;
-    display: block;
-    width: max(0px, calc(var(--left-gap-width) - var(--viewer-margin) * 2));
-    max-width: var(--max-avatar-viewer-width);
-    max-height: calc(100vh - 96px);
+    display: grid;
+    gap: 8px;
+    width: min(34vw, 430px);
+    min-width: min(260px, calc(100vw - 72px));
+    max-width: calc(100vw - 16px);
     background: transparent;
+    transform: translate3d(var(--avatar-viewer-x), var(--avatar-viewer-y), 0) scale(var(--avatar-viewer-scale));
+    transform-origin: top left;
+    user-select: none;
+    touch-action: none;
+    will-change: transform;
   }
 
   .avatar-viewer-image {
@@ -7039,23 +7211,23 @@
     align-items: flex-start;
     justify-content: center;
     min-height: 0;
-    max-height: calc(100vh - 168px);
     background: transparent;
   }
 
   .avatar-viewer-image img {
     display: block;
     width: 100%;
-    max-height: calc(100vh - 96px);
+    max-height: min(74vh, 680px);
     object-fit: contain;
     border-radius: 10px;
     box-shadow: 0 18px 46px rgb(20 24 22 / 22%);
+    -webkit-user-drag: none;
   }
 
   .avatar-viewer-image span {
     display: grid;
     place-items: center;
-    width: min(72vw, 260px);
+    width: 100%;
     aspect-ratio: 1;
     border-radius: 8px;
     background: var(--nanke-surface-raised);
@@ -7076,39 +7248,78 @@
     left: 8px;
     z-index: 2;
     display: flex;
+    gap: 8px;
     justify-content: space-between;
-    opacity: 0;
-    pointer-events: none;
+    align-items: center;
+    opacity: 0.78;
     transition: opacity 160ms ease;
   }
 
   .avatar-viewer:hover .avatar-viewer-controls,
-  .avatar-viewer:focus-within .avatar-viewer-controls {
+  .avatar-viewer:focus-within .avatar-viewer-controls,
+  .avatar-viewer.dragging .avatar-viewer-controls {
     opacity: 1;
   }
 
-  .avatar-viewer-controls span,
-  .avatar-viewer-controls button {
+  .avatar-viewer-controls button,
+  .avatar-viewer-scale {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
     height: 34px;
     border: 1px solid var(--nanke-border-strong);
     border-radius: 8px;
-    background: var(--nanke-surface-muted);
+    background: color-mix(in srgb, var(--nanke-surface) 82%, transparent);
     color: var(--nanke-ink);
     pointer-events: auto;
     backdrop-filter: blur(20px) saturate(180%);
   }
 
   .avatar-viewer-controls button {
+    width: 34px;
     cursor: pointer;
+  }
+
+  .avatar-viewer-drag {
+    width: auto !important;
+    max-width: min(52%, 210px);
+    gap: 7px;
+    justify-content: flex-start !important;
+    padding: 0 10px;
+    cursor: grab !important;
+  }
+
+  .avatar-viewer.dragging .avatar-viewer-drag {
+    cursor: grabbing !important;
+  }
+
+  .avatar-viewer-drag span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .avatar-viewer-tools {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .avatar-viewer-scale {
+    min-width: 46px;
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
 
   .avatar-viewer-controls button:hover,
   .avatar-viewer-controls button:focus-visible {
-    background: var(--nanke-surface-muted);
+    background: var(--nanke-surface);
     outline: 0;
   }
 
@@ -9961,14 +10172,30 @@
     }
 
     .avatar-viewer {
-      --rail-width: 56px;
-      --viewer-margin: 8px;
-      top: 72px;
-      max-height: calc(100vh - 92px);
+      width: min(70vw, 360px);
+      min-width: min(240px, calc(100vw - 72px));
     }
 
     .avatar-viewer-image img {
-      max-height: calc(100vh - 92px);
+      max-height: min(68vh, 560px);
+    }
+
+    .avatar-viewer-controls {
+      gap: 6px;
+    }
+
+    .avatar-viewer-drag {
+      max-width: 44%;
+      padding-inline: 8px;
+    }
+
+    .avatar-viewer-tools {
+      gap: 4px;
+    }
+
+    .avatar-viewer-scale {
+      min-width: 40px;
+      padding-inline: 6px;
     }
   }
 </style>

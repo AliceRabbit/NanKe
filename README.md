@@ -1,28 +1,57 @@
 # NanKe
 
-NanKe is a modern TypeScript tavern app focused on core chat workflows, compatibility with existing SillyTavern assets, and maintainable provider abstraction.
+NanKe 是一个重新思考“酒馆式对话体验”的项目。
 
-## Stack
+它不是为了复刻某个已有项目，也不是为了把旧系统的所有历史包袱搬到新的代码里。NanKe 的目标更简单：保留角色对话、长期设定和创作陪伴中真正重要的部分，用更清晰、更现代、更容易维护的方式重新实现。
 
-- SvelteKit modular monolith
-- TypeScript
-- SQLite via Drizzle ORM and `better-sqlite3`
-- Providers: OpenAI-compatible and Gemini/Vertex
-- Compatibility: SillyTavern character cards, world books, presets, and JSONL chats
+这个项目的出发点来自一个很朴素的问题：如果今天从零开始设计一个酒馆，它应该是什么样子？
 
-## Development
+它应该足够轻，不因为历史兼容而变得难以理解；它应该足够稳，能够认真对待用户长期积累的角色、设定和对话；它也应该足够克制，不为了堆叠功能而牺牲日常使用时的流畅感。
 
-Use Corepack to activate pnpm:
+NanKe 目前仍处在早期开发阶段。很多地方还在快速调整，但项目会尽量坚持几个原则：
+
+- 以真实使用体验为中心，而不是以功能数量为中心。
+- 兼容有价值的旧资产，但不继承不必要的历史结构。
+- 保持项目结构清晰，让后续开发和维护都尽可能轻。
+- 优先解决核心对话体验，再逐步扩展周边能力。
+
+## 启动方式
+
+进入项目目录：
+
+```bash
+cd NanKe
+```
+
+安装依赖：
 
 ```bash
 corepack prepare pnpm@11.5.1 --activate
 pnpm install
+```
+
+启动开发环境：
+
+```bash
 pnpm dev
 ```
 
-Run checks:
+启动后按照终端显示的地址在浏览器中打开即可。默认通常是：
+
+```text
+http://127.0.0.1:5173/
+```
+
+## 常用命令
+
+检查项目：
 
 ```bash
 pnpm check
-pnpm test
+```
+
+构建项目：
+
+```bash
+pnpm build
 ```

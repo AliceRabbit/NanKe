@@ -1,15 +1,61 @@
-.svelte-kit/
-.vercel/
-build/
+# Dependencies
 node_modules/
-coverage/
-playwright-report/
-test-results/
+.pnpm-store/
+
+# SvelteKit / Vite output
+.svelte-kit/
+.vite/
+build/
+dist/
+.output/
+
+# Hosting output
+.vercel/
+.netlify/
+
+# Local NanKe data
 .nanke/
 data/
 *.db
+*.db-journal
 *.db-shm
 *.db-wal
+*.sqlite
+*.sqlite3
+
+# Environment and local overrides
 .env
 .env.*
+*.local
 !.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test and coverage output
+coverage/
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# TypeScript
+*.tsbuildinfo
+
+# Editor and OS files
+.idea/
+.vscode/
+.history/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp

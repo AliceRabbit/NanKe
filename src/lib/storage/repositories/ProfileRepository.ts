@@ -77,6 +77,10 @@ export class ProfileRepository {
     return normalized.changed ? this.save(normalized.profile) : normalized.profile;
   }
 
+  delete(id: string): boolean {
+    return this.db.delete(generationProfiles).where(eq(generationProfiles.id, id)).run().changes > 0;
+  }
+
   save(profile: GenerationProfile): GenerationProfile {
     const updated = { ...profile, updatedAt: Date.now() };
     this.db

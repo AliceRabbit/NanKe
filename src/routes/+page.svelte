@@ -6,7 +6,6 @@
   import RegexScriptsEditor from '$lib/ui/components/RegexScriptsEditor.svelte';
   import RangeField from '$lib/ui/components/form/RangeField.svelte';
   import SecretField from '$lib/ui/components/form/SecretField.svelte';
-  import SelectField from '$lib/ui/components/form/SelectField.svelte';
   import TextareaField from '$lib/ui/components/form/TextareaField.svelte';
   import TextField from '$lib/ui/components/form/TextField.svelte';
   import { renderMessageMarkdown } from '$lib/ui/markdown';
@@ -94,8 +93,6 @@
   type GeminiThinkingLevel = Profile['thinking']['gemini']['level'];
   type PromptRole = PromptSlot['role'];
   type PromptSlotSource = PromptSlot['source'];
-  type PromptMode = Profile['prompt']['mode'];
-  type MacroMode = Profile['prompt']['macroMode'];
   type CharacterSortMode = 'favorite' | 'name-asc' | 'name-desc' | 'newest' | 'oldest' | 'tokens-desc';
   type CharacterEditorTab = 'core' | 'prompt' | 'lore' | 'metadata';
   type CharacterPanelMode = 'edit' | 'create';
@@ -271,10 +268,7 @@
     { value: 'rectangle', label: t('avatarShape.rectangle'), description: t('avatarShape.rectangleDescription') },
     { value: 'circle', label: t('avatarShape.circle'), description: t('avatarShape.circleDescription') }
   ];
-  // Twemoji ant artwork, CC BY 4.0: https://github.com/twitter/twemoji
-  const settingsPreviewAvatarUrl = `data:image/svg+xml,${encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="6" fill="#f8f4ee"/><path fill="#31373D" d="M7.5 24.516c-.256 0-.512-.098-.707-.293-.391-.391-.391-1.024 0-1.414L22.81 6.793c.391-.391 1.023-.391 1.414 0s.391 1.024 0 1.414L8.207 24.223c-.196.195-.452.293-.707.293zm8.282-11.738c-.219 0-.438-.071-.623-.218-.431-.344-.502-.971-.161-1.403.113-.144 2.571-3.361.971-7.572-.196-.517.063-1.094.579-1.29.518-.196 1.094.064 1.29.579 2.017 5.307-1.139 9.357-1.274 9.527-.197.248-.488.377-.782.377zm3.89 3.888c-.221 0-.441-.072-.626-.221-.429-.345-.499-.97-.156-1.4.138-.172 3.435-4.197 9.323-2.726.536.134.862.677.727 1.213-.134.535-.679.861-1.212.728-4.623-1.157-7.172 1.905-7.278 2.036-.197.243-.487.37-.778.37zM6.454 18.511c-1.096 0-2.301-.186-3.58-.671-.517-.196-.776-.773-.58-1.29.195-.517.775-.775 1.29-.58 4.219 1.604 7.439-.866 7.574-.972.434-.338 1.062-.266 1.403.166.342.432.271 1.058-.159 1.4-.129.103-2.495 1.947-5.948 1.947zm1.564-8.066c-1.829 0-4.968-.482-7.542-3.332-.37-.41-.338-1.042.072-1.412.411-.371 1.043-.337 1.412.072C4.984 9.122 8.976 8.392 9.146 8.36c.538-.105 1.066.246 1.173.787.107.54-.241 1.064-.781 1.174-.069.014-.644.124-1.52.124z"/><path fill="#31373D" d="M9.341 10.341c-.066 0-.132-.006-.199-.02-.541-.109-.89-.635-.783-1.175.034-.173.76-4.163-2.587-7.185C5.362 1.591 5.33.959 5.7.549 6.069.14 6.702.106 7.113.477c4.214 3.806 3.251 8.849 3.207 9.062-.096.475-.513.802-.979.802zm3.948 18.63c-.448 0-.856-.303-.969-.758-1.473-5.895 2.554-9.186 2.726-9.323.431-.344 1.061-.273 1.405.159.343.431.273 1.058-.156 1.402-.14.114-3.187 2.667-2.035 7.277.134.535-.192 1.078-.728 1.212-.081.021-.163.031-.243.031z"/><path fill="#31373D" d="M29.844 19.167c-2.96-2.959-6.095-3.569-8.915-2.069-.157-1.874-1.166-4.007-2.521-5.363-1.488-1.488-3.008-1.653-4.405-1.044 1.058-2.465.6-5.43-.826-6.856-1.843-1.843-4.594-.411-7.174 2.168-2.58 2.58-4.012 5.331-2.168 7.174 1.425 1.426 4.391 1.883 6.856.826-.61 1.397-.444 2.918 1.044 4.405 1.354 1.354 3.489 2.363 5.363 2.521-1.5 2.82-.891 5.954 2.069 8.915 3.75 3.749 12.204 5.527 14.204 3.527s.223-10.455-3.527-14.204z"/></svg>'
-  )}`;
+  const settingsPreviewAvatarUrl = '/brand/settings-preview-ant.png';
   const appFontFamilies: Array<{ value: AppFontFamily; label: string; description: string; css: string }> = [
     {
       value: 'system',
@@ -416,12 +410,19 @@
   let pendingConversationDelete: Conversation | null = null;
   let deletingConversation = false;
   let conversationDeleteStatus = '';
+  let pendingCharacterDelete: Character | null = null;
+  let deletingCharacter = false;
+  let characterDeleteStatus = '';
+  let pendingProfileDelete: Profile | null = null;
+  let deletingProfile = false;
+  let profileDeleteStatus = '';
   let importKind: ImportKind = 'preset';
   let importScope: ImportScope = 'profile';
   let importName = '';
   let importText = '';
   let importFileName = '';
   let importFileBase64 = '';
+  let hasImportPayload = false;
   let inspector = '';
   let newCharacterName = '';
   let newCharacterDescription = '';
@@ -486,7 +487,6 @@
   let avatarViewerElement: HTMLElement | null = null;
   let avatarViewerFrame: AvatarViewerFrame = defaultAvatarViewerFrame();
   let avatarViewerDrag: AvatarViewerDrag | null = null;
-  let profileQuery = '';
   let profileDraftId = '';
   let profileDraftName = '';
   let profileDraftProviderType: ProviderType = 'openai-compatible';
@@ -519,12 +519,10 @@
   let profileDraftGeminiThinkingMode: GeminiThinkingMode = 'default';
   let profileDraftGeminiThinkingBudget = '';
   let profileDraftGeminiThinkingLevel: GeminiThinkingLevel = 'medium';
-  let profileDraftMode: PromptMode = 'chat';
-  let profileDraftMacroMode: MacroMode = 'none';
   let profileDraftSquashSystemMessages = false;
   let activeSamplerFields = openAIStrictSamplerFields;
   let samplerVisible = samplerVisibility(activeSamplerFields);
-  let samplerPanelHeading = t('profile.openAIParams');
+  let samplerPanelHeading = t('profile.chatParams');
   let maxTokensFieldLabel = t('profile.maxCompletion');
   let candidateCountFieldLabel = 'N';
   let profileDraftRegexEnabled = true;
@@ -541,7 +539,6 @@
 
   $: activeProfile = profiles.find((profile) => profile.id === activeProfileId);
   $: activeProfileStats = profileStats(activeProfile);
-  $: filteredProfiles = filterProfiles(profiles, profileQuery);
   $: globalRegexStats = { active: globalRegexDraftScripts.filter((script) => !script.disabled).length, total: globalRegexDraftScripts.length };
   $: draftPromptStats = promptSlotStats(profileDraftSlots);
   $: filteredPromptSlots = filterPromptSlots(profileDraftSlots, promptSlotQuery);
@@ -554,12 +551,7 @@
         ? openAIExtendedSamplerFields
         : openAIStrictSamplerFields;
   $: samplerVisible = samplerVisibility(activeSamplerFields);
-  $: samplerPanelHeading =
-    profileDraftProviderType === 'gemini'
-      ? t('profile.geminiParams')
-      : profileDraftOpenAICompatibility === 'extended'
-        ? t('profile.extendedParams')
-        : t('profile.openAIParams');
+  $: samplerPanelHeading = t('profile.chatParams');
   $: maxTokensFieldLabel =
     profileDraftProviderType === 'gemini' ? t('profile.maxOutput') : profileDraftOpenAICompatibility === 'extended' ? t('profile.maxTokens') : t('profile.maxCompletion');
   $: candidateCountFieldLabel = profileDraftProviderType === 'gemini' ? t('profile.candidates') : 'N';
@@ -631,6 +623,7 @@
   $: if (!importOptions.includes(importKind)) {
     importKind = importOptions[0];
   }
+  $: hasImportPayload = importKind === 'character-card-png' ? Boolean(importFileBase64) : Boolean(importText.trim());
   $: appSettingsStyle = `--app-font-family: ${appFontFamilyCss(appSettings.fontFamily)}; --app-chat-font-family: ${appFontFamilyCss(appSettings.chatFontFamily)}; --app-font-weight: ${appSettings.fontWeight}; --app-ui-font-size: ${appSettings.uiFontSize}px; --app-chat-font-size: ${appSettings.chatFontSize}px; --app-chat-bubble-width: ${appSettings.chatBubbleWidth}px; ${avatarShapeCss(appSettings.avatarShape)}`;
   $: if (activeProfileId !== profileDraftId) {
     loadProfileDraft(activeProfile);
@@ -1792,12 +1785,6 @@
     return `${scope}${surfaces.length ? ` · ${surfaces.join('/')}` : ''}`;
   }
 
-  function filterProfiles(items: Profile[], query: string) {
-    const text = query.trim().toLowerCase();
-    if (!text) return items;
-    return items.filter((profile) => [profile.name, profile.provider.type, profile.provider.model, profileOrigin(profile)].join(' ').toLowerCase().includes(text));
-  }
-
   function filterPersonas(items: UserPersona[], query: string) {
     const text = query.trim().toLowerCase();
     const sorted = [...items].sort((a, b) => {
@@ -1942,8 +1929,6 @@
       profileDraftGeminiThinkingMode = 'default';
       profileDraftGeminiThinkingBudget = '';
       profileDraftGeminiThinkingLevel = 'medium';
-      profileDraftMode = 'chat';
-      profileDraftMacroMode = 'none';
       profileDraftSquashSystemMessages = false;
       profileDraftRegexEnabled = true;
       profileDraftRegexScripts = [];
@@ -1988,8 +1973,6 @@
     profileDraftGeminiThinkingMode = profile.thinking?.gemini?.mode ?? 'default';
     profileDraftGeminiThinkingBudget = numberToDraft(profile.thinking?.gemini?.budget);
     profileDraftGeminiThinkingLevel = profile.thinking?.gemini?.level ?? 'medium';
-    profileDraftMode = profile.prompt?.mode ?? 'chat';
-    profileDraftMacroMode = profile.prompt?.macroMode ?? 'none';
     profileDraftSquashSystemMessages = profile.prompt?.squashSystemMessages ?? false;
     profileDraftRegexEnabled = profile.regex?.enabled !== false;
     profileDraftRegexScripts = structuredClone(profile.regex?.scripts ?? []);
@@ -2148,8 +2131,8 @@
       thinking: profileDraftThinking(),
       prompt: {
         ...(base.prompt ?? {}),
-        mode: profileDraftMode,
-        macroMode: profileDraftMacroMode,
+        mode: 'chat',
+        macroMode: 'sillytavern',
         squashSystemMessages: profileDraftSquashSystemMessages,
         slots: profileDraftSlots.map(normalizedPromptSlot)
       },
@@ -2245,6 +2228,46 @@
     }
   }
 
+  function deleteActiveProfile() {
+    if (!activeProfile) return;
+    if (profiles.length <= 1) {
+      status = t('profile.deleteLast');
+      return;
+    }
+    pendingProfileDelete = activeProfile;
+    profileDeleteStatus = '';
+  }
+
+  function closeProfileDeleteDialog() {
+    if (deletingProfile) return;
+    pendingProfileDelete = null;
+    profileDeleteStatus = '';
+  }
+
+  async function confirmProfileDelete() {
+    const profile = pendingProfileDelete;
+    if (!profile) return;
+    deletingProfile = true;
+    status = t('status.deleting');
+    try {
+      await fetchJson<{ deleted: boolean; id: string }>(`/api/profiles?id=${encodeURIComponent(profile.id)}`, {
+        method: 'DELETE'
+      });
+      const nextProfiles = profiles.filter((item) => item.id !== profile.id);
+      profiles = nextProfiles;
+      activeProfileId = nextProfiles[0]?.id ?? '';
+      loadProfileDraft(nextProfiles[0]);
+      pendingProfileDelete = null;
+      status = t('status.ready');
+    } catch (error) {
+      console.error(error);
+      profileDeleteStatus = error instanceof Error ? error.message : t('profile.deleteFailed');
+      status = profileDeleteStatus;
+    } finally {
+      deletingProfile = false;
+    }
+  }
+
   function slotMeta(slot: PromptSlot) {
     const parts: string[] = [promptSourceLabel(slot.source), roleLabel(slot.role)];
     if (slot.legacy?.source === 'sillytavern') parts.push('ST');
@@ -2331,6 +2354,20 @@
     next.splice(nextIndex, 0, item);
     profileDraftSlots = next;
     activePromptSlotId = slot.id;
+  }
+
+  function moveDraftPromptSlotTo(sourceId: string, targetId: string, placement: 'before' | 'after') {
+    if (sourceId === targetId) return;
+    const sourceIndex = profileDraftSlots.findIndex((item) => item.id === sourceId);
+    const targetIndex = profileDraftSlots.findIndex((item) => item.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const next = [...profileDraftSlots];
+    const [item] = next.splice(sourceIndex, 1);
+    let insertIndex = targetIndex + (placement === 'after' ? 1 : 0);
+    if (sourceIndex < insertIndex) insertIndex -= 1;
+    next.splice(insertIndex, 0, item);
+    profileDraftSlots = next;
+    activePromptSlotId = sourceId;
   }
 
   function updateDraftSlot(id: string, patch: Partial<PromptSlot>) {
@@ -3236,12 +3273,17 @@
     activeDrawer = 'worldbooks';
   }
 
+  function resetImportFile() {
+    importText = '';
+    importFileName = '';
+    importFileBase64 = '';
+  }
+
   async function readImportFile(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) {
-      importFileName = '';
-      importFileBase64 = '';
+      resetImportFile();
       return;
     }
 
@@ -3267,22 +3309,24 @@
   }
 
   async function runImport() {
+    if (!hasImportPayload) {
+      status = t('status.importFileRequired');
+      return;
+    }
     status = t('status.importing');
     const scope = importScope;
     const data =
       importKind === 'chat-jsonl'
         ? importText
         : importKind === 'character-card-png'
-          ? importFileBase64 || importText.trim()
+          ? importFileBase64
           : JSON.parse(importText);
     const result = await fetchJson<{ type: string; item?: { id: string } }>('/api/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: importKind, name: importName || undefined, data })
     });
-    importText = '';
-    importFileName = '';
-    importFileBase64 = '';
+    resetImportFile();
     importName = '';
     await refreshAll();
     if (result.type === 'character' && result.item?.id) {
@@ -3413,29 +3457,50 @@
     status = t('status.ready');
   }
 
-  async function deleteActiveCharacter() {
+  function deleteActiveCharacter() {
     if (!activeCharacter) return;
-    const character = activeCharacter;
-    if (!confirm(t('character.deleteConfirm', { name: character.name }))) return;
+    pendingCharacterDelete = activeCharacter;
+    characterDeleteStatus = '';
+  }
+
+  function closeCharacterDeleteDialog() {
+    if (deletingCharacter) return;
+    pendingCharacterDelete = null;
+    characterDeleteStatus = '';
+  }
+
+  async function confirmCharacterDelete() {
+    const character = pendingCharacterDelete;
+    if (!character) return;
+    deletingCharacter = true;
     status = t('status.deleting');
-    await fetchJson<{ deleted: boolean }>('/api/characters', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: character.id })
-    });
-    const index = characters.findIndex((item) => item.id === character.id);
-    const remaining = characters.filter((item) => item.id !== character.id);
-    characters = remaining;
-    activeCharacterId = remaining[Math.min(index, remaining.length - 1)]?.id ?? '';
-    if (openingPreviewCharacterId === character.id) {
-      openingPreviewCharacterId = '';
-      messages = [];
+    try {
+      await fetchJson<{ deleted: boolean }>('/api/characters', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: character.id })
+      });
+      const index = characters.findIndex((item) => item.id === character.id);
+      const remaining = characters.filter((item) => item.id !== character.id);
+      characters = remaining;
+      activeCharacterId = remaining[Math.min(index, remaining.length - 1)]?.id ?? '';
+      if (openingPreviewCharacterId === character.id) {
+        openingPreviewCharacterId = '';
+        messages = [];
+      }
+      if (zoomedAvatar?.key.startsWith(`character:${character.id}:`)) {
+        closeZoomedAvatar();
+      }
+      loadCharacterDraft(characters.find((item) => item.id === activeCharacterId));
+      pendingCharacterDelete = null;
+      status = t('status.ready');
+    } catch (error) {
+      console.error(error);
+      characterDeleteStatus = error instanceof Error ? error.message : t('character.deleteFailed');
+      status = characterDeleteStatus;
+    } finally {
+      deletingCharacter = false;
     }
-    if (zoomedAvatar?.key.startsWith(`character:${character.id}:`)) {
-      closeZoomedAvatar();
-    }
-    loadCharacterDraft(characters.find((item) => item.id === activeCharacterId));
-    status = t('status.ready');
   }
 
   async function createPersona() {
@@ -4237,6 +4302,58 @@
         </div>
         {#if conversationDeleteStatus}
           <small>{conversationDeleteStatus}</small>
+        {/if}
+      </div>
+    </section>
+  {/if}
+
+  {#if pendingCharacterDelete}
+    <section class="delete-dialog-backdrop" role="presentation">
+      <div class="delete-dialog" role="dialog" aria-modal="true" aria-label={t('character.delete')}>
+        <header>
+          <Trash2 size={17} />
+          <strong>{t('character.delete')}</strong>
+        </header>
+        <p>
+          <strong>{pendingCharacterDelete.name}</strong>
+          <span>{t('character.deleteConfirm', { name: pendingCharacterDelete.name })}</span>
+        </p>
+        <div class="delete-dialog-actions conversation-delete-actions">
+          <button type="button" disabled={deletingCharacter} on:click={closeCharacterDeleteDialog}>
+            {t('common.cancel')}
+          </button>
+          <button class="danger" type="button" disabled={deletingCharacter} on:click={confirmCharacterDelete}>
+            {deletingCharacter ? t('status.deleting') : t('character.delete')}
+          </button>
+        </div>
+        {#if characterDeleteStatus}
+          <small>{characterDeleteStatus}</small>
+        {/if}
+      </div>
+    </section>
+  {/if}
+
+  {#if pendingProfileDelete}
+    <section class="delete-dialog-backdrop" role="presentation">
+      <div class="delete-dialog" role="dialog" aria-modal="true" aria-label={t('profile.delete')}>
+        <header>
+          <Trash2 size={17} />
+          <strong>{t('profile.delete')}</strong>
+        </header>
+        <p>
+          <strong>{pendingProfileDelete.name}</strong>
+          <span>{t('profile.deleteConfirm', { name: pendingProfileDelete.name })}</span>
+        </p>
+        <div class="delete-dialog-actions conversation-delete-actions">
+          <button type="button" disabled={deletingProfile} on:click={closeProfileDeleteDialog}>
+            {t('common.cancel')}
+          </button>
+          <button class="danger" type="button" disabled={deletingProfile} on:click={confirmProfileDelete}>
+            {deletingProfile ? t('status.deleting') : t('profile.delete')}
+          </button>
+        </div>
+        {#if profileDeleteStatus}
+          <small>{profileDeleteStatus}</small>
         {/if}
       </div>
     </section>
@@ -5208,8 +5325,6 @@
             {activeProfile}
             bind:activeProfileId
             {activeProfileStats}
-            {filteredProfiles}
-            bind:profileQuery
             {draftPromptStats}
             {filteredPromptSlots}
             {activePromptSlot}
@@ -5247,8 +5362,6 @@
             bind:profileDraftGeminiThinkingMode
             bind:profileDraftGeminiThinkingBudget
             bind:profileDraftGeminiThinkingLevel
-            bind:profileDraftMode
-            bind:profileDraftMacroMode
             bind:profileDraftSquashSystemMessages
             bind:profileDraftRegexEnabled
             bind:profileDraftRegexScripts
@@ -5266,6 +5379,7 @@
             {openPresetImport}
             {saveActiveProfile}
             {duplicateActiveProfile}
+            {deleteActiveProfile}
             {exportActiveProfile}
             {inspectCurrentPrompt}
             {changeProfileProviderType}
@@ -5292,6 +5406,7 @@
             {openPromptEditor}
             {duplicateDraftPromptSlot}
             {moveDraftPromptSlot}
+            {moveDraftPromptSlotTo}
             {isFirstPromptSlot}
             {isLastPromptSlot}
             {canRemovePromptSlot}
@@ -5441,7 +5556,7 @@
       {:else if activeDrawer === 'import'}
         <div class="import-panel">
           {#if importOptions.length > 1}
-            <select aria-label={t('import.kind')} bind:value={importKind}>
+            <select aria-label={t('import.kind')} bind:value={importKind} on:change={resetImportFile}>
               {#each importOptions as option}
                 <option value={option}>{importKindLabel(option)}</option>
               {/each}
@@ -5462,12 +5577,7 @@
               on:change={readImportFile}
             />
           </label>
-          <textarea
-            bind:value={importText}
-            rows="10"
-            placeholder={importKind === 'character-card-png' ? t('import.placeholderPng') : t('import.placeholderText')}
-          ></textarea>
-          <button class="secondary full" type="button" on:click={runImport}><Download size={16} />{t('common.import')}</button>
+          <button class="secondary full" type="button" on:click={runImport} disabled={!hasImportPayload}><Download size={16} />{t('common.import')}</button>
         </div>
       {:else if activeDrawer === 'inspector'}
         <div class="inspector-panel">
@@ -6662,7 +6772,7 @@
   }
 
   .delete-dialog-actions.conversation-delete-actions {
-    grid-template-columns: auto minmax(120px, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .delete-dialog-actions button {
@@ -6682,14 +6792,14 @@
   }
 
   .delete-dialog-actions button.danger {
-    border-color: inherit;
-    background: var(--nanke-field);
-    color: var(--nanke-ink);
+    border-color: var(--nanke-danger);
+    background: var(--nanke-danger-soft);
+    color: var(--nanke-danger);
   }
 
   .delete-dialog-actions button.danger:not(:disabled):hover {
-    border-color: inherit;
-    background: var(--nanke-field);
+    border-color: var(--nanke-danger);
+    background: color-mix(in srgb, var(--nanke-danger) 14%, transparent);
   }
 
   .delete-dialog-actions button:disabled {
@@ -6748,7 +6858,7 @@
     inset: 0 0 0 64px;
     z-index: 20;
     border: 0;
-    background: var(--nanke-surface-muted);
+    background: transparent;
   }
 
   .drawer {

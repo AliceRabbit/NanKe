@@ -175,7 +175,7 @@ export const generationProfileSchema = z.preprocess(
       mode: z.enum(['chat', 'text']).default('chat'),
       slots: z.array(promptSlotSchema),
       instruct: instructionTemplateSchema.optional(),
-      macroMode: z.enum(['none', 'sillytavern']).default('none'),
+      macroMode: z.enum(['none', 'sillytavern']).default('sillytavern'),
       squashSystemMessages: z.boolean().default(false)
     }),
     regex: regexProfileSchema,
@@ -218,7 +218,7 @@ export function createDefaultGenerationProfile(input: Partial<GenerationProfile>
     },
     prompt: input.prompt ?? {
       mode: 'chat',
-      macroMode: 'none',
+      macroMode: 'sillytavern',
       squashSystemMessages: false,
       slots: [
         {

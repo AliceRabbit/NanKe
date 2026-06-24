@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { ArrowDown, ArrowUp, ClipboardList, Copy, Download, GripHorizontal, Pencil, Plus, RotateCcw, Save, Trash2, Upload, X } from '@lucide/svelte';
+  import { onMount } from 'svelte';
+  import { ArrowDown, ArrowUp, ChevronDown, ClipboardList, Copy, Download, GripHorizontal, Minus, Pencil, Plus, RotateCcw, Save, Trash2, Upload, X } from '@lucide/svelte';
   import RangeField from '$lib/ui/components/form/RangeField.svelte';
   import SecretField from '$lib/ui/components/form/SecretField.svelte';
-  import SelectField from '$lib/ui/components/form/SelectField.svelte';
   import TextareaField from '$lib/ui/components/form/TextareaField.svelte';
   import TextField from '$lib/ui/components/form/TextField.svelte';
   import RegexScriptsEditor from '$lib/ui/components/RegexScriptsEditor.svelte';
@@ -19,19 +19,22 @@
   type GeminiThinkingLevel = NonNullable<Profile['thinking']>['gemini']['level'];
   type PromptRole = PromptSlot['role'];
   type PromptSlotSource = PromptSlot['source'];
-  type PromptMode = Profile['prompt']['mode'];
-  type MacroMode = Profile['prompt']['macroMode'];
   type SamplerField = Exclude<keyof NonNullable<Profile['sampler']>, 'stop'>;
   type SamplerVisibility = Record<SamplerField, boolean>;
+  type ModelOptions = Record<ProviderType, string[]>;
   type PromptStats = { total: number; ordered: number; enabled: number; inactive?: number; injected?: number };
   type UpdateDraftSlotInjection = NonNullable<PromptSlot['injection']> | undefined;
+  type PromptDropPlacement = 'before' | 'after';
+  const modelOptionsStorageKey = 'nanke.profile-model-options.v1';
+  const defaultModelOptions: ModelOptions = {
+    'openai-compatible': ['gpt-4o-mini'],
+    gemini: ['gemini-2.5-pro']
+  };
 
   export let profiles: Profile[] = [];
   export let activeProfile: Profile | undefined = undefined;
   export let activeProfileId = '';
   export let activeProfileStats: PromptStats = { total: 0, ordered: 0, enabled: 0 };
-  export let filteredProfiles: Profile[] = [];
-  export let profileQuery = '';
   export let draftPromptStats: PromptStats = { total: 0, ordered: 0, enabled: 0, injected: 0 };
   export let filteredPromptSlots: PromptSlot[] = [];
   export let activePromptSlot: PromptSlot | undefined = undefined;
@@ -69,8 +72,6 @@
   export let profileDraftGeminiThinkingMode: GeminiThinkingMode = 'default';
   export let profileDraftGeminiThinkingBudget = '';
   export let profileDraftGeminiThinkingLevel: GeminiThinkingLevel = 'medium';
-  export let profileDraftMode: PromptMode = 'chat';
-  export let profileDraftMacroMode: MacroMode = 'none';
   export let profileDraftSquashSystemMessages = false;
   export let profileDraftRegexEnabled = true;
   export let profileDraftRegexScripts: RegexScript[] = [];
@@ -89,6 +90,7 @@
   export let openPresetImport: () => void;
   export let saveActiveProfile: () => void | Promise<Profile | undefined>;
   export let duplicateActiveProfile: () => void | Promise<void>;
+  export let deleteActiveProfile: () => void | Promise<void>;
   export let exportActiveProfile: () => void;
   export let inspectCurrentPrompt: () => void;
   export let changeProfileProviderType: (type: ProviderType) => void;
@@ -115,6 +117,7 @@
   export let openPromptEditor: (slot?: PromptSlot) => void;
   export let duplicateDraftPromptSlot: (slot?: PromptSlot) => void;
   export let moveDraftPromptSlot: (slot: PromptSlot | undefined, direction: -1 | 1) => void;
+  export let moveDraftPromptSlotTo: (sourceId: string, targetId: string, placement: PromptDropPlacement) => void;
   export let isFirstPromptSlot: (slot: PromptSlot) => boolean;
   export let isLastPromptSlot: (slot: PromptSlot) => boolean;
   export let canRemovePromptSlot: (slot: PromptSlot) => boolean;
@@ -123,15 +126,154 @@
   export let savePromptEditor: () => void | Promise<void>;
   export let closePromptEditor: () => void;
 
+  let profilePickerOpen = false;
+  let modelPickerOpen = false;
+  let modelPickerInput = '';
+  let modelOptions: ModelOptions = {
+    'openai-compatible': [...defaultModelOptions['openai-compatible']],
+    gemini: [...defaultModelOptions.gemini]
+  };
+  let currentModelOptionsList: string[] = [];
+  let draggedPromptSlotId = '';
+  let promptSlotDropTargetId = '';
+  let promptSlotDropPlacement: PromptDropPlacement = 'before';
+
+  $: currentModelOptionsList = modelOptions[profileDraftProviderType] ?? [];
+
+  onMount(() => {
+    modelOptions = loadModelOptions();
+  });
+
+  function cleanModelIds(values: unknown[]) {
+    return [...new Set(values.map((value) => (typeof value === 'string' ? value.trim() : '')).filter(Boolean))];
+  }
+
+  function seedModelOptions(): ModelOptions {
+    return {
+      'openai-compatible': cleanModelIds([...defaultModelOptions['openai-compatible'], ...profiles.filter((profile) => profile.provider.type === 'openai-compatible').map((profile) => profile.provider.model)]),
+      gemini: cleanModelIds([...defaultModelOptions.gemini, ...profiles.filter((profile) => profile.provider.type === 'gemini').map((profile) => profile.provider.model)])
+    };
+  }
+
+  function loadModelOptions(): ModelOptions {
+    if (typeof localStorage === 'undefined') return seedModelOptions();
+    const raw = localStorage.getItem(modelOptionsStorageKey);
+    if (!raw) return seedModelOptions();
+    try {
+      const parsed = JSON.parse(raw) as Partial<ModelOptions>;
+      return {
+        'openai-compatible': cleanModelIds(parsed['openai-compatible'] ?? []),
+        gemini: cleanModelIds(parsed.gemini ?? [])
+      };
+    } catch {
+      return seedModelOptions();
+    }
+  }
+
+  function saveModelOptions() {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(modelOptionsStorageKey, JSON.stringify(modelOptions));
+  }
+
+  function addModelOption() {
+    const value = modelPickerInput.trim();
+    if (!value) return;
+    const list = cleanModelIds([...currentModelOptionsList, value]);
+    modelOptions = { ...modelOptions, [profileDraftProviderType]: list };
+    profileDraftProviderModel = value;
+    modelPickerInput = '';
+    saveModelOptions();
+  }
+
+  function removeModelOption(value: string) {
+    modelOptions = {
+      ...modelOptions,
+      [profileDraftProviderType]: currentModelOptionsList.filter((model) => model !== value)
+    };
+    saveModelOptions();
+  }
+
+  function selectModelOption(value: string) {
+    profileDraftProviderModel = value;
+    modelPickerOpen = false;
+  }
+
+  function selectProfile(id: string) {
+    activeProfileId = id;
+    profilePickerOpen = false;
+  }
+
+  function handleModelInputKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      addModelOption();
+    }
+    if (event.key === 'Escape') modelPickerOpen = false;
+  }
+
+  function clearPromptSlotDrag() {
+    draggedPromptSlotId = '';
+    promptSlotDropTargetId = '';
+    promptSlotDropPlacement = 'before';
+  }
+
+  function startPromptSlotDrag(event: DragEvent, slot: PromptSlot) {
+    draggedPromptSlotId = slot.id;
+    activePromptSlotId = slot.id;
+    event.dataTransfer?.setData('text/plain', slot.id);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+
+  function dragOverPromptSlot(event: DragEvent, slot: PromptSlot) {
+    const sourceId = draggedPromptSlotId || event.dataTransfer?.getData('text/plain') || '';
+    if (!sourceId) return;
+    if (sourceId === slot.id) {
+      promptSlotDropTargetId = '';
+      return;
+    }
+    event.preventDefault();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    promptSlotDropTargetId = slot.id;
+    promptSlotDropPlacement = event.clientY > rect.top + rect.height / 2 ? 'after' : 'before';
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  }
+
+  function dropPromptSlot(event: DragEvent, slot: PromptSlot) {
+    event.preventDefault();
+    const sourceId = draggedPromptSlotId || event.dataTransfer?.getData('text/plain') || '';
+    if (sourceId && sourceId !== slot.id) moveDraftPromptSlotTo(sourceId, slot.id, promptSlotDropPlacement);
+    clearPromptSlotDrag();
+  }
+
 </script>
 <div class="profile-workspace">
   <div class="profile-panel">
     <div class="preset-toolbar" aria-label={t('profile.presetTools')}>
-      <SelectField aria-label={t('profile.selectedProfile')} bind:value={activeProfileId}>
-        {#each profiles as profile}
-          <option value={profile.id}>{profile.name}</option>
-        {/each}
-      </SelectField>
+      <div class="preset-picker">
+        <button class="preset-picker-trigger" type="button" aria-label={t('profile.selectedProfile')} aria-expanded={profilePickerOpen} on:click={() => (profilePickerOpen = !profilePickerOpen)}>
+          <span>
+            <strong>{activeProfile?.name ?? t('profile.selectedProfile')}</strong>
+            {#if activeProfile}
+              <small>{activeProfile.provider.type} · {activeProfile.provider.model}</small>
+            {/if}
+          </span>
+          <ChevronDown size={16} />
+        </button>
+        {#if profilePickerOpen}
+          <div class="preset-picker-menu" aria-label={t('nav.profiles')}>
+            {#each profiles as profile}
+              {@const stats = profileStats(profile)}
+              <button class:active={profile.id === activeProfileId} type="button" on:click={() => selectProfile(profile.id)}>
+                <span>
+                  <strong>{profile.name}</strong>
+                  <small>{profile.provider.type} · {profile.provider.model}</small>
+                </span>
+                <small>{stats.enabled}/{stats.total}</small>
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
       <div class="preset-actions">
         <button class="tool-button" type="button" on:click={openPresetImport} title={t('profile.importPreset')} aria-label={t('profile.importPreset')}>
           <Upload size={16} />
@@ -144,6 +286,9 @@
         </button>
         <button class="tool-button" type="button" on:click={exportActiveProfile} title={t('profile.export')} aria-label={t('profile.export')} disabled={!activeProfile}>
           <Download size={16} />
+        </button>
+        <button class="tool-button danger" type="button" on:click={deleteActiveProfile} title={t('profile.delete')} aria-label={t('profile.delete')} disabled={!activeProfile || profiles.length <= 1}>
+          <Trash2 size={16} />
         </button>
         <button class="tool-button" type="button" on:click={inspectCurrentPrompt} title={t('nav.inspector')} aria-label={t('nav.inspector')} disabled={!activeProfile}>
           <ClipboardList size={16} />
@@ -165,9 +310,6 @@
           <span>{t('profile.enabledCount', { count: activeProfileStats.enabled })}</span>
           <span>{t('profile.orderedCount', { count: activeProfileStats.ordered })}</span>
           <span>{t('profile.totalCount', { count: activeProfileStats.total })}</span>
-          {#if activeProfile.prompt?.macroMode === 'sillytavern'}
-            <span>{t('profile.stMacros')}</span>
-          {/if}
           {#if activeProfile.prompt?.squashSystemMessages}
             <span>{t('profile.squashSystemChip')}</span>
           {/if}
@@ -179,8 +321,6 @@
         <div class="profile-sampler">{profileSamplerLine(activeProfile)}</div>
       </section>
     {/if}
-
-    <TextField class="profile-search" bind:value={profileQuery} placeholder={t('profile.search')} aria-label={t('profile.search')} />
   </div>
 
   {#if activeProfile}
@@ -215,7 +355,37 @@
         </div>
 
         <div class="provider-config">
-          <TextField label={t('profile.model')} bind:value={profileDraftProviderModel} placeholder={profileDraftProviderType === 'gemini' ? 'gemini-2.5-pro' : 'gpt-4o-mini'} />
+          <div class="model-picker">
+            <span>{t('profile.model')}</span>
+            <button class="model-picker-trigger" type="button" on:click={() => (modelPickerOpen = !modelPickerOpen)} aria-label={t('profile.model')} aria-expanded={modelPickerOpen}>
+              <span class="model-picker-value">{profileDraftProviderModel || (profileDraftProviderType === 'gemini' ? 'gemini-2.5-pro' : 'gpt-4o-mini')}</span>
+              <ChevronDown size={16} />
+            </button>
+            {#if modelPickerOpen}
+              <div class="model-picker-menu">
+                <div class="model-picker-add">
+                  <input bind:value={modelPickerInput} placeholder={t('profile.modelPickerPlaceholder')} on:keydown={handleModelInputKeydown} />
+                  <button type="button" on:click={addModelOption} aria-label={t('profile.addModel')}>
+                    <Plus size={16} />
+                  </button>
+                </div>
+                <div class="model-picker-list" aria-label={t('profile.addedModels')}>
+                  {#each currentModelOptionsList as model}
+                    <div class="model-option-row">
+                      <button class="model-option-select" class:active={model === profileDraftProviderModel} type="button" on:click={() => selectModelOption(model)}>
+                        {model}
+                      </button>
+                      <button class="model-option-delete" type="button" on:click={() => removeModelOption(model)} aria-label={t('profile.removeModel', { model })}>
+                        <Minus size={15} />
+                      </button>
+                    </div>
+                  {:else}
+                    <div class="model-picker-empty">{t('profile.noModels')}</div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+          </div>
           <TextField
             label={t('profile.endpoint')}
             bind:value={profileDraftProviderEndpoint}
@@ -299,11 +469,9 @@
         <div class="request-flow-strip" aria-label={t('profile.responseMode')}>
           <button class:active={profileDraftStream} type="button" on:click={() => (profileDraftStream = true)}>
             <strong>{t('profile.streaming')}</strong>
-            <span>{t('profile.streamingHint')}</span>
           </button>
           <button class:active={!profileDraftStream} type="button" on:click={() => (profileDraftStream = false)}>
             <strong>{t('profile.singleResponse')}</strong>
-            <span>{t('profile.singleResponseHint')}</span>
           </button>
         </div>
 
@@ -472,22 +640,15 @@
       </section>
 
       <div class="profile-mode-strip">
-        <div class="segmented-field">
-          <span>{t('profile.mode')}</span>
-          <div class="mini-segment" aria-label={t('profile.mode')}>
-            <button class:active={profileDraftMode === 'chat'} type="button" on:click={() => (profileDraftMode = 'chat')}>{t('profile.mode.chat')}</button>
-            <button class:active={profileDraftMode === 'text'} type="button" on:click={() => (profileDraftMode = 'text')}>{t('profile.mode.text')}</button>
-          </div>
-        </div>
-        <div class="segmented-field">
-          <span>{t('profile.macros')}</span>
-          <div class="mini-segment" aria-label={t('profile.macros')}>
-            <button class:active={profileDraftMacroMode === 'none'} type="button" on:click={() => (profileDraftMacroMode = 'none')}>{t('profile.none')}</button>
-            <button class:active={profileDraftMacroMode === 'sillytavern'} type="button" on:click={() => (profileDraftMacroMode = 'sillytavern')}>ST</button>
-          </div>
-        </div>
-        <button class="toggle-pill" class:active={profileDraftSquashSystemMessages} type="button" on:click={() => (profileDraftSquashSystemMessages = !profileDraftSquashSystemMessages)}>
-          {t('profile.squashSystem')}
+        <button
+          class="toggle-pill stateful"
+          class:active={profileDraftSquashSystemMessages}
+          type="button"
+          aria-pressed={profileDraftSquashSystemMessages}
+          on:click={() => (profileDraftSquashSystemMessages = !profileDraftSquashSystemMessages)}
+        >
+          <span>{t('profile.squashSystem')}</span>
+          <strong>{profileDraftSquashSystemMessages ? t('common.enabled') : t('common.disabled')}</strong>
         </button>
       </div>
 
@@ -533,16 +694,34 @@
       <div class="prompt-slot-list" aria-label={t('profile.promptSlots')}>
         <div class="prompt-slot-list-header" aria-hidden="true">
           <span></span>
+          <span></span>
           <span>{t('common.prompt')}</span>
           <span>{t('common.type')}</span>
           <span>{t('common.tokens')}</span>
           <span>{t('common.actions')}</span>
         </div>
         {#each filteredPromptSlots as slot}
-          <article class="prompt-slot-row" class:active={slot.id === activePromptSlotId}>
-            <span class="prompt-slot-grip" title={t('profile.order')}>
+          <article
+            class="prompt-slot-row"
+            class:active={slot.id === activePromptSlotId}
+            class:dragging={slot.id === draggedPromptSlotId}
+            class:drop-before={slot.id === promptSlotDropTargetId && promptSlotDropPlacement === 'before'}
+            class:drop-after={slot.id === promptSlotDropTargetId && promptSlotDropPlacement === 'after'}
+            on:dragover={(event) => dragOverPromptSlot(event, slot)}
+            on:drop={(event) => dropPromptSlot(event, slot)}
+            on:dragend={clearPromptSlotDrag}
+          >
+            <button
+              class="prompt-slot-grip"
+              type="button"
+              draggable="true"
+              title={t('profile.order')}
+              aria-label={`${t('profile.order')} ${slot.label || slot.id}`}
+              on:dragstart={(event) => startPromptSlotDrag(event, slot)}
+              on:dragend={clearPromptSlotDrag}
+            >
               <GripHorizontal size={14} />
-            </span>
+            </button>
             <input
               class="prompt-slot-toggle"
               type="checkbox"
@@ -714,30 +893,6 @@
     {/if}
   {/if}
 
-  <section class="profile-list-section" aria-label={t('nav.profiles')}>
-    <div class="profile-list">
-      {#each filteredProfiles as profile}
-        {@const stats = profileStats(profile)}
-        <button
-          class="profile-row"
-          class:active={profile.id === activeProfileId}
-          type="button"
-          on:click={() => (activeProfileId = profile.id)}
-        >
-          <span class="profile-row-main">
-            <strong>{profile.name}</strong>
-            <span>{profile.provider.type} · {profile.provider.model}</span>
-          </span>
-          <span class="profile-row-meta">
-            <span>{stats.enabled}/{stats.total}</span>
-            <span>{profileOrigin(profile)}</span>
-          </span>
-        </button>
-      {:else}
-        <div class="drawer-empty">{t('profile.noMatchingProfiles')}</div>
-      {/each}
-    </div>
-  </section>
 </div>
 
 <style>
@@ -765,6 +920,96 @@
   gap: 8px;
 }
 
+.preset-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.preset-picker-trigger {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--nanke-border);
+  border-radius: 8px;
+  background: var(--nanke-field);
+  color: var(--nanke-ink);
+  box-shadow: var(--nanke-shadow-field);
+  padding: 7px 11px;
+  text-align: left;
+}
+
+.preset-picker-trigger:hover,
+.preset-picker-trigger:focus-visible {
+  border-color: var(--nanke-border-strong);
+  background: var(--nanke-field-hover);
+  outline: 0;
+}
+
+.preset-picker-trigger span,
+.preset-picker-menu button span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.preset-picker-trigger strong,
+.preset-picker-menu strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-picker-trigger small,
+.preset-picker-menu small {
+  color: var(--nanke-ink-muted);
+  font-size: var(--app-text-2xs);
+}
+
+.preset-picker-menu {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--nanke-border);
+  border-radius: 8px;
+  background: var(--nanke-surface);
+  box-shadow: var(--nanke-shadow-popover);
+  padding: 6px;
+}
+
+.preset-picker-menu button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  padding: 8px 9px;
+  text-align: left;
+}
+
+.preset-picker-menu button:hover,
+.preset-picker-menu button:focus-visible,
+.preset-picker-menu button.active {
+  border-color: var(--nanke-border);
+  background: var(--nanke-surface-muted);
+  outline: 0;
+}
+
+.preset-picker-menu button.active {
+  box-shadow: inset 3px 0 0 var(--nanke-accent);
+}
+
 .preset-actions {
   display: flex;
   gap: 6px;
@@ -774,6 +1019,10 @@
   width: 38px;
   height: 38px;
   border-radius: 7px;
+}
+
+.preset-actions .tool-button.danger {
+  color: var(--nanke-danger);
 }
 
 .profile-summary {
@@ -799,7 +1048,8 @@
 }
 
 .profile-summary-heading strong,
-.profile-row strong {
+.preset-picker-trigger strong,
+.preset-picker-menu strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -808,9 +1058,7 @@
 
 .profile-summary-heading span,
 .profile-model,
-.profile-sampler,
-.profile-row-main span,
-.profile-row-meta {
+.profile-sampler {
   color: inherit;
   font-size: var(--app-text-xs);
   overflow-wrap: anywhere;
@@ -949,6 +1197,139 @@
   gap: 10px;
 }
 
+.model-picker {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: var(--nanke-ink);
+  font-size: var(--app-text-sm);
+}
+
+.model-picker > span {
+  color: var(--nanke-ink-muted);
+  font-size: var(--app-text-xs);
+  font-weight: 600;
+}
+
+.model-picker-trigger,
+.model-picker-add input {
+  min-width: 0;
+  height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--nanke-radius-md);
+  background: var(--nanke-field);
+  color: var(--nanke-ink);
+  box-shadow: var(--nanke-shadow-field);
+  outline: none;
+}
+
+.model-picker-trigger {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  text-align: left;
+}
+
+.model-picker-trigger:hover,
+.model-picker-add input:hover {
+  background: var(--nanke-field-hover);
+}
+
+.model-picker-trigger:focus-visible,
+.model-picker-add input:focus {
+  border-color: var(--nanke-accent);
+  background: var(--nanke-field);
+  box-shadow: var(--nanke-shadow-field-focus);
+}
+
+.model-picker-value,
+.model-option-select {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.model-picker-menu {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--nanke-border);
+  border-radius: 8px;
+  background: var(--nanke-surface);
+  box-shadow: var(--nanke-shadow-popover);
+  padding: 10px;
+}
+
+.model-picker-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 7px;
+}
+
+.model-picker-add input {
+  padding: 0 10px;
+}
+
+.model-picker-add button,
+.model-option-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--nanke-border);
+  border-radius: 7px;
+  background: var(--nanke-surface);
+  color: inherit;
+}
+
+.model-picker-list {
+  display: grid;
+  max-height: 170px;
+  overflow: auto;
+  gap: 6px;
+}
+
+.model-option-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 6px;
+}
+
+.model-option-select {
+  min-width: 0;
+  border: 1px solid var(--nanke-border);
+  border-radius: 7px;
+  background: var(--nanke-field);
+  color: inherit;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.model-option-select.active {
+  border-color: var(--nanke-accent);
+  background: var(--nanke-accent-soft);
+}
+
+.model-option-delete {
+  color: var(--nanke-danger);
+}
+
+.model-picker-empty {
+  border: 1px dashed var(--nanke-border);
+  border-radius: 7px;
+  color: var(--nanke-ink-muted);
+  padding: 10px;
+  text-align: center;
+  font-size: var(--app-text-xs);
+}
+
 .vertex-strip {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
@@ -1014,22 +1395,24 @@
 .request-flow-strip {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-self: start;
   gap: 6px;
+  width: min(240px, 100%);
   border: 1px solid var(--nanke-border);
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--nanke-field);
   padding: 4px;
 }
 
 .request-flow-strip button {
-  display: grid;
-  gap: 2px;
+  display: inline-grid;
+  place-items: center;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 999px;
   background: transparent;
   color: inherit;
-  padding: 8px 10px;
-  text-align: left;
+  padding: 6px 10px;
+  text-align: center;
 }
 
 .request-flow-strip button.active {
@@ -1192,6 +1575,37 @@
   background: var(--nanke-surface);
 }
 
+.toggle-pill.stateful {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-color: var(--nanke-border);
+  background: var(--nanke-field);
+  text-align: left;
+}
+
+.toggle-pill.stateful.active {
+  border-color: var(--nanke-accent);
+  background: var(--nanke-accent-soft);
+  color: var(--nanke-accent);
+}
+
+.toggle-pill.stateful strong {
+  border-radius: 999px;
+  background: var(--nanke-surface);
+  color: var(--nanke-ink-muted);
+  padding: 3px 7px;
+  font-size: var(--app-text-2xs);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.toggle-pill.stateful.active strong {
+  background: var(--nanke-surface);
+  color: var(--nanke-accent);
+}
+
 .profile-toggle {
   min-height: 36px;
   align-content: center;
@@ -1235,7 +1649,7 @@
 .prompt-slot-list-header,
 .prompt-slot-row {
   display: grid;
-  grid-template-columns: 26px 28px minmax(0, 1fr) 86px 62px 176px;
+  grid-template-columns: 28px 44px minmax(0, 1fr) 86px 62px 176px;
   align-items: center;
   gap: 8px;
 }
@@ -1268,16 +1682,85 @@
   box-shadow: inset 3px 0 0 #1c6b43;
 }
 
+.prompt-slot-row.dragging {
+  opacity: 0.55;
+}
+
+.prompt-slot-row.drop-before {
+  box-shadow: inset 0 2px 0 var(--nanke-accent);
+}
+
+.prompt-slot-row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--nanke-accent);
+}
+
 .prompt-slot-grip {
   display: grid;
   place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
   color: inherit;
+  cursor: grab;
+}
+
+.prompt-slot-grip:active {
+  cursor: grabbing;
+}
+
+.prompt-slot-grip:hover,
+.prompt-slot-grip:focus-visible {
+  border-color: var(--nanke-border);
+  background: var(--nanke-field);
+  outline: 0;
 }
 
 .prompt-slot-toggle {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  margin: 0 auto;
+  border: 1px solid var(--nanke-border);
+  border-radius: 999px;
+  background: var(--nanke-field);
+  box-shadow: inset 0 1px 2px rgb(29 39 33 / 10%);
+  cursor: pointer;
+  appearance: none;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+
+.prompt-slot-toggle::before {
+  position: absolute;
+  top: 2px;
+  left: 2px;
   width: 16px;
   height: 16px;
-  margin: 0 auto;
+  border-radius: 999px;
+  background: var(--nanke-ink-muted);
+  content: '';
+  transition:
+    transform 140ms ease,
+    background-color 140ms ease;
+}
+
+.prompt-slot-toggle:checked {
+  border-color: var(--nanke-accent);
+  background: var(--nanke-accent-soft);
+}
+
+.prompt-slot-toggle:checked::before {
+  background: var(--nanke-accent);
+  transform: translateX(16px);
+}
+
+.prompt-slot-toggle:focus-visible {
+  border-color: var(--nanke-accent);
+  box-shadow: var(--nanke-shadow-field-focus);
+  outline: 0;
 }
 
 .prompt-slot-main {
@@ -1451,55 +1934,6 @@
   padding-top: 12px;
 }
 
-.profile-list-section {
-  display: grid;
-  border-bottom: 1px solid var(--nanke-border);
-}
-
-.profile-list {
-  display: grid;
-  align-content: start;
-  gap: 0;
-  min-height: 0;
-}
-
-.profile-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  border: 0;
-  border-bottom: 1px solid var(--nanke-border);
-  background: var(--nanke-surface);
-  color: inherit;
-  padding: 10px 16px;
-  text-align: left;
-}
-
-.profile-row:hover,
-.profile-row.active {
-  background: var(--nanke-surface-muted);
-}
-
-.profile-row.active {
-  box-shadow: inset 3px 0 0 #1c6b43;
-}
-
-.profile-row-main {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-}
-
-.profile-row-meta {
-  display: grid;
-  justify-items: end;
-  gap: 3px;
-  text-align: right;
-  white-space: nowrap;
-}
-
 .drawer-empty {
   color: inherit;
   padding: 18px 16px;
@@ -1533,7 +1967,7 @@
   }
 
   .prompt-slot-row {
-    grid-template-columns: 26px 28px minmax(0, 1fr);
+    grid-template-columns: 28px 44px minmax(0, 1fr);
   }
 
   .prompt-kind-badge,

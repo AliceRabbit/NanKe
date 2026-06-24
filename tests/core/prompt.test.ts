@@ -38,6 +38,64 @@ describe('PromptCompiler', () => {
     expect(compiled.messages.map((message) => message.content)).toContain('Mira is a careful archivist.');
   });
 
+  it('renders SillyTavern macros used by imported Izumi presets', () => {
+    const profile = createDefaultGenerationProfile({
+      prompt: {
+        ...createDefaultGenerationProfile().prompt,
+        slots: [
+          {
+            id: 'macro',
+            source: 'system',
+            role: 'system',
+            enabled: true,
+            label: 'Macro',
+            content:
+              '{{setvar::tone::bright}}{{getvar::tone}} {{LastUserMessage}} {{lastChatMessage}} {{random::a,b}} {{roll 1d1}} {{date}} {{time}} {{// hidden}}'
+          },
+          { id: 'history', source: 'history', role: 'user', enabled: true, label: 'History', content: '' }
+        ]
+      }
+    });
+
+    const compiled = new PromptCompiler().compile({
+      profile,
+      messages: [createMessage({ role: 'user', content: 'Hello.' }), createMessage({ role: 'assistant', content: 'Hi.' })]
+    });
+    const content = compiled.messages[0].content;
+
+    expect(content).toContain('bright Hello. Hi.');
+    expect(content).toMatch(/\b[ab]\b/);
+    expect(content).toContain('1');
+    expect(content).not.toContain('{{');
+    expect(compiled.warnings.some((warning) => warning.code === 'unsupported-sillytavern-macros')).toBe(false);
+  });
+
+  it('supports nested and scoped SillyTavern condition macros', () => {
+    const profile = createDefaultGenerationProfile({
+      prompt: {
+        ...createDefaultGenerationProfile().prompt,
+        slots: [
+          {
+            id: 'macro',
+            source: 'system',
+            role: 'system',
+            enabled: true,
+            label: 'Macro',
+            content: '{{.enabled = yes}}{{if .enabled}}Hello {{char}}{{else}}Nope{{/if}}'
+          }
+        ]
+      }
+    });
+
+    const compiled = new PromptCompiler().compile({
+      profile,
+      character: createCharacter({ name: 'Izumi' }),
+      messages: []
+    });
+
+    expect(compiled.messages[0].content).toBe('Hello Izumi');
+  });
+
   it('trims oldest non-system messages when context budget is exceeded', () => {
     const profile = createDefaultGenerationProfile({
       sampler: { contextTokens: 90, maxTokens: 10 }

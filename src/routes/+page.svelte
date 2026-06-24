@@ -143,6 +143,7 @@
     removedEmbeddedCharacterBooks: number;
   };
   type AppFontFamily = 'system' | 'lxgw-wenkai' | 'noto-sans-sc' | 'noto-serif-sc' | 'source-han-sans' | 'source-han-serif' | 'serif' | 'mono';
+  type AppAvatarShape = 'square' | 'rectangle' | 'circle';
   type AppSettings = {
     fontFamily: AppFontFamily;
     chatFontFamily: AppFontFamily;
@@ -150,6 +151,7 @@
     uiFontSize: number;
     chatFontSize: number;
     chatBubbleWidth: number;
+    avatarShape: AppAvatarShape;
   };
   type MessageDeleteMode = 'node' | 'subtree';
   type PendingMessageDelete = {
@@ -263,6 +265,15 @@
   ];
   const appSettingsStorageKey = 'nanke.interface-settings.v1';
   const conversationGroupStateStorageKey = 'nanke.conversation-groups.v1';
+  const appAvatarShapes: Array<{ value: AppAvatarShape; label: string; description: string }> = [
+    { value: 'square', label: t('avatarShape.square'), description: t('avatarShape.squareDescription') },
+    { value: 'rectangle', label: t('avatarShape.rectangle'), description: t('avatarShape.rectangleDescription') },
+    { value: 'circle', label: t('avatarShape.circle'), description: t('avatarShape.circleDescription') }
+  ];
+  // Twemoji ant artwork, CC BY 4.0: https://github.com/twitter/twemoji
+  const settingsPreviewAvatarUrl = `data:image/svg+xml,${encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="6" fill="#f8f4ee"/><path fill="#31373D" d="M7.5 24.516c-.256 0-.512-.098-.707-.293-.391-.391-.391-1.024 0-1.414L22.81 6.793c.391-.391 1.023-.391 1.414 0s.391 1.024 0 1.414L8.207 24.223c-.196.195-.452.293-.707.293zm8.282-11.738c-.219 0-.438-.071-.623-.218-.431-.344-.502-.971-.161-1.403.113-.144 2.571-3.361.971-7.572-.196-.517.063-1.094.579-1.29.518-.196 1.094.064 1.29.579 2.017 5.307-1.139 9.357-1.274 9.527-.197.248-.488.377-.782.377zm3.89 3.888c-.221 0-.441-.072-.626-.221-.429-.345-.499-.97-.156-1.4.138-.172 3.435-4.197 9.323-2.726.536.134.862.677.727 1.213-.134.535-.679.861-1.212.728-4.623-1.157-7.172 1.905-7.278 2.036-.197.243-.487.37-.778.37zM6.454 18.511c-1.096 0-2.301-.186-3.58-.671-.517-.196-.776-.773-.58-1.29.195-.517.775-.775 1.29-.58 4.219 1.604 7.439-.866 7.574-.972.434-.338 1.062-.266 1.403.166.342.432.271 1.058-.159 1.4-.129.103-2.495 1.947-5.948 1.947zm1.564-8.066c-1.829 0-4.968-.482-7.542-3.332-.37-.41-.338-1.042.072-1.412.411-.371 1.043-.337 1.412.072C4.984 9.122 8.976 8.392 9.146 8.36c.538-.105 1.066.246 1.173.787.107.54-.241 1.064-.781 1.174-.069.014-.644.124-1.52.124z"/><path fill="#31373D" d="M9.341 10.341c-.066 0-.132-.006-.199-.02-.541-.109-.89-.635-.783-1.175.034-.173.76-4.163-2.587-7.185C5.362 1.591 5.33.959 5.7.549 6.069.14 6.702.106 7.113.477c4.214 3.806 3.251 8.849 3.207 9.062-.096.475-.513.802-.979.802zm3.948 18.63c-.448 0-.856-.303-.969-.758-1.473-5.895 2.554-9.186 2.726-9.323.431-.344 1.061-.273 1.405.159.343.431.273 1.058-.156 1.402-.14.114-3.187 2.667-2.035 7.277.134.535-.192 1.078-.728 1.212-.081.021-.163.031-.243.031z"/><path fill="#31373D" d="M29.844 19.167c-2.96-2.959-6.095-3.569-8.915-2.069-.157-1.874-1.166-4.007-2.521-5.363-1.488-1.488-3.008-1.653-4.405-1.044 1.058-2.465.6-5.43-.826-6.856-1.843-1.843-4.594-.411-7.174 2.168-2.58 2.58-4.012 5.331-2.168 7.174 1.425 1.426 4.391 1.883 6.856.826-.61 1.397-.444 2.918 1.044 4.405 1.354 1.354 3.489 2.363 5.363 2.521-1.5 2.82-.891 5.954 2.069 8.915 3.75 3.749 12.204 5.527 14.204 3.527s.223-10.455-3.527-14.204z"/></svg>'
+  )}`;
   const appFontFamilies: Array<{ value: AppFontFamily; label: string; description: string; css: string }> = [
     {
       value: 'system',
@@ -611,7 +622,7 @@
   $: if (!importOptions.includes(importKind)) {
     importKind = importOptions[0];
   }
-  $: appSettingsStyle = `--app-font-family: ${appFontFamilyCss(appSettings.fontFamily)}; --app-chat-font-family: ${appFontFamilyCss(appSettings.chatFontFamily)}; --app-font-weight: ${appSettings.fontWeight}; --app-ui-font-size: ${appSettings.uiFontSize}px; --app-chat-font-size: ${appSettings.chatFontSize}px; --app-chat-bubble-width: ${appSettings.chatBubbleWidth}px;`;
+  $: appSettingsStyle = `--app-font-family: ${appFontFamilyCss(appSettings.fontFamily)}; --app-chat-font-family: ${appFontFamilyCss(appSettings.chatFontFamily)}; --app-font-weight: ${appSettings.fontWeight}; --app-ui-font-size: ${appSettings.uiFontSize}px; --app-chat-font-size: ${appSettings.chatFontSize}px; --app-chat-bubble-width: ${appSettings.chatBubbleWidth}px; ${avatarShapeCss(appSettings.avatarShape)}`;
   $: if (activeProfileId !== profileDraftId) {
     loadProfileDraft(activeProfile);
   }
@@ -670,7 +681,8 @@
       fontWeight: 450,
       uiFontSize: 14,
       chatFontSize: 15,
-      chatBubbleWidth: 760
+      chatBubbleWidth: 760,
+      avatarShape: 'rectangle'
     };
   }
 
@@ -688,19 +700,31 @@
     return appFontFamilies.some((font) => font.value === value);
   }
 
+  function isAppAvatarShape(value: unknown): value is AppAvatarShape {
+    return appAvatarShapes.some((shape) => shape.value === value);
+  }
+
+  function avatarShapeCss(shape: AppAvatarShape) {
+    if (shape === 'rectangle') return '--app-message-avatar-width: 52px; --app-message-avatar-height: 64px; --app-message-avatar-radius: 10px;';
+    if (shape === 'circle') return '--app-message-avatar-width: 56px; --app-message-avatar-height: 56px; --app-message-avatar-radius: 999px;';
+    return '--app-message-avatar-width: 56px; --app-message-avatar-height: 56px; --app-message-avatar-radius: 10px;';
+  }
+
   function normalizeAppSettings(value: Partial<AppSettings> | null | undefined): AppSettings {
     const defaults = defaultAppSettings();
     const candidateFontFamily = value?.fontFamily;
     const fontFamily = isAppFontFamily(candidateFontFamily) ? candidateFontFamily : defaults.fontFamily;
     const candidateChatFontFamily = value?.chatFontFamily;
     const chatFontFamily = isAppFontFamily(candidateChatFontFamily) ? candidateChatFontFamily : fontFamily;
+    const candidateAvatarShape = value?.avatarShape;
     return {
       fontFamily,
       chatFontFamily,
       fontWeight: clampSetting(value?.fontWeight, 350, 650, defaults.fontWeight),
       uiFontSize: clampSetting(value?.uiFontSize, 12, 18, defaults.uiFontSize),
       chatFontSize: clampSetting(value?.chatFontSize, 13, 24, defaults.chatFontSize),
-      chatBubbleWidth: clampSetting(value?.chatBubbleWidth, 420, 1000, defaults.chatBubbleWidth)
+      chatBubbleWidth: clampSetting(value?.chatBubbleWidth, 420, 1000, defaults.chatBubbleWidth),
+      avatarShape: isAppAvatarShape(candidateAvatarShape) ? candidateAvatarShape : defaults.avatarShape
     };
   }
 
@@ -3745,7 +3769,58 @@
     </button>
   </aside>
 
-  {#if activeView === 'home'}
+  {#if activeDrawer === 'settings'}
+    <section class="stage settings-preview-stage" aria-label={t('settings.preview')}>
+      <header class="chatbar">
+        <div class="scene">
+          <div class="conversation-title-card" aria-label={t('chat.currentConversation')}>
+            <MessageCircle size={16} />
+            <span>{t('settings.previewConversation')}</span>
+          </div>
+        </div>
+
+        <div class="context-strip" aria-label={t('chat.currentContext')}>
+          <span class="context-chip">
+            <Bot size={15} />
+            <span>{t('settings.previewSpeaker')}</span>
+          </span>
+          <span class="context-chip">
+            <UserRound size={15} />
+            <span>{t('settings.previewUser')}</span>
+          </span>
+          <span class="context-chip profile">
+            <Settings2 size={15} />
+            <span>{t('settings.previewProfile')}</span>
+          </span>
+          <span class="status-pill">{t('settings.preview')}</span>
+        </div>
+      </header>
+
+      <div class="messages settings-preview-messages" aria-hidden="true">
+        <div class="message-stack">
+          <article class="message-row assistant">
+            <div class="message-avatar settings-preview-avatar">
+              <img src={settingsPreviewAvatarUrl} alt="" />
+            </div>
+            <div class="message assistant">
+              <strong>{t('settings.previewSpeaker')}</strong>
+              <div class="message-content rich">{t('settings.previewAssistantMessage')}</div>
+            </div>
+          </article>
+
+          <article class="message-row user">
+            <div class="message-avatar settings-preview-avatar">
+              <span>{t('settings.previewUserInitial')}</span>
+            </div>
+            <div class="message user">
+              <strong>{t('settings.previewUser')}</strong>
+              <div class="message-content rich">{t('settings.previewUserMessage')}</div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+  {:else if activeView === 'home'}
     <HomeStage
       {status}
       {activeProfile}
@@ -3781,6 +3856,11 @@
         <div class="conversation-title-card" aria-label={t('chat.currentConversation')}>
           <MessageCircle size={16} />
           <span>{activeConversation?.title ?? t('chat.unsavedChat')}</span>
+          {#if activeConversation}
+            <button class="title-edit-button" type="button" title={t('chat.rename')} aria-label={t('chat.rename')} on:click={(event) => renameConversation(event, activeConversation)}>
+              <Pencil size={14} />
+            </button>
+          {/if}
         </div>
       </div>
 
@@ -4111,7 +4191,9 @@
   {/if}
 
   {#if activeDrawer}
-    <button class="scrim" type="button" aria-label={t('common.close')} on:click={closeDrawer}></button>
+    {#if activeDrawer !== 'settings'}
+      <button class="scrim" type="button" aria-label={t('common.close')} on:click={closeDrawer}></button>
+    {/if}
     <aside
       class="drawer"
       class:right={drawerIsRight}
@@ -5255,10 +5337,22 @@
               oninput={(event) => updateAppSettings({ chatBubbleWidth: (event.currentTarget as HTMLInputElement).valueAsNumber })}
             />
 
-            <div class="settings-preview">
-              <strong>{t('settings.preview')}</strong>
-              <p>{t('settings.previewText')}</p>
+            <div class="font-field">
+              <strong>{t('settings.avatarShape')}</strong>
+              <div class="font-choice-grid" aria-label={t('settings.avatarShape')}>
+                {#each appAvatarShapes as shape}
+                  <button
+                    class:active={appSettings.avatarShape === shape.value}
+                    type="button"
+                    on:click={() => updateAppSettings({ avatarShape: shape.value })}
+                  >
+                    <strong>{shape.label}</strong>
+                    <span>{shape.description}</span>
+                  </button>
+                {/each}
+              </div>
             </div>
+
           </section>
 
           <button class="secondary full" type="button" on:click={resetAppSettings}>
@@ -5424,6 +5518,18 @@
     overflow: hidden;
   }
 
+  .settings-preview-stage .chatbar {
+    grid-template-columns: minmax(180px, 0.8fr) minmax(280px, 1.5fr);
+  }
+
+  .settings-preview-stage {
+    margin-right: min(440px, calc(100vw - 64px));
+  }
+
+  .settings-preview-stage .context-chip {
+    pointer-events: none;
+  }
+
   .stage.tree-open {
     grid-template-columns: minmax(0, 1fr) minmax(340px, 38vw);
   }
@@ -5489,6 +5595,26 @@
     background: var(--nanke-surface-acrylic);
     color: var(--nanke-ink);
     font-weight: 700;
+  }
+
+  .title-edit-button {
+    display: inline-grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+
+  .title-edit-button:hover,
+  .title-edit-button:focus-visible {
+    border-color: var(--nanke-border);
+    background: var(--nanke-surface);
+    outline: 0;
   }
 
   .conversation-title-card span,
@@ -5654,13 +5780,13 @@
   }
 
   .message-avatar {
-    flex: 0 0 40px;
-    width: 40px;
-    height: 40px;
+    flex: 0 0 var(--app-message-avatar-width);
+    width: var(--app-message-avatar-width);
+    height: var(--app-message-avatar-height);
     padding: 0;
     overflow: hidden;
     border: 1px solid var(--nanke-border);
-    border-radius: 8px;
+    border-radius: var(--app-message-avatar-radius);
     background: var(--nanke-field);
     color: inherit;
     cursor: zoom-in;
@@ -5683,6 +5809,11 @@
 
   .message-avatar img {
     object-fit: cover;
+    object-position: center top;
+  }
+
+  .settings-preview-avatar {
+    cursor: default;
   }
 
   .message-avatar span {
@@ -6688,28 +6819,6 @@
   .settings-range {
     display: grid;
     gap: 8px;
-  }
-
-  .settings-preview {
-    display: grid;
-    gap: 6px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 12px;
-  }
-
-  .settings-preview strong {
-    color: inherit;
-    font-size: var(--app-text-xs);
-  }
-
-  .settings-preview p {
-    margin: 0;
-    color: inherit;
-    font-family: var(--app-chat-font-family);
-    font-size: var(--app-chat-font-size);
-    line-height: 1.58;
   }
 
   .compact-editor {

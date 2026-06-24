@@ -142,10 +142,7 @@
   let activeRegexScriptId = '';
 
   $: activeRegexScript = profileDraftRegexScripts.find((script) => script.id === activeRegexScriptId);
-  $: if (profileDraftRegexScripts.length && !profileDraftRegexScripts.some((script) => script.id === activeRegexScriptId)) {
-    activeRegexScriptId = profileDraftRegexScripts[0].id;
-  }
-  $: if (!profileDraftRegexScripts.length && activeRegexScriptId) {
+  $: if (activeRegexScriptId && !profileDraftRegexScripts.some((script) => script.id === activeRegexScriptId)) {
     activeRegexScriptId = '';
   }
 
@@ -179,11 +176,13 @@
     profileDraftRegexScripts = profileDraftRegexScripts.map((script) => (script.id === id ? { ...script, ...patch } : script));
   }
 
+  function toggleRegexEditor(script: RegexScript) {
+    activeRegexScriptId = activeRegexScriptId === script.id ? '' : script.id;
+  }
+
   function removeDraftRegexScript(script: RegexScript) {
-    const index = profileDraftRegexScripts.findIndex((item) => item.id === script.id);
-    const nextScripts = profileDraftRegexScripts.filter((item) => item.id !== script.id);
-    profileDraftRegexScripts = nextScripts;
-    activeRegexScriptId = nextScripts[Math.min(index, nextScripts.length - 1)]?.id ?? '';
+    profileDraftRegexScripts = profileDraftRegexScripts.filter((item) => item.id !== script.id);
+    if (activeRegexScriptId === script.id) activeRegexScriptId = '';
   }
 
   function setRegexScope(script: RegexScript, scope: RegexScope) {
@@ -594,7 +593,7 @@
           <div class="regex-script-list">
             {#each profileDraftRegexScripts as script}
               <article class="regex-script-row" class:active={script.id === activeRegexScriptId} class:disabled={script.disabled}>
-                <button class="regex-script-main" type="button" on:click={() => (activeRegexScriptId = script.id)}>
+                <button class="regex-script-main" type="button" on:click={() => toggleRegexEditor(script)}>
                   <strong>{script.scriptName}</strong>
                   <span>{regexScriptSurface(script)}</span>
                 </button>
@@ -602,7 +601,7 @@
                   <button class="mini-toggle" class:active={!script.disabled} type="button" on:click={() => updateDraftRegexScript(script.id, { disabled: !script.disabled })}>
                     {script.disabled ? t('common.off') : t('common.on')}
                   </button>
-                  <button type="button" on:click={() => (activeRegexScriptId = script.id)} title={t('profile.editRegexScript')} aria-label={`${t('profile.editRegexScript')} ${script.scriptName}`}>
+                  <button type="button" on:click={() => toggleRegexEditor(script)} title={t('profile.editRegexScript')} aria-label={`${t('profile.editRegexScript')} ${script.scriptName}`}>
                     <Pencil size={14} />
                   </button>
                   <button type="button" on:click={() => removeDraftRegexScript(script)} title={t('profile.removeRegexScript')} aria-label={`${t('profile.removeRegexScript')} ${script.scriptName}`}>
@@ -689,8 +688,6 @@
               </label>
             </div>
           </div>
-        {:else if profileDraftRegexScripts.length}
-          <span class="drawer-empty compact">{t('profile.noRegexSelected')}</span>
         {/if}
       </section>
     </form>

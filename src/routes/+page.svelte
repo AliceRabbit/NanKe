@@ -3728,7 +3728,9 @@
 
 <main class="workspace" style={appSettingsStyle}>
   <aside class="rail" aria-label={t('nav.navigation')}>
-    <div class="brand">NK</div>
+    <div class="brand" aria-label="NanKe">
+      <img class="brand-logo" src="/brand/nanke-icon-256.png" alt="" />
+    </div>
     <button
       class="icon-button"
       class:active={activeView === 'home' && !activeDrawer}
@@ -5404,9 +5406,17 @@
     height: 40px;
     border: 1px solid var(--nanke-border-strong);
     border-radius: 8px;
-    color: var(--nanke-ink);
-    font-weight: 800;
-    letter-spacing: 0;
+    background: #fff;
+    overflow: hidden;
+    padding: 2px;
+  }
+
+  .brand-logo {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 6px;
+    object-fit: cover;
   }
 
   .rail-spacer {

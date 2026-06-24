@@ -1,12 +1,20 @@
-# 🌙 NanKe (南柯)
+<p align="center">
+  <img src="static/brand/nanke-logo.png" alt="南柯" width="180" />
+</p>
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Status: WIP](https://img.shields.io/badge/status-WIP-orange.svg)
-![Stars Welcome](https://img.shields.io/badge/stars-welcome-yellow.svg?logo=github)
-![Issues Welcome](https://img.shields.io/badge/issues-welcome-brightgreen.svg?logo=github)
-![Package Manager: pnpm](https://img.shields.io/badge/package%20manager-pnpm-F69220.svg?logo=pnpm)
+<h1 align="center">🌙 NanKe (南柯)</h1>
 
-> **重构“酒馆式”对话体验 —— 更轻、更稳、更纯粹。**
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
+  <img src="https://img.shields.io/badge/status-WIP-orange.svg" alt="Status: WIP" />
+  <img src="https://img.shields.io/badge/stars-welcome-yellow.svg?logo=github" alt="Stars Welcome" />
+  <img src="https://img.shields.io/badge/issues-welcome-brightgreen.svg?logo=github" alt="Issues Welcome" />
+  <img src="https://img.shields.io/badge/package%20manager-pnpm-F69220.svg?logo=pnpm" alt="Package Manager: pnpm" />
+</p>
+
+<p align="center">
+  <strong>重构“酒馆式”对话体验 —— 更轻、更稳、更纯粹。</strong>
+</p>
 
 NanKe 致力于打造一个现代化的 AI 角色扮演与文本创作平台。本项目并非对已有酒馆项目的简单复刻，而是从零开始的重新思考：抛弃沉重的历史包袱，使用现代化的技术栈与架构，专注真正重要的“角色对话”与“设定管理”。
 

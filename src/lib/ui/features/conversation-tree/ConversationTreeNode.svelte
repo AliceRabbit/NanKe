@@ -106,7 +106,7 @@
     gap: 8px;
     min-width: 0;
     color: #65716a;
-    font-size: 11px;
+    font-size: var(--app-text-2xs);
   }
 
   .node-tooltip {
@@ -122,7 +122,7 @@
     background: #fff;
     box-shadow: 0 16px 42px rgba(27, 39, 32, 0.16);
     color: #344139;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     line-height: 1.45;
     padding: 10px 12px;
     white-space: normal;

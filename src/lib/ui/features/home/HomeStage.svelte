@@ -234,19 +234,19 @@
 
   .home-title span {
     color: inherit;
-    font-size: 11px;
+    font-size: var(--app-text-2xs);
     font-weight: 800;
   }
 
   .home-title strong {
     color: inherit;
-    font-size: 22px;
+    font-size: var(--app-text-4xl);
     line-height: 1.15;
   }
 
   .home-title small {
     color: inherit;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .homebar-actions {
@@ -269,7 +269,7 @@
     background: var(--nanke-surface);
     color: var(--nanke-ink);
     padding: 8px 10px;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
     text-align: left;
   }
 
@@ -346,14 +346,14 @@
 
   .home-start > span {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     font-weight: 900;
   }
 
   .home-start h1 {
     margin: 0;
     color: inherit;
-    font-size: 28px;
+    font-size: var(--app-text-6xl);
     line-height: 1.18;
     letter-spacing: 0;
     overflow-wrap: anywhere;
@@ -362,7 +362,7 @@
   .home-start p {
     margin: 0;
     color: inherit;
-    font-size: 14px;
+    font-size: var(--app-text-md);
     overflow-wrap: anywhere;
   }
 
@@ -453,11 +453,11 @@
 
   .home-readiness small {
     color: inherit;
-    font-size: 11px;
+    font-size: var(--app-text-2xs);
   }
 
   .home-readiness strong {
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .home-grid {
@@ -492,12 +492,12 @@
 
   .home-section > header strong {
     color: inherit;
-    font-size: 15px;
+    font-size: var(--app-text-lg);
   }
 
   .home-section > header small {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .home-recent-list,
@@ -578,13 +578,13 @@
   .home-recent-copy strong,
   .home-character-row strong {
     color: inherit;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .home-recent-copy small,
   .home-character-row small {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .home-empty {
@@ -596,7 +596,7 @@
     border-radius: 8px;
     background: var(--nanke-surface);
     color: inherit;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
     text-align: center;
   }
 
@@ -627,7 +627,7 @@
     }
 
     .home-start h1 {
-      font-size: 24px;
+      font-size: var(--app-text-5xl);
     }
 
     .home-section > header {

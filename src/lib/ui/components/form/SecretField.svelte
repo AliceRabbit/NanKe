@@ -27,9 +27,9 @@
   let revealed = $state(false);
 </script>
 
-<label class={cn('group/grid grid min-w-0 gap-1.5 text-[13px] text-[var(--nanke-ink)]', className)}>
+<label class={cn('group/grid grid min-w-0 gap-1.5 text-[length:var(--app-text-sm)] text-[var(--nanke-ink)]', className)}>
   {#if label}
-    <span class="text-[12px] font-semibold leading-5 text-[var(--nanke-ink-muted)] transition group-focus-within/grid:text-[var(--nanke-accent-strong)]">{label}</span>
+    <span class="text-[length:var(--app-text-xs)] font-semibold leading-5 text-[var(--nanke-ink-muted)] transition group-focus-within/grid:text-[var(--nanke-accent-strong)]">{label}</span>
   {/if}
   <span
     class={cn(
@@ -45,7 +45,7 @@
       type={revealed ? 'text' : 'password'}
       bind:value
       aria-invalid={error ? 'true' : undefined}
-      class="min-w-0 border-0 bg-transparent px-3 py-2 text-[13px] text-[var(--nanke-ink)] shadow-none outline-none placeholder:text-[var(--nanke-ink-subtle)] disabled:text-[var(--nanke-ink-subtle)]"
+      class="min-w-0 border-0 bg-transparent px-3 py-2 text-[length:var(--app-text-sm)] text-[var(--nanke-ink)] shadow-none outline-none placeholder:text-[var(--nanke-ink-subtle)] disabled:text-[var(--nanke-ink-subtle)]"
     />
     <button
       class="grid w-10 place-items-center border-l border-[var(--nanke-border-soft)] bg-[rgb(248_250_247_/_74%)] text-[var(--nanke-ink-muted)] transition hover:bg-[var(--nanke-accent-soft)] hover:text-[var(--nanke-accent-strong)]"
@@ -61,8 +61,8 @@
     </button>
   </span>
   {#if error}
-    <span class="text-[12px] text-[var(--nanke-danger)]">{error}</span>
+    <span class="text-[length:var(--app-text-xs)] text-[var(--nanke-danger)]">{error}</span>
   {:else if description}
-    <span class="text-[12px] leading-5 text-[var(--nanke-ink-muted)]">{description}</span>
+    <span class="text-[length:var(--app-text-xs)] leading-5 text-[var(--nanke-ink-muted)]">{description}</span>
   {/if}
 </label>

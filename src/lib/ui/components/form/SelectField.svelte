@@ -26,9 +26,9 @@
   }: Props = $props();
 </script>
 
-<label class={cn('group/grid grid min-w-0 gap-1.5 text-[13px] text-[var(--nanke-ink)]', className)}>
+<label class={cn('group/grid grid min-w-0 gap-1.5 text-[length:var(--app-text-sm)] text-[var(--nanke-ink)]', className)}>
   {#if label}
-    <span class="text-[12px] font-medium leading-5 text-[var(--nanke-ink-muted)] transition-colors group-focus-within/grid:text-[var(--nanke-accent)]">{label}</span>
+    <span class="text-[length:var(--app-text-xs)] font-medium leading-5 text-[var(--nanke-ink-muted)] transition-colors group-focus-within/grid:text-[var(--nanke-accent)]">{label}</span>
   {/if}
   <span class="relative min-w-0">
     <select
@@ -36,7 +36,7 @@
       bind:value
       aria-invalid={error ? 'true' : undefined}
       class={cn(
-        'h-10 w-full min-w-0 appearance-none rounded-[var(--nanke-radius-md)] border border-transparent bg-[var(--nanke-field)] py-2 pl-3 pr-9 text-[13px] text-[var(--nanke-ink)] shadow-[var(--nanke-shadow-field)] outline-none transition-all duration-300 ease-out',
+        'h-10 w-full min-w-0 appearance-none rounded-[var(--nanke-radius-md)] border border-transparent bg-[var(--nanke-field)] py-2 pl-3 pr-9 text-[length:var(--app-text-sm)] text-[var(--nanke-ink)] shadow-[var(--nanke-shadow-field)] outline-none transition-all duration-300 ease-out',
         'hover:bg-[var(--nanke-field-hover)]',
         'focus:border-[var(--nanke-accent)] focus:bg-[var(--nanke-field)] focus:shadow-[var(--nanke-shadow-field-focus)] focus:ring-2 focus:ring-[var(--nanke-accent-soft)]',
         'disabled:bg-[var(--nanke-field-disabled)] disabled:text-[var(--nanke-ink-subtle)] disabled:opacity-50 disabled:pointer-events-none',
@@ -49,8 +49,8 @@
     <ChevronDown class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--nanke-ink-muted)]" size={16} />
   </span>
   {#if error}
-    <span class="text-[12px] text-[var(--nanke-danger)]">{error}</span>
+    <span class="text-[length:var(--app-text-xs)] text-[var(--nanke-danger)]">{error}</span>
   {:else if description}
-    <span class="text-[12px] leading-5 text-[var(--nanke-ink-muted)]">{description}</span>
+    <span class="text-[length:var(--app-text-xs)] leading-5 text-[var(--nanke-ink-muted)]">{description}</span>
   {/if}
 </label>

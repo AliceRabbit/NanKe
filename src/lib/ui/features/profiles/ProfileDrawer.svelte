@@ -7,7 +7,7 @@
   import TextField from '$lib/ui/components/form/TextField.svelte';
   import { t } from '$lib/i18n';
   import type { GenerationProfile, PromptSlot } from '$lib/schemas/profile';
-  import type { RegexScript } from '$lib/schemas/regex';
+  import type { RegexPlacement, RegexScript } from '$lib/schemas/regex';
 
   type Profile = GenerationProfile;
   type ProviderType = Profile['provider']['type'];
@@ -20,10 +20,27 @@
   type PromptSlotSource = PromptSlot['source'];
   type PromptMode = Profile['prompt']['mode'];
   type MacroMode = Profile['prompt']['macroMode'];
+  type RegexSubstitutionMode = RegexScript['substituteRegex'];
   type SamplerField = Exclude<keyof NonNullable<Profile['sampler']>, 'stop'>;
   type SamplerVisibility = Record<SamplerField, boolean>;
   type PromptStats = { total: number; ordered: number; enabled: number; inactive?: number; injected?: number };
   type UpdateDraftSlotInjection = NonNullable<PromptSlot['injection']> | undefined;
+  type RegexScope = 'normal' | 'display' | 'prompt';
+
+  const regexPlacementOptions: Array<{ value: RegexPlacement; label: string }> = [
+    { value: 0, label: t('profile.regexPlacement.display') },
+    { value: 1, label: t('profile.regexPlacement.userInput') },
+    { value: 2, label: t('profile.regexPlacement.aiOutput') },
+    { value: 3, label: t('profile.regexPlacement.slashCommand') },
+    { value: 5, label: t('profile.regexPlacement.worldInfo') },
+    { value: 6, label: t('profile.regexPlacement.reasoning') }
+  ];
+
+  const regexSubstitutionOptions: Array<{ value: RegexSubstitutionMode; label: string }> = [
+    { value: 0, label: t('profile.regexSubstitution.none') },
+    { value: 1, label: t('profile.regexSubstitution.raw') },
+    { value: 2, label: t('profile.regexSubstitution.escaped') }
+  ];
 
   export let profiles: Profile[] = [];
   export let activeProfile: Profile | undefined = undefined;
@@ -121,6 +138,75 @@
   export let resetPromptEditor: () => void;
   export let savePromptEditor: () => void | Promise<void>;
   export let closePromptEditor: () => void;
+
+  let activeRegexScriptId = '';
+
+  $: activeRegexScript = profileDraftRegexScripts.find((script) => script.id === activeRegexScriptId);
+  $: if (profileDraftRegexScripts.length && !profileDraftRegexScripts.some((script) => script.id === activeRegexScriptId)) {
+    activeRegexScriptId = profileDraftRegexScripts[0].id;
+  }
+  $: if (!profileDraftRegexScripts.length && activeRegexScriptId) {
+    activeRegexScriptId = '';
+  }
+
+  function regexScope(script: RegexScript): RegexScope {
+    if (script.promptOnly) return 'prompt';
+    if (script.markdownOnly) return 'display';
+    return 'normal';
+  }
+
+  function addDraftRegexScript() {
+    const script: RegexScript = {
+      id: `custom-regex-${crypto.randomUUID()}`,
+      scriptName: t('profile.newRegexScript'),
+      findRegex: '',
+      replaceString: '',
+      trimStrings: [],
+      placement: [2],
+      disabled: false,
+      markdownOnly: false,
+      promptOnly: false,
+      runOnEdit: false,
+      substituteRegex: 0,
+      minDepth: null,
+      maxDepth: null
+    };
+    profileDraftRegexScripts = [...profileDraftRegexScripts, script];
+    activeRegexScriptId = script.id;
+  }
+
+  function updateDraftRegexScript(id: string, patch: Partial<RegexScript>) {
+    profileDraftRegexScripts = profileDraftRegexScripts.map((script) => (script.id === id ? { ...script, ...patch } : script));
+  }
+
+  function removeDraftRegexScript(script: RegexScript) {
+    const index = profileDraftRegexScripts.findIndex((item) => item.id === script.id);
+    const nextScripts = profileDraftRegexScripts.filter((item) => item.id !== script.id);
+    profileDraftRegexScripts = nextScripts;
+    activeRegexScriptId = nextScripts[Math.min(index, nextScripts.length - 1)]?.id ?? '';
+  }
+
+  function setRegexScope(script: RegexScript, scope: RegexScope) {
+    updateDraftRegexScript(script.id, {
+      markdownOnly: scope === 'display',
+      promptOnly: scope === 'prompt'
+    });
+  }
+
+  function toggleRegexPlacement(script: RegexScript, placement: RegexPlacement) {
+    const placements = new Set(script.placement);
+    if (placements.has(placement)) placements.delete(placement);
+    else placements.add(placement);
+    updateDraftRegexScript(script.id, { placement: [...placements] });
+  }
+
+  function regexTrimStrings(value: string) {
+    return value.split('\n').filter((item) => item.length > 0);
+  }
+
+  function regexDepth(value: string) {
+    return value.trim() ? (optionalInteger(value) ?? null) : null;
+  }
 </script>
 <div class="profile-workspace">
   <div class="profile-panel">
@@ -495,34 +581,116 @@
             <strong>{t('profile.regexScripts')}</strong>
             <span>{t('profile.regexStats', { active: profileDraftRegexScripts.filter((script) => !script.disabled).length, total: profileDraftRegexScripts.length })}</span>
           </div>
-          <button class="toggle-pill" class:active={profileDraftRegexEnabled} type="button" on:click={() => (profileDraftRegexEnabled = !profileDraftRegexEnabled)}>
-            {profileDraftRegexEnabled ? t('common.enabled') : t('common.disabled')}
-          </button>
+          <div class="preset-actions">
+            <button class="tool-button" type="button" on:click={addDraftRegexScript} title={t('profile.addRegexScript')} aria-label={t('profile.addRegexScript')}>
+              <Plus size={16} />
+            </button>
+            <button class="toggle-pill" class:active={profileDraftRegexEnabled} type="button" on:click={() => (profileDraftRegexEnabled = !profileDraftRegexEnabled)}>
+              {profileDraftRegexEnabled ? t('common.enabled') : t('common.disabled')}
+            </button>
+          </div>
         </div>
         {#if profileDraftRegexScripts.length}
           <div class="regex-script-list">
             {#each profileDraftRegexScripts as script}
-              <article class="regex-script-row" class:disabled={script.disabled}>
-                <div>
+              <article class="regex-script-row" class:active={script.id === activeRegexScriptId} class:disabled={script.disabled}>
+                <button class="regex-script-main" type="button" on:click={() => (activeRegexScriptId = script.id)}>
                   <strong>{script.scriptName}</strong>
                   <span>{regexScriptSurface(script)}</span>
-                </div>
-                <button
-                  class="mini-toggle"
-                  class:active={!script.disabled}
-                  type="button"
-                  on:click={() => {
-                    script.disabled = !script.disabled;
-                    profileDraftRegexScripts = [...profileDraftRegexScripts];
-                  }}
-                >
-                  {script.disabled ? t('common.off') : t('common.on')}
                 </button>
+                <span class="regex-row-actions">
+                  <button class="mini-toggle" class:active={!script.disabled} type="button" on:click={() => updateDraftRegexScript(script.id, { disabled: !script.disabled })}>
+                    {script.disabled ? t('common.off') : t('common.on')}
+                  </button>
+                  <button type="button" on:click={() => (activeRegexScriptId = script.id)} title={t('profile.editRegexScript')} aria-label={`${t('profile.editRegexScript')} ${script.scriptName}`}>
+                    <Pencil size={14} />
+                  </button>
+                  <button type="button" on:click={() => removeDraftRegexScript(script)} title={t('profile.removeRegexScript')} aria-label={`${t('profile.removeRegexScript')} ${script.scriptName}`}>
+                    <Trash2 size={14} />
+                  </button>
+                </span>
               </article>
             {/each}
           </div>
         {:else}
           <span class="drawer-empty compact">{t('profile.noRegexScripts')}</span>
+        {/if}
+
+        {#if activeRegexScript}
+          <div class="regex-editor" aria-label={t('profile.editRegexScript')}>
+            <div class="regex-editor-grid">
+              <label>
+                <span>{t('common.name')}</span>
+                <input value={activeRegexScript.scriptName} on:input={(event) => updateDraftRegexScript(activeRegexScript.id, { scriptName: (event.currentTarget as HTMLInputElement).value })} />
+              </label>
+              <div class="regex-option-group">
+                <span>{t('profile.regexSubstitution')}</span>
+                <div class="mini-segment three" aria-label={t('profile.regexSubstitution')}>
+                  {#each regexSubstitutionOptions as option}
+                    <button class:active={activeRegexScript.substituteRegex === option.value} type="button" on:click={() => updateDraftRegexScript(activeRegexScript.id, { substituteRegex: option.value })}>
+                      {option.label}
+                    </button>
+                  {/each}
+                </div>
+              </div>
+              <label class="wide">
+                <span>{t('profile.regexFind')}</span>
+                <textarea
+                  rows="3"
+                  value={activeRegexScript.findRegex}
+                  on:input={(event) => updateDraftRegexScript(activeRegexScript.id, { findRegex: (event.currentTarget as HTMLTextAreaElement).value })}
+                ></textarea>
+              </label>
+              <label class="wide">
+                <span>{t('profile.regexReplace')}</span>
+                <textarea
+                  rows="3"
+                  value={activeRegexScript.replaceString}
+                  on:input={(event) => updateDraftRegexScript(activeRegexScript.id, { replaceString: (event.currentTarget as HTMLTextAreaElement).value })}
+                ></textarea>
+              </label>
+              <div class="regex-option-group wide">
+                <span>{t('profile.regexPlacement')}</span>
+                <div class="regex-pill-options" aria-label={t('profile.regexPlacement')}>
+                  {#each regexPlacementOptions as option}
+                    <button class:active={activeRegexScript.placement.includes(option.value)} type="button" on:click={() => toggleRegexPlacement(activeRegexScript, option.value)}>
+                      {option.label}
+                    </button>
+                  {/each}
+                </div>
+              </div>
+              <div class="regex-option-group">
+                <span>{t('profile.regexScope')}</span>
+                <div class="mini-segment three" aria-label={t('profile.regexScope')}>
+                  <button class:active={regexScope(activeRegexScript) === 'normal'} type="button" on:click={() => setRegexScope(activeRegexScript, 'normal')}>{t('profile.regexScope.normal')}</button>
+                  <button class:active={regexScope(activeRegexScript) === 'display'} type="button" on:click={() => setRegexScope(activeRegexScript, 'display')}>{t('profile.regexScope.display')}</button>
+                  <button class:active={regexScope(activeRegexScript) === 'prompt'} type="button" on:click={() => setRegexScope(activeRegexScript, 'prompt')}>{t('profile.regexScope.prompt')}</button>
+                </div>
+              </div>
+              <label>
+                <span>{t('profile.regexTrimStrings')}</span>
+                <textarea
+                  rows="3"
+                  value={activeRegexScript.trimStrings.join('\n')}
+                  on:input={(event) => updateDraftRegexScript(activeRegexScript.id, { trimStrings: regexTrimStrings((event.currentTarget as HTMLTextAreaElement).value) })}
+                ></textarea>
+              </label>
+              <label>
+                <span>{t('profile.regexMinDepth')}</span>
+                <input value={activeRegexScript.minDepth ?? ''} inputmode="numeric" on:input={(event) => updateDraftRegexScript(activeRegexScript.id, { minDepth: regexDepth((event.currentTarget as HTMLInputElement).value) })} />
+              </label>
+              <label>
+                <span>{t('profile.regexMaxDepth')}</span>
+                <input value={activeRegexScript.maxDepth ?? ''} inputmode="numeric" on:input={(event) => updateDraftRegexScript(activeRegexScript.id, { maxDepth: regexDepth((event.currentTarget as HTMLInputElement).value) })} />
+              </label>
+              <label class="regex-checkbox">
+                <input type="checkbox" checked={activeRegexScript.runOnEdit} on:change={(event) => updateDraftRegexScript(activeRegexScript.id, { runOnEdit: (event.currentTarget as HTMLInputElement).checked })} />
+                <span>{t('profile.regexRunOnEdit')}</span>
+              </label>
+            </div>
+          </div>
+        {:else if profileDraftRegexScripts.length}
+          <span class="drawer-empty compact">{t('profile.noRegexSelected')}</span>
         {/if}
       </section>
     </form>
@@ -838,7 +1006,7 @@
 .profile-row-main span,
 .profile-row-meta {
   color: inherit;
-  font-size: 12px;
+  font-size: var(--app-text-xs);
   overflow-wrap: anywhere;
 }
 
@@ -849,7 +1017,7 @@
   background: var(--nanke-surface-muted);
   color: inherit !important;
   padding: 3px 7px;
-  font-size: 11px !important;
+  font-size: var(--app-text-2xs) !important;
   line-height: 1.2;
 }
 
@@ -869,7 +1037,7 @@
   background: var(--nanke-field);
   color: inherit;
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: var(--app-text-xs);
   line-height: 1.1;
 }
 
@@ -914,7 +1082,7 @@
 .profile-mode-strip span,
 .prompt-slot-row span {
   color: inherit;
-  font-size: 12px;
+  font-size: var(--app-text-xs);
 }
 
 .provider-editor,
@@ -1015,7 +1183,7 @@
 
 .credential-panel-head strong {
   color: var(--nanke-ink);
-  font-size: 13px;
+  font-size: var(--app-text-sm);
 }
 
 .credential-grid {
@@ -1091,7 +1259,7 @@
 
 .thinking-panel-header strong {
   color: var(--nanke-ink);
-  font-size: 13px;
+  font-size: var(--app-text-sm);
 }
 
 .thinking-field {
@@ -1147,7 +1315,7 @@
   padding: 3px 8px;
   text-align: center;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--app-text-xs);
 }
 
 :global(.sampler-number) {
@@ -1167,7 +1335,7 @@
 .advanced-sampler summary {
   cursor: pointer;
   color: inherit;
-  font-size: 13px;
+  font-size: var(--app-text-sm);
   font-weight: 700;
 }
 
@@ -1200,8 +1368,7 @@
   gap: 10px;
 }
 
-.regex-panel-header div,
-.regex-script-row div {
+.regex-panel-header div {
   display: grid;
   min-width: 0;
   gap: 3px;
@@ -1210,7 +1377,7 @@
 .regex-panel-header span,
 .regex-script-row span {
   color: inherit;
-  font-size: 12px;
+  font-size: var(--app-text-xs);
 }
 
 .regex-script-list {
@@ -1227,8 +1394,131 @@
   padding: 8px 10px;
 }
 
+.regex-script-row.active {
+  background: var(--nanke-surface-muted);
+  box-shadow: inset 3px 0 0 #1c6b43;
+}
+
 .regex-script-row.disabled {
   opacity: 0.62;
+}
+
+.regex-script-main {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.regex-script-main strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.regex-row-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.regex-row-actions button:not(.mini-toggle) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--nanke-border);
+  border-radius: 6px;
+  background: var(--nanke-surface);
+  color: var(--nanke-ink);
+}
+
+.regex-editor {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--nanke-border);
+  padding-top: 10px;
+}
+
+.regex-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.regex-editor-grid label,
+.regex-option-group {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.regex-editor-grid label > span,
+.regex-option-group > span {
+  color: inherit;
+  font-size: var(--app-text-xs);
+}
+
+.regex-editor-grid input,
+.regex-editor-grid textarea {
+  min-width: 0;
+  border: 1px solid var(--nanke-border);
+  border-radius: 7px;
+  background: var(--nanke-field);
+  color: var(--nanke-ink);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: var(--app-text-sm);
+}
+
+.regex-editor-grid textarea {
+  min-height: 76px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  line-height: 1.45;
+}
+
+.regex-editor-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.regex-pill-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.regex-pill-options button {
+  min-height: 30px;
+  border: 1px solid var(--nanke-border);
+  border-radius: 999px;
+  background: var(--nanke-surface);
+  color: inherit;
+  padding: 0 10px;
+  font-size: var(--app-text-xs);
+}
+
+.regex-pill-options button.active {
+  border-color: inherit;
+  background: var(--nanke-surface-muted);
+}
+
+.regex-checkbox {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  align-self: end;
+}
+
+.regex-checkbox input {
+  width: 16px;
+  height: 16px;
 }
 
 .mini-toggle {
@@ -1239,7 +1529,7 @@
   background: var(--nanke-surface);
   color: inherit;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--app-text-xs);
   font-weight: 700;
 }
 
@@ -1332,7 +1622,7 @@
   background: var(--nanke-field);
   color: inherit;
   padding: 8px 10px;
-  font-size: 11px;
+  font-size: var(--app-text-2xs);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -1390,7 +1680,7 @@
   background: var(--nanke-field);
   color: inherit;
   padding: 3px 7px;
-  font-size: 11px;
+  font-size: var(--app-text-2xs);
   line-height: 1.1;
 }
 
@@ -1457,7 +1747,7 @@
 
 .prompt-editor-titlebar h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--app-text-2xl);
   letter-spacing: 0;
 }
 
@@ -1483,7 +1773,7 @@
   min-height: 36px;
   border-radius: 7px;
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--app-text-sm);
 }
 
 .prompt-trigger-options {
@@ -1499,7 +1789,7 @@
   background: var(--nanke-surface);
   color: inherit;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--app-text-xs);
 }
 
 .prompt-trigger-options button.active {
@@ -1518,7 +1808,7 @@
   background: var(--nanke-surface);
   padding: 9px 10px;
   color: inherit;
-  font-size: 12px;
+  font-size: var(--app-text-xs);
 }
 
 .prompt-content-label textarea {
@@ -1587,7 +1877,7 @@
 .drawer-empty {
   color: inherit;
   padding: 18px 16px;
-  font-size: 13px;
+  font-size: var(--app-text-sm);
 }
 
   @media (max-width: 860px) {
@@ -1608,7 +1898,8 @@
   }
 
   .prompt-manager-toolbar,
-  .prompt-editor-fields {
+  .prompt-editor-fields,
+  .regex-editor-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

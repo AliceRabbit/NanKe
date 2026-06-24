@@ -142,9 +142,11 @@
     removedCharacterBindings: number;
     removedEmbeddedCharacterBooks: number;
   };
-  type AppFontFamily = 'system' | 'source-han-sans' | 'source-han-serif' | 'serif' | 'mono';
+  type AppFontFamily = 'system' | 'lxgw-wenkai' | 'noto-sans-sc' | 'noto-serif-sc' | 'source-han-sans' | 'source-han-serif' | 'serif' | 'mono';
   type AppSettings = {
     fontFamily: AppFontFamily;
+    chatFontFamily: AppFontFamily;
+    fontWeight: number;
     uiFontSize: number;
     chatFontSize: number;
     chatBubbleWidth: number;
@@ -267,6 +269,24 @@
       label: t('font.system'),
       description: t('font.systemDescription'),
       css: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    },
+    {
+      value: 'lxgw-wenkai',
+      label: '霞鹜文楷',
+      description: t('font.lxgwWenkaiDescription'),
+      css: '"LXGW WenKai Screen", "LXGW WenKai", "霞鹜文楷", "Kaiti SC", KaiTi, serif'
+    },
+    {
+      value: 'noto-sans-sc',
+      label: 'Noto Sans SC',
+      description: t('font.notoSansScDescription'),
+      css: '"Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "Source Han Sans CN", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
+    },
+    {
+      value: 'noto-serif-sc',
+      label: 'Noto Serif SC',
+      description: t('font.notoSerifScDescription'),
+      css: '"Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "Source Han Serif CN", "Songti SC", serif'
     },
     {
       value: 'source-han-sans',
@@ -591,7 +611,7 @@
   $: if (!importOptions.includes(importKind)) {
     importKind = importOptions[0];
   }
-  $: appSettingsStyle = `--app-font-family: ${appFontFamilyCss(appSettings.fontFamily)}; --app-ui-font-size: ${appSettings.uiFontSize}px; --app-chat-font-size: ${appSettings.chatFontSize}px; --app-chat-bubble-width: ${appSettings.chatBubbleWidth}px;`;
+  $: appSettingsStyle = `--app-font-family: ${appFontFamilyCss(appSettings.fontFamily)}; --app-chat-font-family: ${appFontFamilyCss(appSettings.chatFontFamily)}; --app-font-weight: ${appSettings.fontWeight}; --app-ui-font-size: ${appSettings.uiFontSize}px; --app-chat-font-size: ${appSettings.chatFontSize}px; --app-chat-bubble-width: ${appSettings.chatBubbleWidth}px;`;
   $: if (activeProfileId !== profileDraftId) {
     loadProfileDraft(activeProfile);
   }
@@ -646,6 +666,8 @@
   function defaultAppSettings(): AppSettings {
     return {
       fontFamily: 'system',
+      chatFontFamily: 'system',
+      fontWeight: 450,
       uiFontSize: 14,
       chatFontSize: 15,
       chatBubbleWidth: 760
@@ -670,8 +692,12 @@
     const defaults = defaultAppSettings();
     const candidateFontFamily = value?.fontFamily;
     const fontFamily = isAppFontFamily(candidateFontFamily) ? candidateFontFamily : defaults.fontFamily;
+    const candidateChatFontFamily = value?.chatFontFamily;
+    const chatFontFamily = isAppFontFamily(candidateChatFontFamily) ? candidateChatFontFamily : fontFamily;
     return {
       fontFamily,
+      chatFontFamily,
+      fontWeight: clampSetting(value?.fontWeight, 350, 650, defaults.fontWeight),
       uiFontSize: clampSetting(value?.uiFontSize, 12, 18, defaults.uiFontSize),
       chatFontSize: clampSetting(value?.chatFontSize, 13, 24, defaults.chatFontSize),
       chatBubbleWidth: clampSetting(value?.chatBubbleWidth, 420, 1000, defaults.chatBubbleWidth)
@@ -5153,17 +5179,36 @@
               <Type size={18} />
             </div>
 
-            <div class="font-choice-grid" aria-label={t('settings.fontFamily')}>
-              {#each appFontFamilies as font}
-                <button
-                  class:active={appSettings.fontFamily === font.value}
-                  type="button"
-                  on:click={() => updateAppSettings({ fontFamily: font.value })}
-                >
-                  <strong>{font.label}</strong>
-                  <span>{font.description}</span>
-                </button>
-              {/each}
+            <div class="font-field">
+              <strong>{t('settings.interfaceFontFamily')}</strong>
+              <div class="font-choice-grid" aria-label={t('settings.interfaceFontFamily')}>
+                {#each appFontFamilies as font}
+                  <button
+                    class:active={appSettings.fontFamily === font.value}
+                    type="button"
+                    on:click={() => updateAppSettings({ fontFamily: font.value })}
+                  >
+                    <strong>{font.label}</strong>
+                    <span>{font.description}</span>
+                  </button>
+                {/each}
+              </div>
+            </div>
+
+            <div class="font-field">
+              <strong>{t('settings.chatFontFamily')}</strong>
+              <div class="font-choice-grid" aria-label={t('settings.chatFontFamily')}>
+                {#each appFontFamilies as font}
+                  <button
+                    class:active={appSettings.chatFontFamily === font.value}
+                    type="button"
+                    on:click={() => updateAppSettings({ chatFontFamily: font.value })}
+                  >
+                    <strong>{font.label}</strong>
+                    <span>{font.description}</span>
+                  </button>
+                {/each}
+              </div>
             </div>
 
             <RangeField
@@ -5175,6 +5220,17 @@
               step="1"
               value={appSettings.uiFontSize}
               oninput={(event) => updateAppSettings({ uiFontSize: (event.currentTarget as HTMLInputElement).valueAsNumber })}
+            />
+
+            <RangeField
+              class="settings-range"
+              label={t('settings.interfaceWeight')}
+              valueLabel={`${appSettings.fontWeight}`}
+              min="350"
+              max="650"
+              step="25"
+              value={appSettings.fontWeight}
+              oninput={(event) => updateAppSettings({ fontWeight: (event.currentTarget as HTMLInputElement).valueAsNumber })}
             />
 
             <RangeField
@@ -5259,6 +5315,18 @@
     color: var(--nanke-ink);
     font-family: var(--app-font-family);
     font-size: var(--app-ui-font-size);
+    font-weight: var(--app-font-weight);
+    --app-text-2xs: max(10px, calc(var(--app-ui-font-size) - 3px));
+    --app-text-xs: max(11px, calc(var(--app-ui-font-size) - 2px));
+    --app-text-sm: max(12px, calc(var(--app-ui-font-size) - 1px));
+    --app-text-md: var(--app-ui-font-size);
+    --app-text-lg: calc(var(--app-ui-font-size) + 1px);
+    --app-text-xl: calc(var(--app-ui-font-size) + 2px);
+    --app-text-2xl: calc(var(--app-ui-font-size) + 4px);
+    --app-text-3xl: calc(var(--app-ui-font-size) + 6px);
+    --app-text-4xl: calc(var(--app-ui-font-size) + 8px);
+    --app-text-5xl: calc(var(--app-ui-font-size) + 10px);
+    --app-text-6xl: calc(var(--app-ui-font-size) + 14px);
   }
 
   .rail {
@@ -5386,7 +5454,7 @@
     border-left: 1px solid var(--nanke-border);
     background: var(--nanke-surface);
     color: var(--nanke-ink-muted);
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .chatbar {
@@ -5452,7 +5520,7 @@
     background: var(--nanke-surface);
     color: var(--nanke-ink);
     padding: 8px 10px;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
     text-align: left;
   }
 
@@ -5559,7 +5627,7 @@
   .empty-state h1 {
     margin: 0;
     color: var(--nanke-ink);
-    font-size: 24px;
+    font-size: var(--app-text-5xl);
     letter-spacing: 0;
   }
 
@@ -5650,7 +5718,7 @@
     display: block;
     margin-bottom: 6px;
     color: var(--nanke-ink-muted);
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     text-transform: none;
   }
 
@@ -5675,7 +5743,7 @@
     padding: 8px 11px;
     color: inherit;
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     font-weight: 700;
     list-style: none;
   }
@@ -5688,6 +5756,7 @@
     border-top: 1px solid var(--nanke-border);
     padding: 10px 12px 12px;
     color: inherit;
+    font-family: var(--app-chat-font-family);
     font-size: calc(var(--app-chat-font-size) * 0.92);
     line-height: 1.65;
   }
@@ -5709,6 +5778,7 @@
   .message-content {
     margin: 0;
     overflow-wrap: anywhere;
+    font-family: var(--app-chat-font-family);
     font-size: var(--app-chat-font-size);
     white-space: pre-wrap;
   }
@@ -5743,7 +5813,8 @@
     border-radius: 8px;
     background: var(--nanke-surface);
     color: inherit;
-    font: inherit;
+    font-family: var(--app-chat-font-family);
+    font-size: var(--app-chat-font-size);
     line-height: 1.58;
     padding: 10px 11px;
   }
@@ -5771,7 +5842,7 @@
     border-radius: 8px;
     background: var(--nanke-surface);
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     font-weight: 700;
     padding: 0 10px;
   }
@@ -5799,7 +5870,7 @@
 
   .message-editor small {
     color: inherit;
-    font-size: 11px;
+    font-size: var(--app-text-2xs);
   }
 
   .branch-controls {
@@ -5813,7 +5884,7 @@
     background: var(--nanke-field);
     padding: 2px;
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .message-row.user .branch-controls {
@@ -5949,7 +6020,7 @@
     min-height: 42px;
     padding: 10px 14px;
     color: inherit;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
     font-weight: 700;
     list-style: none;
     user-select: none;
@@ -6120,13 +6191,13 @@
   }
 
   .composer-menu strong {
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .composer-menu small {
     overflow: hidden;
     color: inherit;
-    font-size: 11px;
+    font-size: var(--app-text-2xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -6140,6 +6211,7 @@
     background: transparent;
     box-shadow: none !important;
     field-sizing: content;
+    font-family: var(--app-chat-font-family);
     font-size: var(--app-chat-font-size);
     line-height: 1.55;
     overflow: auto;
@@ -6299,7 +6371,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     font-weight: 700;
   }
 
@@ -6313,7 +6385,7 @@
   .avatar-viewer-scale {
     min-width: 46px;
     padding: 0 8px;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
@@ -6358,7 +6430,7 @@
     overflow: auto;
     margin: 0;
     color: inherit;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
     line-height: 1.55;
   }
 
@@ -6370,7 +6442,7 @@
   .delete-dialog p strong {
     margin-bottom: 4px;
     color: inherit;
-    font-size: 14px;
+    font-size: var(--app-text-md);
   }
 
   .delete-dialog-actions {
@@ -6389,7 +6461,7 @@
     border-radius: 8px;
     background: var(--nanke-surface);
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     font-weight: 800;
     padding: 0 11px;
   }
@@ -6417,7 +6489,7 @@
 
   .delete-dialog small {
     color: inherit;
-    font-size: 11px;
+    font-size: var(--app-text-2xs);
   }
 
   @media (max-width: 620px) {
@@ -6517,7 +6589,7 @@
 
   .drawer-header h2 {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--app-text-2xl);
     letter-spacing: 0;
   }
 
@@ -6559,18 +6631,28 @@
   }
 
   .settings-section-head strong {
-    font-size: 14px;
+    font-size: var(--app-text-md);
   }
 
   .settings-section-head span {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .font-choice-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 6px;
+  }
+
+  .font-field {
+    display: grid;
+    gap: 8px;
+  }
+
+  .font-field > strong {
+    color: inherit;
+    font-size: var(--app-text-xs);
   }
 
   .font-choice-grid button {
@@ -6592,13 +6674,13 @@
   }
 
   .font-choice-grid strong {
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .font-choice-grid span {
     overflow: hidden;
     color: inherit;
-    font-size: 11px;
+    font-size: var(--app-text-2xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -6619,12 +6701,13 @@
 
   .settings-preview strong {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .settings-preview p {
     margin: 0;
     color: inherit;
+    font-family: var(--app-chat-font-family);
     font-size: var(--app-chat-font-size);
     line-height: 1.58;
   }
@@ -6640,7 +6723,7 @@
     align-items: center;
     gap: 8px;
     color: inherit;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .checkbox-row input {
@@ -6649,7 +6732,7 @@
 
   .checkbox-row.compact {
     min-height: 28px;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .search-field {
@@ -6686,7 +6769,7 @@
     background: var(--nanke-surface);
     padding: 8px 10px;
     color: inherit;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .import-kind-note strong {
@@ -6753,7 +6836,7 @@
   .drawer-item span,
   .drawer-card span {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     overflow-wrap: anywhere;
   }
 
@@ -6798,12 +6881,12 @@
 
   .persona-section-head strong {
     color: inherit;
-    font-size: 14px;
+    font-size: var(--app-text-md);
   }
 
   .persona-section-head small {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     line-height: 1.45;
   }
 
@@ -6852,7 +6935,7 @@
     width: 42px;
     height: 42px;
     border-radius: 8px;
-    font-size: 15px;
+    font-size: var(--app-text-lg);
   }
 
   .persona-row-avatar img,
@@ -6876,12 +6959,12 @@
   }
 
   .persona-row-copy strong {
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .persona-row-copy small {
     color: inherit;
-    font-size: 11px;
+    font-size: var(--app-text-2xs);
   }
 
   .persona-detail {
@@ -6901,7 +6984,7 @@
     height: 112px;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 28px;
+    font-size: var(--app-text-6xl);
   }
 
   .persona-avatar-uploader input {
@@ -6918,21 +7001,21 @@
 
   .persona-identity span {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     font-weight: 700;
   }
 
   .persona-identity h3 {
     margin: 2px 0;
     color: inherit;
-    font-size: 22px;
+    font-size: var(--app-text-4xl);
     letter-spacing: 0;
   }
 
   .persona-identity p {
     margin: 0;
     color: inherit;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
     line-height: 1.45;
   }
 
@@ -6953,7 +7036,7 @@
     border-radius: 8px;
     background: var(--nanke-field);
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     font-weight: 800;
     padding: 0 10px;
   }
@@ -6986,7 +7069,7 @@
     justify-content: space-between;
     gap: 12px;
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .persona-connections {
@@ -7001,12 +7084,12 @@
     min-height: 34px;
     border-top: 1px solid var(--nanke-border);
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .persona-connection-row strong {
     color: inherit;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .persona-empty {
@@ -7089,12 +7172,12 @@
   }
 
   .conversation-group-copy strong {
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .conversation-group-copy small {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .conversation-group-chevron {
@@ -7186,7 +7269,7 @@
   .conversation-row-main small,
   .conversation-row-main > span:not(.conversation-title-line) {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .conversation-row-actions {
@@ -7260,7 +7343,7 @@
     min-height: 36px;
     border-radius: 7px;
     padding: 8px 10px;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .character-library-actions button {
@@ -7327,7 +7410,7 @@
   .character-avatar-small {
     width: 46px;
     height: 56px;
-    font-size: 16px;
+    font-size: var(--app-text-xl);
   }
 
   .character-avatar-small img,
@@ -7360,7 +7443,7 @@
   .character-source-panel span,
   .character-source-panel small {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .favorite-button {
@@ -7447,7 +7530,7 @@
   }
 
   .character-hero-title strong {
-    font-size: 20px;
+    font-size: var(--app-text-3xl);
   }
 
   .hero-favorite {
@@ -7466,7 +7549,7 @@
     background: var(--nanke-surface);
     color: inherit;
     padding: 4px 8px;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     line-height: 1.1;
   }
 
@@ -7659,7 +7742,7 @@
     min-height: 36px;
     border-radius: 7px;
     padding: 8px 10px;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .worldbook-create button {
@@ -7726,7 +7809,7 @@
   .worldbook-entry-editor-head span,
   .worldbook-entry-fields span {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .worldbook-row em {
@@ -7784,7 +7867,7 @@
 
   .worldbook-title-row label span {
     color: inherit;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   .worldbook-source {
@@ -7826,7 +7909,7 @@
     min-height: 36px;
     border-radius: 7px;
     padding: 7px 9px;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .worldbook-binding-selected {
@@ -7842,7 +7925,7 @@
     width: 34px;
     height: 42px;
     border-radius: 7px;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .worldbook-binding-actions {
@@ -7965,7 +8048,7 @@
     border-radius: 999px;
     background: var(--nanke-field);
     color: inherit;
-    font-size: 11px;
+    font-size: var(--app-text-2xs);
     font-weight: 800;
   }
 
@@ -8118,7 +8201,7 @@
   .drawer-empty {
     color: inherit;
     padding: 18px 16px;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   pre {
@@ -8133,7 +8216,7 @@
     overflow-wrap: anywhere;
     padding: 12px;
     white-space: pre-wrap;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
   }
 
   @media (max-width: 860px) {

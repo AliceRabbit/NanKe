@@ -291,7 +291,7 @@
     align-items: center;
     gap: 6px;
     color: #52645a;
-    font-size: 11px;
+    font-size: var(--app-text-2xs);
     font-weight: 700;
     text-transform: uppercase;
   }
@@ -299,7 +299,7 @@
   .tree-dock-header strong {
     overflow: hidden;
     color: #213129;
-    font-size: 14px;
+    font-size: var(--app-text-md);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -337,7 +337,7 @@
     gap: 8px;
     height: 100%;
     color: #68766e;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .node-detail {
@@ -358,7 +358,7 @@
   .detail-section small,
   .action-status {
     color: #65736b;
-    font-size: 11px;
+    font-size: var(--app-text-2xs);
   }
 
   .detail-section {
@@ -372,7 +372,7 @@
 
   .detail-section strong {
     color: #25352d;
-    font-size: 14px;
+    font-size: var(--app-text-md);
   }
 
   .detail-section p {
@@ -380,7 +380,7 @@
     max-height: 18vh;
     margin: 0;
     color: #35443c;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     line-height: 1.5;
     white-space: pre-wrap;
   }
@@ -398,13 +398,13 @@
     border-radius: 8px;
     background: #fff;
     color: #68766e;
-    font-size: 11px;
+    font-size: var(--app-text-2xs);
     padding: 8px;
   }
 
   .detail-grid strong {
     color: #26372e;
-    font-size: 13px;
+    font-size: var(--app-text-sm);
   }
 
   .detail-actions {
@@ -423,7 +423,7 @@
     border-radius: 8px;
     background: #fff;
     color: #2d4a38;
-    font-size: 12px;
+    font-size: var(--app-text-xs);
     font-weight: 700;
   }
 

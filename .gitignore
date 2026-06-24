@@ -23,6 +23,14 @@ data/
 *.sqlite
 *.sqlite3
 
+# User exports and private import staging
+exports/
+imports/
+local-fixtures/
+fixtures/local/
+*.nanke-profile.json
+*.nanke-conversation.json
+
 # Environment and local overrides
 .env
 .env.*

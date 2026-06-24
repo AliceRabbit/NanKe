@@ -1,13 +1,15 @@
 import { json } from '@sveltejs/kit';
 import { generationProfileSchema } from '$lib/schemas/profile';
+import { profileSummary } from '$lib/server/profile-summary';
 import { createRequestContext } from '$lib/server/request-context';
 import { errorResponse } from '$lib/server/errors';
 
-export function GET() {
+export function GET({ url }) {
   try {
     const context = createRequestContext();
     context.profiles.ensureDefault();
-    return json(context.profiles.list());
+    const profiles = context.profiles.list();
+    return json(url.searchParams.get('summary') === 'true' ? profiles.map(profileSummary) : profiles);
   } catch (error) {
     return errorResponse(error);
   }

@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte';
   import { applyRegexScripts, REGEX_PLACEMENT } from '$lib/core/regex';
   import { t } from '$lib/i18n';
+  import HomeStage from '$lib/ui/features/home/HomeStage.svelte';
   import { RangeField, SecretField, SelectField, TextareaField, TextField } from '$lib/ui/components';
   import { renderMessageMarkdown } from '$lib/ui/markdown';
   import type { Component } from 'svelte';
@@ -961,11 +962,16 @@
     if (profilesHydrated) return Promise.resolve();
     if (!profilesLoadPromise) {
       profilesLoadPromise = (async () => {
-        const nextProfiles = await fetchJson<Profile[]>('/api/profiles');
-        profiles = nextProfiles;
-        profilesHydrated = true;
-        activeProfileId ||= profiles[0]?.id ?? '';
-        loadProfileDraft(profiles.find((profile) => profile.id === activeProfileId));
+        status = t('status.loading');
+        try {
+          const nextProfiles = await fetchJson<Profile[]>('/api/profiles');
+          profiles = nextProfiles;
+          profilesHydrated = true;
+          activeProfileId ||= profiles[0]?.id ?? '';
+          loadProfileDraft(profiles.find((profile) => profile.id === activeProfileId));
+        } finally {
+          status = t('status.ready');
+        }
       })().finally(() => {
         profilesLoadPromise = null;
       });
@@ -1311,7 +1317,7 @@
   async function refreshAll() {
     status = t('status.loading');
     const [nextProfiles, nextCharacters, nextPersonas, nextPersonaCharacterBindings, nextWorldBooks, nextConversations] = await Promise.all([
-      fetchJson<Profile[]>('/api/profiles'),
+      fetchJson<Profile[]>(profilesHydrated ? '/api/profiles' : '/api/profiles?summary=true'),
       fetchJson<Character[]>('/api/characters'),
       fetchJson<UserPersona[]>('/api/personas'),
       fetchJson<PersonaCharacterBinding[]>('/api/personas/bindings'),
@@ -3824,152 +3830,34 @@
   </aside>
 
   {#if activeView === 'home'}
-    <section class="stage home-stage" aria-label={t('home.workspace')}>
-      <header class="homebar">
-        <div class="home-title">
-          <span>{t('home.kicker')}</span>
-          <strong>NanKe</strong>
-          <small>{t('home.subtitle')}</small>
-        </div>
-        <div class="homebar-actions">
-          <button class="context-chip profile" type="button" on:click={() => openLibrary('profiles')}>
-            <Settings2 size={15} />
-            <span>{activeProfile ? `${activeProfile.name} · ${activeProfile.provider.model}` : t('chat.noProfile')}</span>
-          </button>
-          <span class="status-pill">{status}</span>
-          <button class="tool-button" type="button" on:click={refreshAll} title={t('common.refresh')} aria-label={t('common.refresh')}>
-            <RefreshCw size={17} />
-          </button>
-        </div>
-      </header>
-
-      <div class="home-workspace">
-        <section class="home-overview" aria-label={t('home.overview')}>
-          <div class="home-start">
-            <span>{t('home.readyLabel')}</span>
-            <h1>{activeCharacter ? t('home.readyWithCharacter', { name: activeCharacter.name }) : t('home.readyNoCharacter')}</h1>
-            <p>{activePersona?.name ?? t('role.user')} · {activeProfile ? `${activeProfile.provider.type} · ${activeProfile.provider.model}` : t('chat.noProfileSelected')}</p>
-            <div class="home-primary-actions">
-              <button class="primary" type="button" disabled={!homeRecentConversations.length} on:click={() => loadConversation(homeRecentConversations[0].id)}>
-                <MessageCircle size={16} />{t('home.continueRecent')}
-              </button>
-              <button class="secondary" type="button" on:click={startNewConversation}>
-                <SquarePen size={16} />{t('chat.newChat')}
-              </button>
-              <button class="secondary" type="button" on:click={() => openLibrary('characters')}>
-                <Bot size={16} />{activeCharacter ? t('home.changeCharacter') : t('home.pickCharacter')}
-              </button>
-            </div>
-          </div>
-
-          <div class="home-readiness" aria-label={t('home.currentSetup')}>
-            <button type="button" on:click={() => openLibrary('characters')}>
-              <Bot size={17} />
-              <span>
-                <small>{t('common.character')}</small>
-                <strong>{activeCharacter?.name ?? t('chat.noCharacter')}</strong>
-              </span>
-            </button>
-            <button type="button" on:click={() => openLibrary('personas')}>
-              <UserRound size={17} />
-              <span>
-                <small>{t('nav.personas')}</small>
-                <strong>{activePersona?.name ?? t('role.user')}</strong>
-              </span>
-            </button>
-            <button type="button" on:click={() => openLibrary('profiles')}>
-              <Settings2 size={17} />
-              <span>
-                <small>{t('nav.profiles')}</small>
-                <strong>{activeProfile?.name ?? t('chat.noProfile')}</strong>
-              </span>
-            </button>
-            <button type="button" on:click={() => openLibrary('worldbooks')}>
-              <BookOpen size={17} />
-              <span>
-                <small>{t('nav.worldbooks')}</small>
-                <strong>{t('home.worldBookCount', { count: worldBooks.length })}</strong>
-              </span>
-            </button>
-          </div>
-        </section>
-
-        <div class="home-grid">
-          <section class="home-section" aria-label={t('home.recentChats')}>
-            <header>
-              <div>
-                <strong>{t('home.recentChats')}</strong>
-                <small>{t('home.recentChatsCount', { count: homeRecentConversations.length })}</small>
-              </div>
-              <button class="secondary" type="button" on:click={() => openDrawer('chats')}>
-                <MessageSquare size={15} />{t('nav.chatHistory')}
-              </button>
-            </header>
-
-            <div class="home-recent-list">
-              {#each homeRecentConversations as conversation}
-                <button class="home-recent-row" type="button" on:click={() => loadConversation(conversation.id)}>
-                  <span class="home-avatar">
-                    {#if homeConversationAvatarUrl(conversation)}
-                      <img src={homeConversationAvatarUrl(conversation)} alt={t('chat.avatarAlt', { name: homeConversationCharacterName(conversation) })} />
-                    {:else}
-                      <MessageCircle size={16} />
-                    {/if}
-                  </span>
-                  <span class="home-recent-copy">
-                    <span>
-                      <strong>{conversation.title}</strong>
-                      <small>{conversationUpdatedLabel(conversation)}</small>
-                    </span>
-                    <small>{homeConversationCharacterName(conversation)} · {homeConversationPreview(conversation)}</small>
-                  </span>
-                </button>
-              {:else}
-                <div class="home-empty">
-                  <MessageCircle size={20} />
-                  <span>{t('home.noRecentChats')}</span>
-                </div>
-              {/each}
-            </div>
-          </section>
-
-          <section class="home-section" aria-label={t('home.characters')}>
-            <header>
-              <div>
-                <strong>{t('home.characters')}</strong>
-                <small>{t('home.characterCount', { count: characters.length })}</small>
-              </div>
-              <button class="secondary" type="button" on:click={openCharacterImport}>
-                <FileInput size={15} />{t('common.import')}
-              </button>
-            </header>
-
-            <div class="home-character-list">
-              {#each homeCharacters as character}
-                <button class="home-character-row" class:active={character.id === activeCharacterId} type="button" on:click={() => startChatWithCharacter(character)}>
-                  <span class="home-avatar">
-                    {#if characterAvatarUrl(character)}
-                      <img src={characterAvatarUrl(character)} alt={t('chat.avatarAlt', { name: character.name })} />
-                    {:else}
-                      <span>{characterInitials(character)}</span>
-                    {/if}
-                  </span>
-                  <span>
-                    <strong>{character.name}</strong>
-                    <small>{characterListLine(character)}</small>
-                  </span>
-                </button>
-              {:else}
-                <div class="home-empty">
-                  <Bot size={20} />
-                  <span>{t('home.noCharacters')}</span>
-                </div>
-              {/each}
-            </div>
-          </section>
-        </div>
-      </div>
-    </section>
+    <HomeStage
+      {status}
+      {activeProfile}
+      {activeCharacter}
+      {activePersona}
+      {activeCharacterId}
+      worldBookCount={worldBooks.length}
+      charactersCount={characters.length}
+      recentConversations={homeRecentConversations}
+      characters={homeCharacters}
+      onOpenProfiles={() => openLibrary('profiles')}
+      onRefresh={refreshAll}
+      onContinueConversation={loadConversation}
+      onStartNewConversation={startNewConversation}
+      onOpenCharacters={() => openLibrary('characters')}
+      onOpenPersonas={() => openLibrary('personas')}
+      onOpenWorldBooks={() => openLibrary('worldbooks')}
+      onOpenChats={() => openDrawer('chats')}
+      onOpenCharacterImport={openCharacterImport}
+      onStartChatWithCharacter={(character) => startChatWithCharacter(character as Character)}
+      conversationAvatarUrl={(conversation) => homeConversationAvatarUrl(conversation as Conversation)}
+      conversationCharacterName={(conversation) => homeConversationCharacterName(conversation as Conversation)}
+      conversationPreview={(conversation) => homeConversationPreview(conversation as Conversation)}
+      conversationUpdatedLabel={(conversation) => conversationUpdatedLabel(conversation as Conversation)}
+      characterAvatarUrl={(character) => characterAvatarUrl(character as Character)}
+      characterInitials={(character) => characterInitials(character as Character)}
+      characterListLine={(character) => characterListLine(character as Character)}
+    />
   {:else}
   <section class="stage" class:tree-open={conversationTreeLoading || Boolean(conversationTreeSummary)} aria-label={t('chat.workspace')}>
     <header class="chatbar">
@@ -6232,298 +6120,6 @@
     justify-content: flex-end;
     gap: 8px;
     min-width: 0;
-  }
-
-  .home-stage {
-    grid-template-rows: auto minmax(0, 1fr);
-    background: var(--nanke-surface);
-  }
-
-  .homebar {
-    display: grid;
-    grid-template-columns: minmax(220px, 1fr) auto;
-    align-items: center;
-    gap: 16px;
-    min-height: 72px;
-    border-bottom: 1px solid var(--nanke-border);
-    padding: 12px 24px;
-    background: var(--nanke-surface);
-  }
-
-  .home-title {
-    display: grid;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .home-title span {
-    color: inherit;
-    font-size: 11px;
-    font-weight: 800;
-  }
-
-  .home-title strong {
-    color: inherit;
-    font-size: 22px;
-    line-height: 1.15;
-  }
-
-  .home-title small {
-    color: inherit;
-    font-size: 13px;
-  }
-
-  .homebar-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .home-workspace {
-    min-height: 0;
-    overflow: auto;
-    padding: 24px;
-  }
-
-  .home-workspace > * {
-    width: min(1120px, 100%);
-    margin-inline: auto;
-  }
-
-  .home-overview {
-    display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
-    gap: 24px;
-    border-bottom: 1px solid var(--nanke-border);
-    padding: 10px 0 24px;
-  }
-
-  .home-start {
-    display: grid;
-    align-content: center;
-    gap: 12px;
-    min-width: 0;
-  }
-
-  .home-start > span {
-    color: inherit;
-    font-size: 12px;
-    font-weight: 900;
-  }
-
-  .home-start h1 {
-    margin: 0;
-    color: inherit;
-    font-size: 28px;
-    line-height: 1.18;
-    letter-spacing: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .home-start p {
-    margin: 0;
-    color: inherit;
-    font-size: 14px;
-    overflow-wrap: anywhere;
-  }
-
-  .home-primary-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 4px;
-  }
-
-  .home-readiness {
-    display: grid;
-    gap: 8px;
-    align-content: start;
-    min-width: 0;
-  }
-
-  .home-readiness button {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 10px;
-    min-height: 48px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: inherit;
-    padding: 8px 10px;
-    text-align: left;
-  }
-
-  .home-readiness button:hover,
-  .home-readiness button:focus-visible {
-    border-color: var(--nanke-border-strong);
-    background: var(--nanke-surface-muted);
-    outline: 0;
-  }
-
-  .home-readiness button span {
-    display: grid;
-    gap: 1px;
-    min-width: 0;
-  }
-
-  .home-readiness small,
-  .home-readiness strong {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .home-readiness small {
-    color: inherit;
-    font-size: 11px;
-  }
-
-  .home-readiness strong {
-    font-size: 13px;
-  }
-
-  .home-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-    gap: 24px;
-    padding-top: 22px;
-  }
-
-  .home-section {
-    display: grid;
-    align-content: start;
-    gap: 12px;
-    min-width: 0;
-  }
-
-  .home-section > header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-width: 0;
-    border-bottom: 1px solid var(--nanke-border);
-    padding-bottom: 10px;
-  }
-
-  .home-section > header div {
-    display: grid;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .home-section > header strong {
-    color: inherit;
-    font-size: 15px;
-  }
-
-  .home-section > header small {
-    color: inherit;
-    font-size: 12px;
-  }
-
-  .home-recent-list,
-  .home-character-list {
-    display: grid;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .home-recent-row,
-  .home-character-row {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: inherit;
-    padding: 9px;
-    text-align: left;
-  }
-
-  .home-recent-row:hover,
-  .home-recent-row:focus-visible,
-  .home-character-row:hover,
-  .home-character-row:focus-visible,
-  .home-character-row.active {
-    border-color: var(--nanke-border-strong);
-    background: var(--nanke-surface-muted);
-    outline: 0;
-  }
-
-  .home-avatar {
-    display: grid;
-    place-items: center;
-    width: 40px;
-    height: 40px;
-    overflow: hidden;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-field);
-    color: inherit;
-    font-weight: 800;
-  }
-
-  .home-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .home-recent-copy,
-  .home-character-row > span:last-child {
-    display: grid;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .home-recent-copy > span {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: baseline;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .home-recent-copy strong,
-  .home-recent-copy small,
-  .home-character-row strong,
-  .home-character-row small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .home-recent-copy strong,
-  .home-character-row strong {
-    color: inherit;
-    font-size: 13px;
-  }
-
-  .home-recent-copy small,
-  .home-character-row small {
-    color: inherit;
-    font-size: 12px;
-  }
-
-  .home-empty {
-    display: grid;
-    place-items: center;
-    gap: 8px;
-    min-height: 116px;
-    border: 1px dashed var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: inherit;
-    font-size: 13px;
-    text-align: center;
   }
 
   button,
@@ -9973,44 +9569,6 @@
     background: var(--nanke-surface-acrylic);
       grid-template-columns: minmax(0, 1fr);
       align-items: stretch;
-    }
-
-    .homebar {
-      grid-template-columns: minmax(0, 1fr);
-      align-items: stretch;
-      padding: 12px;
-    }
-
-    .homebar-actions {
-      justify-content: stretch;
-      flex-wrap: wrap;
-    }
-
-    .homebar-actions .context-chip {
-      flex: 1 1 220px;
-    }
-
-    .home-workspace {
-      padding: 16px 12px;
-    }
-
-    .home-overview,
-    .home-grid {
-      grid-template-columns: 1fr;
-      gap: 18px;
-    }
-
-    .home-start h1 {
-      font-size: 24px;
-    }
-
-    .home-section > header {
-      align-items: stretch;
-      flex-direction: column;
-    }
-
-    .home-section > header .secondary {
-      width: 100%;
     }
 
     .conversation-title-card {

@@ -2,7 +2,7 @@
   <img src="static/brand/nanke-logo.png" alt="南柯" width="180" />
 </p>
 
-<h1 align="center">🌙 NanKe (南柯)</h1>
+<h1 align="center"> 南柯 NanKe </h1>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <strong>重构“酒馆式”对话体验 —— 更轻、更稳、更纯粹。</strong>
+  <strong>南柯终究一梦，现实是梦的终结。</strong>
 </p>
 
 NanKe 致力于打造一个现代化的 AI 角色扮演与文本创作平台。本项目并非对已有酒馆项目的简单复刻，而是从零开始的重新思考：抛弃沉重的历史包袱，使用现代化的技术栈与架构，专注真正重要的“角色对话”与“设定管理”。

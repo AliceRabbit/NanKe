@@ -3,6 +3,7 @@
   import { applyRegexScripts, REGEX_PLACEMENT } from '$lib/core/regex';
   import { t } from '$lib/i18n';
   import HomeStage from '$lib/ui/features/home/HomeStage.svelte';
+  import RegexScriptsEditor from '$lib/ui/components/RegexScriptsEditor.svelte';
   import RangeField from '$lib/ui/components/form/RangeField.svelte';
   import SecretField from '$lib/ui/components/form/SecretField.svelte';
   import SelectField from '$lib/ui/components/form/SelectField.svelte';
@@ -15,7 +16,7 @@
   import type { Conversation as SchemaConversation } from '$lib/schemas/conversation';
   import type { NankeMessage } from '$lib/schemas/message';
   import type { GenerationProfile, PromptSlot } from '$lib/schemas/profile';
-  import type { RegexPlacement, RegexScript } from '$lib/schemas/regex';
+  import type { RegexProfile, RegexScript } from '$lib/schemas/regex';
   import type { UserPersona } from '$lib/schemas/user-persona';
   import type { WorldBook, WorldBookEntry } from '$lib/schemas/worldbook';
   import type { PageData } from './$types';
@@ -134,7 +135,7 @@
   type ImportKind = 'preset' | 'character-card-json' | 'character-card-png' | 'worldbook' | 'chat-jsonl' | 'conversation-snapshot';
   type ImportScope = 'character' | 'profile' | 'worldbook';
   type View = 'home' | 'chat';
-  type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'settings' | 'import' | 'inspector' | null;
+  type Drawer = 'chats' | 'characters' | 'personas' | 'worldbooks' | 'profiles' | 'toolbox' | 'settings' | 'import' | 'inspector' | null;
   type WorldBookDeleteResult = {
     deleted: boolean;
     id: string;
@@ -334,6 +335,7 @@
   let personas: UserPersona[] = initialData.personas;
   let personaCharacterBindings: PersonaCharacterBinding[] = initialData.personaCharacterBindings;
   let worldBooks: WorldBook[] = initialData.worldBooks;
+  let globalRegex: RegexProfile = initialData.globalRegex;
   let conversations: Conversation[] = initialData.conversations;
   let conversationQuery = '';
   let conversationCursor: { updatedAt: number; id: string } | null = initialData.conversationCursor;
@@ -527,6 +529,10 @@
   let candidateCountFieldLabel = 'N';
   let profileDraftRegexEnabled = true;
   let profileDraftRegexScripts: RegexScript[] = [];
+  let globalRegexDraftEnabled = globalRegex.enabled !== false;
+  let globalRegexDraftScripts: RegexScript[] = structuredClone(globalRegex.scripts);
+  let globalRegexSaving = false;
+  let globalRegexStatus = '';
   let profileDraftSlots: PromptSlot[] = [];
   let promptSlotQuery = '';
   let activePromptSlotId = '';
@@ -536,6 +542,7 @@
   $: activeProfile = profiles.find((profile) => profile.id === activeProfileId);
   $: activeProfileStats = profileStats(activeProfile);
   $: filteredProfiles = filterProfiles(profiles, profileQuery);
+  $: globalRegexStats = { active: globalRegexDraftScripts.filter((script) => !script.disabled).length, total: globalRegexDraftScripts.length };
   $: draftPromptStats = promptSlotStats(profileDraftSlots);
   $: filteredPromptSlots = filterPromptSlots(profileDraftSlots, promptSlotQuery);
   $: activePromptSlot = profileDraftSlots.find((slot) => slot.id === activePromptSlotId);
@@ -610,13 +617,15 @@
             ? t('drawer.worldbooks')
             : activeDrawer === 'profiles'
               ? t('drawer.profiles')
-              : activeDrawer === 'import'
-                ? importScopeTitle(importScope)
-                : activeDrawer === 'inspector'
-                  ? t('drawer.inspector')
-                  : activeDrawer === 'settings'
-                    ? t('drawer.settings')
-                    : '';
+              : activeDrawer === 'toolbox'
+                ? t('drawer.toolbox')
+                : activeDrawer === 'import'
+                  ? importScopeTitle(importScope)
+                  : activeDrawer === 'inspector'
+                    ? t('drawer.inspector')
+                    : activeDrawer === 'settings'
+                      ? t('drawer.settings')
+                      : '';
   $: drawerIsRight = activeDrawer === 'import' || activeDrawer === 'inspector' || activeDrawer === 'settings';
   $: importOptions = importKindsByScope[importScope];
   $: if (!importOptions.includes(importKind)) {
@@ -845,6 +854,17 @@
       void ensureProfilesLoaded();
       void ensureProfileDrawer();
     }
+  }
+
+  function loadGlobalRegexDraft() {
+    globalRegexDraftEnabled = globalRegex.enabled !== false;
+    globalRegexDraftScripts = structuredClone(globalRegex.scripts);
+    globalRegexStatus = '';
+  }
+
+  function openToolbox() {
+    activeDrawer = activeDrawer === 'toolbox' ? null : 'toolbox';
+    if (activeDrawer === 'toolbox') loadGlobalRegexDraft();
   }
 
   function openDrawer(drawer: Exclude<Drawer, null>) {
@@ -2148,6 +2168,29 @@
     });
   }
 
+  async function saveGlobalRegex() {
+    globalRegexSaving = true;
+    globalRegexStatus = t('common.saving');
+    try {
+      const saved = await fetchJson<RegexProfile>('/api/toolbox/global-regex', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: globalRegexDraftEnabled,
+          scripts: structuredClone(globalRegexDraftScripts)
+        })
+      });
+      globalRegex = saved;
+      loadGlobalRegexDraft();
+      globalRegexStatus = t('toolbox.saved');
+    } catch (error) {
+      console.error(error);
+      globalRegexStatus = t('toolbox.saveFailed');
+    } finally {
+      globalRegexSaving = false;
+    }
+  }
+
   async function saveActiveProfile() {
     if (!activeProfile) return false;
     if (!profileDraftName.trim()) {
@@ -3094,8 +3137,7 @@
   }
 
   function activeDisplayRegexScripts() {
-    if (activeProfile?.regex?.enabled === false) return [];
-    return activeProfile?.regex?.scripts ?? [];
+    return [...(globalRegex.enabled === false ? [] : globalRegex.scripts), ...(activeProfile?.regex?.enabled === false ? [] : (activeProfile?.regex?.scripts ?? []))];
   }
 
   function messageDisplayContent(message: ChatMessage, index: number) {
@@ -3730,6 +3772,16 @@
     >
       <Settings2 size={20} />
     </button>
+    <button
+      class="icon-button"
+      class:active={activeDrawer === 'toolbox'}
+      title={t('nav.toolbox')}
+      aria-label={t('nav.toolbox')}
+      aria-pressed={activeDrawer === 'toolbox'}
+      on:click={openToolbox}
+    >
+      <Wrench size={20} />
+    </button>
 
     <div class="rail-spacer"></div>
     <button
@@ -4200,6 +4252,7 @@
       class:characters={activeDrawer === 'characters'}
       class:personas={activeDrawer === 'personas'}
       class:profiles={activeDrawer === 'profiles'}
+      class:toolbox={activeDrawer === 'toolbox'}
       class:worldbooks={activeDrawer === 'worldbooks'}
       aria-label={drawerTitle}
     >
@@ -5250,6 +5303,32 @@
         {:else}
           <div class="drawer-empty">{t('status.loading')}</div>
         {/if}
+      {:else if activeDrawer === 'toolbox'}
+        <div class="toolbox-panel">
+          <section class="toolbox-section" aria-label={t('toolbox.globalRegex')}>
+            <div class="toolbox-section-head">
+              <div>
+                <strong>{t('toolbox.globalRegex')}</strong>
+                <span>{t('toolbox.globalRegexDescription')}</span>
+              </div>
+              <button class="secondary" type="button" on:click={saveGlobalRegex} disabled={globalRegexSaving}>
+                <Save size={16} />{globalRegexSaving ? t('common.saving') : t('common.save')}
+              </button>
+            </div>
+            {#if globalRegexStatus}
+              <span class="toolbox-status">{globalRegexStatus}</span>
+            {/if}
+            <RegexScriptsEditor
+              title={t('toolbox.globalRegex')}
+              showTitle={false}
+              statsLabel={t('toolbox.globalRegexStats', { active: globalRegexStats.active, total: globalRegexStats.total })}
+              emptyLabel={t('toolbox.noGlobalRegexScripts')}
+              bind:enabled={globalRegexDraftEnabled}
+              bind:scripts={globalRegexDraftScripts}
+              {regexScriptSurface}
+            />
+          </section>
+        </div>
       {:else if activeDrawer === 'settings'}
         <div class="settings-panel">
           <section class="settings-section" aria-label={t('settings.interfaceTypography')}>
@@ -6728,18 +6807,21 @@
   .editor,
   .import-panel,
   .inspector-panel,
-  .settings-panel {
+  .settings-panel,
+  .toolbox-panel {
     display: grid;
     gap: 10px;
     padding: 16px;
   }
 
-  .settings-panel {
+  .settings-panel,
+  .toolbox-panel {
     align-content: start;
     overflow: auto;
   }
 
-  .settings-section {
+  .settings-section,
+  .toolbox-section {
     display: grid;
     gap: 14px;
     border: 1px solid var(--nanke-border);
@@ -6748,12 +6830,25 @@
     padding: 14px;
   }
 
-  .settings-section-head {
+  .settings-section-head,
+  .toolbox-section-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     color: inherit;
+  }
+
+  .toolbox-section-head div {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+  }
+
+  .toolbox-section-head span,
+  .toolbox-status {
+    color: var(--nanke-muted);
+    font-size: var(--app-text-xs);
   }
 
   .settings-section-head > div {

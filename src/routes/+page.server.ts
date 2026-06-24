@@ -23,6 +23,7 @@ export const load = (() => {
       personas: context.personas.list(),
       personaCharacterBindings: context.personas.listCharacterBindings(),
       worldBooks: context.worldBooks.list(),
+      globalRegex: context.toolbox.getGlobalRegex(),
       conversations,
       conversationCursor: conversationCursorFrom(conversations),
       conversationHasMore: conversations.length === conversationPageSize,

@@ -109,7 +109,8 @@ export class GenerationAppService {
           }));
 
     const conversationId = conversation?.id ?? input.conversationId;
-    const regexScripts = profile.regex.enabled === false ? [] : profile.regex.scripts;
+    const globalRegex = this.context.toolbox.getGlobalRegex();
+    const regexScripts = [...(globalRegex.enabled === false ? [] : globalRegex.scripts), ...(profile.regex.enabled === false ? [] : profile.regex.scripts)];
     const regexMacros = {
       char: character?.name ?? 'Assistant',
       charIfNotGroup: character?.name ?? 'Assistant',
@@ -202,7 +203,7 @@ export class GenerationAppService {
     const worldBooks = [...worldBooksById.values()];
     const activatedWorldEntries = this.worldBookEngine.activate(worldBooks, messages, { includeNames: true });
     const compiled = this.promptCompiler.compile({
-      profile,
+      profile: { ...profile, regex: { enabled: true, scripts: regexScripts } },
       character,
       messages,
       activatedWorldEntries,

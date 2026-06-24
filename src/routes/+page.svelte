@@ -3,12 +3,20 @@
   import { applyRegexScripts, REGEX_PLACEMENT } from '$lib/core/regex';
   import { t } from '$lib/i18n';
   import HomeStage from '$lib/ui/features/home/HomeStage.svelte';
-  import { RangeField, SecretField, SelectField, TextareaField, TextField } from '$lib/ui/components';
+  import RangeField from '$lib/ui/components/form/RangeField.svelte';
+  import SecretField from '$lib/ui/components/form/SecretField.svelte';
+  import SelectField from '$lib/ui/components/form/SelectField.svelte';
+  import TextareaField from '$lib/ui/components/form/TextareaField.svelte';
+  import TextField from '$lib/ui/components/form/TextField.svelte';
   import { renderMessageMarkdown } from '$lib/ui/markdown';
   import type { Component } from 'svelte';
   import type { ConversationTreeNode, ConversationTreeSummary } from '$lib/ui/features/conversation-tree/types';
   import type { Character } from '$lib/schemas/character';
+  import type { Conversation as SchemaConversation } from '$lib/schemas/conversation';
+  import type { NankeMessage } from '$lib/schemas/message';
+  import type { GenerationProfile, PromptSlot } from '$lib/schemas/profile';
   import type { RegexPlacement, RegexScript } from '$lib/schemas/regex';
+  import type { UserPersona } from '$lib/schemas/user-persona';
   import type { WorldBook, WorldBookEntry } from '$lib/schemas/worldbook';
   import type { PageData } from './$types';
   import {
@@ -63,139 +71,33 @@
 
   export let data: PageData;
 
-  type ProviderType = 'openai-compatible' | 'gemini';
-  type OpenAICompatibility = 'strict-openai' | 'extended';
-  type VertexMode = 'express' | 'oauth';
-  type OpenAIReasoningEffort = 'default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-  type GeminiThinkingMode = 'default' | 'off' | 'budget' | 'level';
-  type GeminiThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
-  type PromptRole = 'system' | 'user' | 'assistant';
-  type PromptMode = 'chat' | 'text';
-  type MacroMode = 'none' | 'sillytavern';
+  type SillyTavernProfileMetadata = {
+    kind?: string;
+    promptManager?: {
+      promptCount?: number;
+      orderedPromptCount?: number;
+      enabledPromptCount?: number;
+      inactivePromptCount?: number;
+    };
+  };
+  type Profile = Omit<GenerationProfile, 'metadata'> & {
+    metadata: GenerationProfile['metadata'] & {
+      sillyTavern?: SillyTavernProfileMetadata;
+    };
+  };
+  type ProviderType = Profile['provider']['type'];
+  type OpenAICompatibility = Extract<Profile['provider'], { type: 'openai-compatible' }>['compatibility'];
+  type VertexMode = NonNullable<Extract<Profile['provider'], { type: 'gemini' }>['vertex']>['mode'];
+  type OpenAIReasoningEffort = Profile['thinking']['openai']['effort'];
+  type GeminiThinkingMode = Profile['thinking']['gemini']['mode'];
+  type GeminiThinkingLevel = Profile['thinking']['gemini']['level'];
+  type PromptRole = PromptSlot['role'];
+  type PromptSlotSource = PromptSlot['source'];
+  type PromptMode = Profile['prompt']['mode'];
+  type MacroMode = Profile['prompt']['macroMode'];
   type CharacterSortMode = 'favorite' | 'name-asc' | 'name-desc' | 'newest' | 'oldest' | 'tokens-desc';
   type CharacterEditorTab = 'core' | 'prompt' | 'lore' | 'metadata';
   type CharacterPanelMode = 'edit' | 'create';
-  type PromptSlotSource =
-    | 'system'
-    | 'character-system'
-    | 'character-description'
-    | 'character-personality'
-    | 'scenario'
-    | 'persona'
-    | 'worldbook-before'
-    | 'worldbook-after'
-    | 'examples'
-    | 'history'
-    | 'post-history'
-    | 'custom';
-  type PromptSlot = {
-    id: string;
-    source: PromptSlotSource;
-    role: PromptRole;
-    enabled?: boolean;
-    content?: string;
-    label?: string;
-    injection?: {
-      position?: 'relative' | 'absolute';
-      depth?: number;
-      order?: number;
-      triggers?: string[];
-    };
-    legacy?: {
-      source?: string;
-      identifier?: string;
-      marker?: boolean;
-      systemPrompt?: boolean;
-      forbidOverrides?: boolean;
-      ordered?: boolean;
-      enabledInPromptOrder?: boolean;
-      enabledInPrompt?: boolean;
-      originalIndex?: number;
-    };
-  };
-  type Profile = {
-    id: string;
-    name: string;
-    provider:
-      | {
-          type: 'openai-compatible';
-          model: string;
-          endpoint?: string;
-          apiKey?: string;
-          compatibility?: OpenAICompatibility;
-        }
-      | {
-          type: 'gemini';
-          model: string;
-          endpoint?: string;
-          apiKey?: string;
-          vertex?: { mode?: VertexMode; projectId?: string; location?: string; apiKey?: string; accessToken?: string };
-        };
-    sampler?: {
-      temperature?: number;
-      topP?: number;
-      topK?: number;
-      topA?: number;
-      minP?: number;
-      frequencyPenalty?: number;
-      presencePenalty?: number;
-      repetitionPenalty?: number;
-      maxTokens?: number;
-      contextTokens?: number;
-      seed?: number;
-      n?: number;
-      stop?: string[];
-    };
-    request?: {
-      stream?: boolean;
-    };
-    thinking?: {
-      openai?: {
-        effort?: OpenAIReasoningEffort;
-      };
-      gemini?: {
-        includeThoughts?: boolean;
-        mode?: GeminiThinkingMode;
-        budget?: number;
-        level?: GeminiThinkingLevel;
-      };
-    };
-    prompt?: {
-      mode?: PromptMode;
-      macroMode?: MacroMode;
-      squashSystemMessages?: boolean;
-      slots?: PromptSlot[];
-    };
-    regex?: {
-      enabled?: boolean;
-      scripts?: RegexScript[];
-    };
-    metadata?: Record<string, unknown> & {
-      sillyTavern?: {
-        kind?: string;
-        promptManager?: {
-          promptCount?: number;
-          orderedPromptCount?: number;
-          enabledPromptCount?: number;
-          inactivePromptCount?: number;
-        };
-      };
-    };
-    legacy?: { source: 'sillytavern'; raw: unknown; report: unknown };
-    createdAt: number;
-    updatedAt: number;
-  };
-  type UserPersona = {
-    id: string;
-    name: string;
-    title?: string;
-    description: string;
-    avatarAssetId?: string;
-    isDefault: boolean;
-    metadata?: Record<string, unknown>;
-    createdAt: number;
-    updatedAt: number;
-  };
   type PersonaCharacterBinding = {
     personaId: string;
     characterId: string;
@@ -211,31 +113,8 @@
     removedCharacterBindings: number;
     defaultCleared: boolean;
   };
-  type MessageBranch = {
-    nodeId: string;
-    parentId: string | null;
-    current: number;
-    total: number;
-    siblingNodeIds?: string[];
-    isLatest?: boolean;
-  };
-  type Conversation = {
-    id: string;
-    title: string;
-    characterId?: string;
-    personaId?: string;
-    profileId?: string;
-    rootNodeId?: string;
-    activeLeafId?: string;
-    nodeCount?: number;
-    branchCount?: number;
-    activeDepth?: number;
-    lastPreview?: string;
-    revision?: number;
-    archivedAt?: number;
-    messages?: ChatMessage[];
-    updatedAt?: number;
-  };
+  type MessageBranch = NonNullable<NankeMessage['branch']>;
+  type Conversation = Pick<SchemaConversation, 'id' | 'title'> & Partial<Omit<SchemaConversation, 'id' | 'title'>> & { messages?: ChatMessage[] };
   type ChatMessage = {
     id?: string;
     conversationId?: string;

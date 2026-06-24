@@ -1,6 +1,10 @@
 <script lang="ts">
   import { ArrowDown, ArrowUp, ClipboardList, Copy, Download, GripHorizontal, Pencil, Plus, RotateCcw, Save, Trash2, Upload, X } from '@lucide/svelte';
-  import { RangeField, SecretField, SelectField, TextareaField, TextField } from '$lib/ui/components';
+  import RangeField from '$lib/ui/components/form/RangeField.svelte';
+  import SecretField from '$lib/ui/components/form/SecretField.svelte';
+  import SelectField from '$lib/ui/components/form/SelectField.svelte';
+  import TextareaField from '$lib/ui/components/form/TextareaField.svelte';
+  import TextField from '$lib/ui/components/form/TextField.svelte';
   import { t } from '$lib/i18n';
   import type { GenerationProfile, PromptSlot } from '$lib/schemas/profile';
   import type { RegexScript } from '$lib/schemas/regex';

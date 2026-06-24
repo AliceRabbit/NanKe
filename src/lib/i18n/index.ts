@@ -10,18 +10,12 @@ export type I18nParams = Record<string, string | number | boolean | null | undef
 
 export const defaultLocale: Locale = 'zh-CN';
 
-let activeLocale: Locale = defaultLocale;
-
 export function getLocale(): Locale {
-  return activeLocale;
-}
-
-export function setLocale(locale: Locale) {
-  activeLocale = locale;
+  return defaultLocale;
 }
 
 export function t(key: I18nKey, params: I18nParams = {}): string {
-  const template = catalogs[activeLocale][key] ?? catalogs[defaultLocale][key] ?? key;
+  const template = catalogs[defaultLocale][key] ?? key;
   return interpolate(template, params);
 }
 

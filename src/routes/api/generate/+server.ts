@@ -1,4 +1,4 @@
-import { GenerationAppService } from '$lib/server/services';
+import { GenerationAppService } from '$lib/server/services/GenerationAppService';
 import { createRequestContext } from '$lib/server/request-context';
 import { errorResponse } from '$lib/server/errors';
 import type { GenerationStreamEvent } from '$lib/server/services/GenerationAppService';

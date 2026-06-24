@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { ImportAppService, type ImportKind } from '$lib/server/services';
+import { ImportAppService, type ImportKind } from '$lib/server/services/ImportAppService';
 import { createRequestContext } from '$lib/server/request-context';
 import { errorResponse } from '$lib/server/errors';
 

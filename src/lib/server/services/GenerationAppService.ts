@@ -1,13 +1,16 @@
-import { GenerationPipeline, inspectPrompt } from '$lib/core';
 import { applyRegexScripts, hasRegexScriptForPlacement, REGEX_PLACEMENT } from '$lib/core/regex';
-import { renderPromptTemplate } from '$lib/core/prompt/PromptCompiler';
+import { PromptCompiler, renderPromptTemplate } from '$lib/core/prompt/PromptCompiler';
+import { inspectPrompt } from '$lib/core/prompt/PromptInspector';
+import { WorldBookEngine } from '$lib/core/worldbook/WorldBookEngine';
 import type { Character } from '$lib/schemas/character';
 import { createConversation } from '$lib/schemas/conversation';
 import { createMessage } from '$lib/schemas/message';
 import type { NankeMessage } from '$lib/schemas/message';
 import type { ProviderRequest } from '$lib/schemas/provider';
 import type { RegexScript } from '$lib/schemas/regex';
-import { createDefaultProviderRegistry, type ProviderRegistry } from '$lib/providers';
+import type { ProviderAdapter, ProviderType } from '$lib/providers/ProviderAdapter';
+import { createGeminiAdapter } from '$lib/providers/gemini';
+import { createOpenAICompatibleAdapter } from '$lib/providers/openai-compatible';
 import type { createRequestContext } from '$lib/server/request-context';
 import { AppError } from '$lib/server/errors';
 import { resolvePersonaForGeneration } from './PersonaResolver';
@@ -39,12 +42,18 @@ export type GenerationStreamEvent =
   | { type: 'inspector'; text: string }
   | { type: 'done'; text: ''; conversationId?: string; activeLeafId?: string };
 
+const defaultProviders: Record<ProviderType, ProviderAdapter> = {
+  'openai-compatible': createOpenAICompatibleAdapter(),
+  gemini: createGeminiAdapter()
+};
+
 export class GenerationAppService {
-  private readonly pipeline = new GenerationPipeline();
+  private readonly worldBookEngine = new WorldBookEngine();
+  private readonly promptCompiler = new PromptCompiler();
 
   constructor(
     private readonly context: ReturnType<typeof createRequestContext>,
-    private readonly providers: ProviderRegistry = createDefaultProviderRegistry()
+    private readonly providers: Record<ProviderType, ProviderAdapter> = defaultProviders
   ) {}
 
   async *generate(input: GenerateInput, signal?: AbortSignal): AsyncIterable<GenerationStreamEvent> {
@@ -191,11 +200,12 @@ export class GenerationAppService {
       worldBooksById.set(character.characterBook.id, this.context.worldBooks.get(character.characterBook.id) ?? character.characterBook);
     }
     const worldBooks = [...worldBooksById.values()];
-    const compiled = this.pipeline.compile({
+    const activatedWorldEntries = this.worldBookEngine.activate(worldBooks, messages, { includeNames: true });
+    const compiled = this.promptCompiler.compile({
       profile,
       character,
       messages,
-      worldBooks,
+      activatedWorldEntries,
       persona: persona?.description,
       userName: persona?.name
     });
@@ -223,7 +233,7 @@ export class GenerationAppService {
       stream: profile.request.stream
     };
 
-    const adapter = this.providers.resolve(profile);
+    const adapter = this.providers[profile.provider.type];
     let assistantText = '';
     let assistantThinking = '';
     const shouldBufferOutput = hasRegexScriptForPlacement(regexScripts, {

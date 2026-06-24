@@ -5,10 +5,10 @@
 <h1 align="center"> 南柯 NanKe </h1>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/AliceRabbit/NanKe" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/status-WIP-orange.svg" alt="Status: WIP" />
-  <img src="https://img.shields.io/badge/stars-welcome-yellow.svg?logo=github" alt="Stars Welcome" />
-  <img src="https://img.shields.io/badge/issues-welcome-brightgreen.svg?logo=github" alt="Issues Welcome" />
+  <a href="https://github.com/AliceRabbit/NanKe/stargazers"><img src="https://img.shields.io/github/stars/AliceRabbit/NanKe?logo=github" alt="GitHub stars" /></a>
+  <a href="https://github.com/AliceRabbit/NanKe/issues"><img src="https://img.shields.io/github/issues/AliceRabbit/NanKe?logo=github" alt="GitHub issues" /></a>
   <img src="https://img.shields.io/badge/package%20manager-pnpm-F69220.svg?logo=pnpm" alt="Package Manager: pnpm" />
 </p>
 
@@ -41,7 +41,7 @@ NanKe 致力于打造一个现代化的 AI 角色扮演与文本创作平台。�
 
 1. **克隆项目并进入目录**
 ```bash
-git clone https://github.com/你的用户名/NanKe.git
+git clone https://github.com/AliceRabbit/NanKe.git
 cd NanKe
 ```
 

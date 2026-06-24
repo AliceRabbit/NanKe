@@ -124,6 +124,17 @@
     thinking?: string;
     branch?: MessageBranch;
   };
+  type GenerationSnapshot = {
+    activeConversationId: string;
+    activeConversationRecord: Conversation | null;
+    conversations: Conversation[];
+    messages: ChatMessage[];
+    input: string;
+    composerToolsOpen: boolean;
+    status: string;
+    conversationTreeSummary: ConversationTreeSummary | null;
+    conversationTreeSelectedNodeId: string;
+  };
   type ZoomedAvatar = { key: string; name: string; role: ChatMessage['role']; src: string; initials: string };
   type AvatarViewerFrame = { x: number; y: number; scale: number };
   type AvatarViewerDrag = { pointerId: number; startX: number; startY: number; originX: number; originY: number };
@@ -416,6 +427,7 @@
   let pendingProfileDelete: Profile | null = null;
   let deletingProfile = false;
   let profileDeleteStatus = '';
+  let generationErrorMessage = '';
   let importKind: ImportKind = 'preset';
   let importScope: ImportScope = 'profile';
   let importName = '';
@@ -2618,6 +2630,42 @@
     return `${name}.nanke-conversation.json`;
   }
 
+  function captureGenerationSnapshot(): GenerationSnapshot {
+    return {
+      activeConversationId,
+      activeConversationRecord: structuredClone(activeConversationRecord),
+      conversations: structuredClone(conversations),
+      messages: structuredClone(messages),
+      input,
+      composerToolsOpen,
+      status,
+      conversationTreeSummary: structuredClone(conversationTreeSummary),
+      conversationTreeSelectedNodeId
+    };
+  }
+
+  function restoreGenerationSnapshot(snapshot: GenerationSnapshot) {
+    activeConversationId = snapshot.activeConversationId;
+    activeConversationRecord = structuredClone(snapshot.activeConversationRecord);
+    conversations = structuredClone(snapshot.conversations);
+    messages = structuredClone(snapshot.messages);
+    input = snapshot.input;
+    composerToolsOpen = snapshot.composerToolsOpen;
+    status = snapshot.status;
+    conversationTreeSummary = structuredClone(snapshot.conversationTreeSummary);
+    conversationTreeSelectedNodeId = snapshot.conversationTreeSelectedNodeId;
+    conversationTreeActionStatus = '';
+  }
+
+  function showGenerationError(message: string, snapshot?: GenerationSnapshot) {
+    if (snapshot) restoreGenerationSnapshot(snapshot);
+    generationErrorMessage = message || t('status.generationError');
+  }
+
+  function closeGenerationError() {
+    generationErrorMessage = '';
+  }
+
   async function sendMessage() {
     if (isGenerating) {
       stopGeneration();
@@ -2626,12 +2674,25 @@
 
     const content = input.trim();
     if (!content) return;
+    const snapshot = captureGenerationSnapshot();
     input = '';
     composerToolsOpen = false;
     inspector = '';
-    const conversationId = await ensureConversation();
+    const openingPreview =
+      !activeConversationId && activeCharacter?.firstMessage && messages.length === 0
+        ? [
+            {
+              role: 'assistant' as const,
+              speakerId: activeCharacter.id,
+              name: activeCharacter.name,
+              speakerAvatarAssetId: activeCharacter.avatarAssetId,
+              content: renderCharacterTemplate(activeCharacter.firstMessage)
+            }
+          ]
+        : [];
     messages = [
       ...messages,
+      ...openingPreview,
       {
         role: 'user',
         speakerId: activePersona?.id,
@@ -2649,12 +2710,12 @@
     ];
     void queueMessagesScrollToBottom();
     await streamGeneration({
-      conversationId,
+      conversationId: activeConversationId || undefined,
       profileId: activeProfileId || undefined,
       characterId: activeCharacterId || undefined,
       personaId: activePersonaId || undefined,
       message: content
-    });
+    }, { snapshot });
   }
 
   function clearComposerInput() {
@@ -2669,6 +2730,7 @@
     composerToolsOpen = false;
     inspector = '';
     status = t('status.continuing');
+    const snapshot = captureGenerationSnapshot();
     await streamGeneration(
       {
         conversationId: activeConversationId,
@@ -2677,19 +2739,21 @@
         personaId: activePersonaId || undefined,
         continueNodeId: nodeId
       },
-      { preserveAssistantOnError: true }
+      { snapshot }
     );
   }
 
-  function showAssistantStreamError(content: string, preserveAssistantOnError = false) {
-    if (!preserveAssistantOnError) replaceAssistantDraft(content);
-  }
-
-  async function streamGeneration(body: Record<string, unknown>, options: { preserveAssistantOnError?: boolean } = {}) {
+  async function streamGeneration(body: Record<string, unknown>, options: { snapshot?: GenerationSnapshot } = {}) {
+    generationErrorMessage = '';
     status = t('status.generating');
     const controller = new AbortController();
     generationAbortController = controller;
     let completedConversationId = typeof body.conversationId === 'string' ? body.conversationId : '';
+    let failed = false;
+    const failGeneration = (message: string) => {
+      failed = true;
+      showGenerationError(message, options.snapshot);
+    };
 
     try {
       const response = await fetch('/api/generate', {
@@ -2701,8 +2765,7 @@
 
       if (!response.body || !response.ok) {
         const errorMessage = await responseErrorMessage(response);
-        showAssistantStreamError(`${t('status.providerError')}: ${errorMessage}`, options.preserveAssistantOnError);
-        status = t('status.providerError');
+        failGeneration(errorMessage);
         return;
       }
 
@@ -2715,8 +2778,7 @@
         if (event.type === 'text') appendAssistantDraftText(event.text ?? '');
         if (event.type === 'done') completedConversationId = event.conversationId ?? completedConversationId;
         if (event.type === 'error') {
-          showAssistantStreamError(`${t('status.generationError')}: ${event.text ?? ''}`.trim(), options.preserveAssistantOnError);
-          status = t('status.generationError');
+          failGeneration(event.text ?? '');
         }
       };
       while (true) {
@@ -2727,12 +2789,16 @@
         buffer = lines.pop() ?? '';
         for (const line of lines) {
           consumeLine(line);
+          if (failed) break;
         }
+        if (failed) break;
       }
+      if (failed) return;
       buffer += decoder.decode();
       if (buffer.trim()) {
         consumeLine(buffer);
       }
+      if (failed) return;
       status = controller.signal.aborted ? t('status.stopped') : t('status.ready');
       if (!controller.signal.aborted && completedConversationId) {
         await refreshConversationState(completedConversationId);
@@ -2743,8 +2809,7 @@
         removeEmptyAssistantDraft();
         status = t('status.stopped');
       } else {
-        showAssistantStreamError(`${t('status.generationError')}: ${error instanceof Error ? error.message : ''}`.trim(), options.preserveAssistantOnError);
-        status = t('status.generationError');
+        failGeneration(error instanceof Error ? error.message : '');
       }
     } finally {
       if (generationAbortController === controller) {
@@ -2821,28 +2886,6 @@
         speakerAvatarAssetId: activeCharacter?.avatarAssetId,
         content: '',
         thinking
-      }
-    ];
-    void queueMessagesScrollToBottom();
-  }
-
-  function replaceAssistantDraft(content: string) {
-    const last = messages[messages.length - 1];
-    if (last?.role === 'assistant') {
-      const next = [...messages];
-      next[next.length - 1] = { ...last, content, thinking: '' };
-      messages = next;
-      void queueMessagesScrollToBottom();
-      return;
-    }
-    messages = [
-      ...messages,
-      {
-        role: 'assistant',
-        speakerId: activeCharacter?.id,
-        name: activeCharacter?.name,
-        speakerAvatarAssetId: activeCharacter?.avatarAssetId,
-        content
       }
     ];
     void queueMessagesScrollToBottom();
@@ -3080,6 +3123,7 @@
   async function regenerateAssistantSibling(message: ChatMessage) {
     const nodeId = message.branch?.nodeId ?? message.id;
     if (!nodeId || !activeConversationId || isGenerating) return;
+    const snapshot = captureGenerationSnapshot();
     const lastIndex = messages.findIndex((item) => (item.branch?.nodeId ?? item.id) === nodeId);
     if (lastIndex >= 0) {
       messages = [...messages.slice(0, lastIndex), { role: 'assistant', name: activeCharacter?.name, content: '' }];
@@ -3090,7 +3134,7 @@
       characterId: activeCharacterId || undefined,
       personaId: activePersonaId || undefined,
       regenerateNodeId: nodeId
-    });
+    }, { snapshot });
   }
 
   async function nextMessageBranch(message: ChatMessage) {
@@ -3874,16 +3918,21 @@
     >
       <SlidersHorizontal size={20} />
     </button>
-    <button
+    <a
       class="icon-button"
-      class:active={activeDrawer === 'inspector'}
-      title={t('nav.inspector')}
-      aria-label={t('nav.inspector')}
-      aria-pressed={activeDrawer === 'inspector'}
-      on:click={openInspector}
+      href="https://github.com/AliceRabbit/NanKe"
+      target="_blank"
+      rel="noreferrer"
+      title={t('nav.github')}
+      aria-label={t('nav.github')}
     >
-      <ClipboardList size={20} />
-    </button>
+      <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20">
+        <path
+          fill="currentColor"
+          d="M12 .5C5.65.5.5 5.65.5 12c0 5.1 3.29 9.4 7.86 10.92.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.76 2.7 1.25 3.36.95.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.58.23 2.75.11 3.04.74.8 1.19 1.83 1.19 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.13v3.15c0 .31.21.67.8.56A11.52 11.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"
+        />
+      </svg>
+    </a>
   </aside>
 
   {#if activeDrawer === 'settings'}
@@ -3939,7 +3988,6 @@
     </section>
   {:else if activeView === 'home'}
     <HomeStage
-      {status}
       {activeProfile}
       {activeCharacter}
       {activePersona}
@@ -3949,7 +3997,6 @@
       recentConversations={homeRecentConversations}
       characters={homeCharacters}
       onOpenProfiles={() => openLibrary('profiles')}
-      onRefresh={refreshAll}
       onContinueConversation={loadConversation}
       onStartNewConversation={startNewConversation}
       onOpenCharacters={() => openLibrary('characters')}
@@ -4000,9 +4047,6 @@
       <div class="toolbar" aria-label={t('chat.actions')}>
         <button class="tool-button" type="button" on:click={startNewConversation} title={t('chat.newChat')} aria-label={t('chat.newChat')}>
           <SquarePen size={17} />
-        </button>
-        <button class="tool-button" type="button" on:click={refreshAll} title={t('common.refresh')} aria-label={t('common.refresh')}>
-          <RefreshCw size={17} />
         </button>
       </div>
     </header>
@@ -4251,6 +4295,23 @@
         {:else}
           <span>{zoomedAvatar.initials}</span>
         {/if}
+      </div>
+    </section>
+  {/if}
+
+  {#if generationErrorMessage}
+    <section class="delete-dialog-backdrop" role="presentation">
+      <div class="delete-dialog generation-error-dialog" role="dialog" aria-modal="true" aria-label={t('chat.generationErrorTitle')}>
+        <header>
+          <CircleStop size={17} />
+          <strong>{t('chat.generationErrorTitle')}</strong>
+        </header>
+        <pre class="generation-error-content">{generationErrorMessage}</pre>
+        <div class="delete-dialog-actions single">
+          <button type="button" on:click={closeGenerationError}>
+            {t('common.close')}
+          </button>
+        </div>
       </div>
     </section>
   {/if}
@@ -6718,18 +6779,18 @@
 
   .delete-dialog-backdrop {
     position: fixed;
-    inset: 0;
+    top: 50%;
+    left: 50%;
     z-index: 58;
-    display: grid;
-    place-items: center;
-    background: var(--nanke-surface-muted);
-    padding: 24px;
+    width: min(460px, calc(100vw - 32px));
+    background: transparent;
+    transform: translate(-50%, -50%);
   }
 
   .delete-dialog {
     display: grid;
     gap: 13px;
-    width: min(460px, 100%);
+    width: 100%;
     border: 1px solid var(--nanke-border);
     border-radius: 8px;
     background: var(--nanke-surface);
@@ -6765,6 +6826,22 @@
     font-size: var(--app-text-md);
   }
 
+  .generation-error-content {
+    max-height: 32vh;
+    overflow: auto;
+    margin: 0;
+    border: 1px solid var(--nanke-border);
+    border-radius: 8px;
+    background: var(--nanke-field);
+    color: inherit;
+    font-family: inherit;
+    font-size: var(--app-text-sm);
+    line-height: 1.55;
+    padding: 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
   .delete-dialog-actions {
     display: grid;
     grid-template-columns: auto 1fr 1fr;
@@ -6773,6 +6850,10 @@
 
   .delete-dialog-actions.conversation-delete-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .delete-dialog-actions.single {
+    grid-template-columns: 1fr;
   }
 
   .delete-dialog-actions button {

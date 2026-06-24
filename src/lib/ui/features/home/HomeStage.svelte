@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BookOpen, Bot, FileInput, MessageCircle, MessageSquare, RefreshCw, Settings2, SquarePen, UserRound } from '@lucide/svelte';
+  import { BookOpen, Bot, FileInput, MessageCircle, MessageSquare, Settings2, SquarePen, UserRound } from '@lucide/svelte';
   import { t } from '$lib/i18n';
 
   type HomeProfile = {
@@ -24,7 +24,6 @@
     title: string;
   };
 
-  export let status: string;
   export let activeProfile: HomeProfile | undefined;
   export let activeCharacter: HomeCharacter | undefined;
   export let activePersona: HomePersona | undefined;
@@ -35,7 +34,6 @@
   export let characters: HomeCharacter[];
 
   export let onOpenProfiles: () => void;
-  export let onRefresh: () => void | Promise<void>;
   export let onContinueConversation: (id: string) => void | Promise<void>;
   export let onStartNewConversation: () => void | Promise<void>;
   export let onOpenCharacters: () => void;
@@ -60,16 +58,6 @@
       <span>{t('home.kicker')}</span>
       <strong>NanKe</strong>
       <small>{t('home.subtitle')}</small>
-    </div>
-    <div class="homebar-actions">
-      <button class="context-chip profile" type="button" on:click={onOpenProfiles}>
-        <Settings2 size={15} />
-        <span>{activeProfile ? `${activeProfile.name} · ${activeProfile.provider.model}` : t('chat.noProfile')}</span>
-      </button>
-      <span class="status-pill">{status}</span>
-      <button class="tool-button" type="button" on:click={onRefresh} title={t('common.refresh')} aria-label={t('common.refresh')}>
-        <RefreshCw size={17} />
-      </button>
     </div>
   </header>
 
@@ -216,10 +204,6 @@
   }
 
   .homebar {
-    display: grid;
-    grid-template-columns: minmax(220px, 1fr) auto;
-    align-items: center;
-    gap: 16px;
     min-height: 72px;
     border-bottom: 1px solid var(--nanke-border);
     padding: 12px 24px;
@@ -247,75 +231,6 @@
   .home-title small {
     color: inherit;
     font-size: var(--app-text-sm);
-  }
-
-  .homebar-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .context-chip,
-  .status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    min-width: 0;
-    min-height: 40px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: var(--nanke-ink);
-    padding: 8px 10px;
-    font-size: var(--app-text-sm);
-    text-align: left;
-  }
-
-  .context-chip span,
-  .status-pill {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .context-chip:hover,
-  .context-chip:focus-visible {
-    border-color: var(--nanke-border-strong);
-    background: var(--nanke-surface-muted);
-    outline: 0;
-  }
-
-  .context-chip.profile {
-    color: var(--nanke-accent);
-  }
-
-  .status-pill {
-    justify-content: center;
-    min-width: 78px;
-    border-color: var(--nanke-border);
-    background: var(--nanke-surface-muted);
-    color: var(--nanke-accent);
-    font-weight: 700;
-  }
-
-  .tool-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: var(--nanke-ink);
-  }
-
-  .tool-button:hover {
-    border-color: inherit;
-    background: var(--nanke-surface-muted);
   }
 
   .home-workspace {
@@ -602,18 +517,7 @@
 
   @media (max-width: 860px) {
     .homebar {
-      grid-template-columns: minmax(0, 1fr);
-      align-items: stretch;
       padding: 12px;
-    }
-
-    .homebar-actions {
-      justify-content: stretch;
-      flex-wrap: wrap;
-    }
-
-    .homebar-actions .context-chip {
-      flex: 1 1 220px;
     }
 
     .home-workspace {

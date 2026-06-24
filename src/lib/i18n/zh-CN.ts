@@ -12,6 +12,7 @@ export const zhCN = {
   'nav.toolbox': '工具箱',
   'nav.theme': '切换主题',
   'nav.settings': '设置',
+  'nav.github': 'GitHub',
   'nav.inspector': '提示词检查器',
 
   'drawer.chats': '聊天记录',
@@ -159,6 +160,7 @@ export const zhCN = {
   'chat.sendMessage': '发送消息',
   'chat.stopGeneration': '停止生成',
   'chat.inspectPromptFallback': '检查提示词',
+  'chat.generationErrorTitle': '生成失败',
 
   'home.workspace': '首页工作台',
   'home.kicker': '工作台',

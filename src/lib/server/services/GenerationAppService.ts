@@ -98,14 +98,12 @@ export class GenerationAppService {
       existingConversation ??
       (input.dryRun
         ? undefined
-        : this.context.conversations.save({
-            ...createConversation({
-              title: userInput.slice(0, 40) || 'New Chat',
-              characterId: input.characterId,
-              personaId,
-              profileId: profile.id,
-              worldBookIds: []
-            })
+        : createConversation({
+            title: userInput.slice(0, 40) || 'New Chat',
+            characterId: input.characterId,
+            personaId,
+            profileId: profile.id,
+            worldBookIds: []
           }));
 
     const conversationId = conversation?.id ?? input.conversationId;
@@ -116,10 +114,6 @@ export class GenerationAppService {
       charIfNotGroup: character?.name ?? 'Assistant',
       user: persona?.name ?? 'User'
     };
-
-    if (!input.dryRun && conversation && personaId && personaId !== conversation.personaId && (input.personaId || !conversation.personaId)) {
-      this.context.conversations.save({ ...conversation, personaId });
-    }
 
     const existingMessages =
       conversationId && regenerateNode?.parentId
@@ -184,12 +178,6 @@ export class GenerationAppService {
           speakerAvatarAssetId: persona?.avatarAssetId
         });
     const messages = [...existingMessages, ...(openingMessage ? [openingMessage] : []), ...(userMessage ? [userMessage] : [])];
-    if (!input.dryRun) {
-      if (!conversationId) throw new AppError('Could not create conversation.', 500, 'conversation_create_failed');
-      if (openingMessage) this.context.conversations.appendMessage(openingMessage);
-      if (userMessage) this.context.conversations.appendMessage(userMessage);
-    }
-
     const characterWorldBookIds = activeCharacterWorldBookIds(character);
     const worldBooksById = new Map(
       [...characterWorldBookIds, ...(conversation?.worldBookIds ?? [])]
@@ -263,6 +251,13 @@ export class GenerationAppService {
 
     if (assistantText || assistantThinking) {
       if (!conversationId) throw new AppError('Assistant response has no conversation target.', 500, 'conversation_missing');
+      if (!existingConversation && conversation) {
+        this.context.conversations.save(conversation);
+      } else if (conversation && personaId && personaId !== conversation.personaId && (input.personaId || !conversation.personaId)) {
+        this.context.conversations.save({ ...conversation, personaId });
+      }
+      if (openingMessage) this.context.conversations.appendMessage(openingMessage);
+      if (userMessage) this.context.conversations.appendMessage(userMessage);
       if (continueNode) {
         const continued = this.context.conversations.appendToMessage(conversationId, continueNode.id, assistantText, assistantThinking || undefined);
         if (!continued) throw new AppError('Could not append continuation.', 500, 'continue_save_failed');
@@ -283,7 +278,7 @@ export class GenerationAppService {
     }
 
     const savedConversation = conversationId ? this.context.conversations.get(conversationId) : undefined;
-    yield { type: 'done', text: '', conversationId, activeLeafId: savedConversation?.activeLeafId };
+    yield { type: 'done', text: '', conversationId: savedConversation?.id, activeLeafId: savedConversation?.activeLeafId };
   }
 }
 

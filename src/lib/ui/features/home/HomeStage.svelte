@@ -34,7 +34,6 @@
     title: string;
   };
 
-  export let status: string;
   export let activeProfile: HomeProfile | undefined;
   export let activeCharacter: HomeCharacter | undefined;
   export let activePersona: HomePersona | undefined;
@@ -76,7 +75,6 @@
         <Settings2 size={15} />
         <span>{activeProfile ? `${activeProfile.name} · ${activeProfile.provider.model}` : t('chat.noProfile')}</span>
       </button>
-      <span class="status-pill"><i></i>{status}</span>
       <IconButton ariaLabel={t('common.refresh')} title={t('common.refresh')} on:click={onRefresh}>
         <RefreshCw size={17} />
       </IconButton>
@@ -261,8 +259,7 @@
     min-width: 0;
   }
 
-  .context-chip,
-  .status-pill {
+  .context-chip {
     display: inline-flex;
     align-items: center;
     gap: 7px;
@@ -278,8 +275,7 @@
     text-align: left;
   }
 
-  .context-chip span,
-  .status-pill {
+  .context-chip span {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -291,23 +287,6 @@
     border-color: var(--nanke-border-strong);
     box-shadow: var(--nanke-shadow-card);
     outline: 0;
-  }
-
-  .status-pill {
-    justify-content: center;
-    min-width: 76px;
-    background: var(--nanke-surface-muted);
-    color: var(--nanke-ink-muted);
-    box-shadow: none;
-    font-weight: 700;
-  }
-
-  .status-pill i {
-    width: 7px;
-    height: 7px;
-    border-radius: var(--nanke-radius-full);
-    background: var(--nanke-success);
-    box-shadow: 0 0 0 3px var(--nanke-success-soft);
   }
 
   .home-workspace {
@@ -737,8 +716,7 @@
     }
 
     .home-title small,
-    .homebar-actions .context-chip,
-    .homebar-actions .status-pill {
+    .homebar-actions .context-chip {
       display: none;
     }
 

@@ -6,7 +6,6 @@
   import ConfirmDialog from '$lib/ui/components/ConfirmDialog.svelte';
   import DrawerShell from '$lib/ui/components/DrawerShell.svelte';
   import RenameDialog from '$lib/ui/components/RenameDialog.svelte';
-  import StatusBadge from '$lib/ui/components/StatusBadge.svelte';
   import ToastRegion from '$lib/ui/components/ToastRegion.svelte';
   import ChatComposer from '$lib/ui/features/chat/ChatComposer.svelte';
   import NavigationRail from '$lib/ui/components/NavigationRail.svelte';
@@ -3995,7 +3994,6 @@
     </section>
   {:else if activeView === 'home'}
     <HomeStage
-      status={status.message}
       {activeProfile}
       {activeCharacter}
       {activePersona}
@@ -4050,7 +4048,6 @@
           <Settings2 size={15} />
           <span>{activeProfile ? `${activeProfile.name} · ${activeProfile.provider.model}` : t('chat.noProfile')}</span>
         </button>
-        <StatusBadge {status} />
       </div>
 
       <div class="toolbar" aria-label={t('chat.actions')}>

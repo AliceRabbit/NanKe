@@ -73,7 +73,6 @@ export const providerProfileSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('gemini'),
     model: z.string().min(1),
-    endpoint: z.string().url().optional(),
     apiKey: z.string().optional(),
     vertex: z.preprocess(
       (value) => {
@@ -82,23 +81,17 @@ export const providerProfileSchema = z.discriminatedUnion('type', [
         }
         return value;
       },
-      z
-        .object({
-          mode: z.enum(['express', 'oauth']).default('express'),
-          projectId: z.string().optional(),
-          location: z.string().default('us-central1'),
-          apiKey: z.string().optional(),
-          accessToken: z.string().optional()
+      z.discriminatedUnion('mode', [
+        z.object({
+          mode: z.literal('express'),
+          apiKey: z.string().optional()
+        }),
+        z.object({
+          mode: z.literal('oauth'),
+          projectId: z.string().trim().min(1, 'Project ID is required for Vertex OAuth mode.'),
+          location: z.string().trim().min(1).default('us-central1')
         })
-        .superRefine((vertex, context) => {
-          if (vertex.mode === 'oauth' && !vertex.projectId?.trim()) {
-            context.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: 'Project ID is required for Vertex OAuth mode.',
-              path: ['projectId']
-            });
-          }
-        })
+      ])
     ).optional()
   })
 ]);

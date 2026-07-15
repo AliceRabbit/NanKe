@@ -39,6 +39,11 @@ NanKe 致力于打造一个现代化的 AI 角色扮演与文本创作平台。�
 
 ### 安装与启动
 
+也可以直接运行项目根目录下的一键启动脚本，脚本会自动安装依赖并打开浏览器：
+
+- Windows：双击 `start.bat`
+- Linux：运行 `chmod +x start.sh && ./start.sh`
+
 1. **克隆项目并进入目录**
 ```bash
 git clone https://github.com/AliceRabbit/NanKe.git

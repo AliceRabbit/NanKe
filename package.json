@@ -16,6 +16,7 @@
     "test:e2e:update": "playwright test --update-snapshots"
   },
   "dependencies": {
+    "@google/genai": "^2.11.0",
     "@lucide/svelte": "^1.17.0",
     "@xyflow/svelte": "^1.6.0",
     "better-sqlite3": "^12.10.0",

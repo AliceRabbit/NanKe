@@ -1,6 +1,13 @@
+import { ApiError, GoogleGenAI, ThinkingLevel, type GenerateContentParameters, type GenerateContentResponse } from '@google/genai';
 import { describe, expect, it } from 'vitest';
 import { parseSseStream } from '$lib/providers/ProviderAdapter';
-import { buildGeminiRequest, createGeminiAdapter, geminiUrl } from '$lib/providers/gemini';
+import {
+  buildGeminiClientOptions,
+  buildGeminiRequest,
+  createGeminiAdapter,
+  createGeminiClient,
+  type GeminiClientFactory
+} from '$lib/providers/gemini';
 import { buildOpenAICompatibleRequest, createOpenAICompatibleAdapter, openAICompatibleUrl } from '$lib/providers/openai-compatible';
 import { createDefaultGenerationProfile } from '$lib/schemas/profile';
 
@@ -10,6 +17,31 @@ async function collect<T>(source: AsyncIterable<T>): Promise<T[]> {
     items.push(item);
   }
   return items;
+}
+
+function geminiResponse(value: unknown): GenerateContentResponse {
+  return value as GenerateContentResponse;
+}
+
+function fakeGeminiClient(responses: GenerateContentResponse[]) {
+  const generateCalls: GenerateContentParameters[] = [];
+  const streamCalls: GenerateContentParameters[] = [];
+  const factory: GeminiClientFactory = () => ({
+    models: {
+      async generateContent(params) {
+        generateCalls.push(params);
+        return responses[0] ?? geminiResponse({});
+      },
+      async generateContentStream(params) {
+        streamCalls.push(params);
+        return (async function* () {
+          for (const response of responses) yield response;
+        })();
+      }
+    }
+  });
+
+  return { factory, generateCalls, streamCalls };
 }
 
 describe('provider request mapping', () => {
@@ -79,12 +111,12 @@ describe('provider request mapping', () => {
     expect(openAICompatibleUrl(profile)).toBe('http://localhost:1234/v1/chat/completions');
   });
 
-  it('maps system messages into Gemini systemInstruction', () => {
+  it('maps canonical messages to Google Gen AI SDK parameters', () => {
     const profile = createDefaultGenerationProfile({
       provider: { type: 'gemini', model: 'gemini-2.5-pro' }
     });
 
-    const body = buildGeminiRequest(
+    const params = buildGeminiRequest(
       {
         messages: [
           { role: 'system', content: 'System text' },
@@ -94,20 +126,17 @@ describe('provider request mapping', () => {
         stop: []
       },
       profile
-    ) as Record<string, unknown>;
+    );
 
-    const systemInstruction = body.systemInstruction as { parts: Array<{ text: string }> };
-    const contents = body.contents as Array<{ role: string }>;
-    const generationConfig = body.generationConfig as { maxOutputTokens: number };
-    expect(systemInstruction.parts[0].text).toBe('System text');
+    const contents = params.contents as Array<{ role: string }>;
+    expect(params.model).toBe('gemini-2.5-pro');
+    expect(params.config?.systemInstruction).toBe('System text');
     expect(contents[0].role).toBe('model');
     expect(contents[1].role).toBe('user');
-    expect(generationConfig.maxOutputTokens).toBe(512);
-    expect(geminiUrl(profile)).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse');
-    expect(geminiUrl(profile, false)).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent');
+    expect(params.config?.maxOutputTokens).toBe(512);
   });
 
-  it('maps Gemini thinking config into generationConfig', () => {
+  it('maps Gemini thinking budgets into SDK config', () => {
     const profile = createDefaultGenerationProfile({
       provider: { type: 'gemini', model: 'gemini-2.5-pro' },
       thinking: {
@@ -116,13 +145,12 @@ describe('provider request mapping', () => {
       }
     });
 
-    const body = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile) as Record<string, unknown>;
-    const generationConfig = body.generationConfig as Record<string, unknown>;
+    const params = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile);
 
-    expect(generationConfig.thinkingConfig).toEqual({ includeThoughts: true, thinkingBudget: 1024 });
+    expect(params.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingBudget: 1024 });
   });
 
-  it('maps Gemini 3 thinking level into generationConfig', () => {
+  it('maps Gemini 3 thinking levels to the SDK enum', () => {
     const profile = createDefaultGenerationProfile({
       provider: { type: 'gemini', model: 'gemini-3-pro' },
       thinking: {
@@ -131,13 +159,12 @@ describe('provider request mapping', () => {
       }
     });
 
-    const body = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile) as Record<string, unknown>;
-    const generationConfig = body.generationConfig as Record<string, unknown>;
+    const params = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile);
 
-    expect(generationConfig.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: 'low' });
+    expect(params.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: ThinkingLevel.LOW });
   });
 
-  it('filters disabled SillyTavern sampler defaults from Gemini request bodies', () => {
+  it('filters disabled SillyTavern sampler defaults from Gemini SDK config', () => {
     const profile = createDefaultGenerationProfile({
       provider: { type: 'gemini', model: 'gemini-2.5-pro' },
       sampler: {
@@ -155,55 +182,70 @@ describe('provider request mapping', () => {
       }
     });
 
-    const body = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile) as Record<string, unknown>;
-    const generationConfig = body.generationConfig as Record<string, unknown>;
+    const config = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile).config;
 
-    expect(generationConfig.temperature).toBe(1);
-    expect(generationConfig.topP).toBe(0.99);
-    expect(generationConfig.maxOutputTokens).toBe(30000);
-    expect(generationConfig).not.toHaveProperty('topK');
-    expect(generationConfig).not.toHaveProperty('topA');
-    expect(generationConfig).not.toHaveProperty('minP');
-    expect(generationConfig).not.toHaveProperty('frequencyPenalty');
-    expect(generationConfig).not.toHaveProperty('presencePenalty');
-    expect(generationConfig).not.toHaveProperty('repetitionPenalty');
-    expect(generationConfig).not.toHaveProperty('candidateCount');
+    expect(config?.temperature).toBe(1);
+    expect(config?.topP).toBe(0.99);
+    expect(config?.maxOutputTokens).toBe(30000);
+    expect(config).not.toHaveProperty('topK');
+    expect(config).not.toHaveProperty('topA');
+    expect(config).not.toHaveProperty('minP');
+    expect(config).not.toHaveProperty('frequencyPenalty');
+    expect(config).not.toHaveProperty('presencePenalty');
+    expect(config).not.toHaveProperty('repetitionPenalty');
+    expect(config).not.toHaveProperty('candidateCount');
   });
 
-  it('adds SSE mode to custom Gemini streaming endpoints', () => {
+  it('drops retired custom Gemini endpoint and access token fields from stored profiles', () => {
     const profile = createDefaultGenerationProfile({
       provider: {
         type: 'gemini',
         model: 'gemini-2.5-pro',
-        endpoint: 'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-pro:streamGenerateContent?key=test-key'
-      }
+        endpoint: 'https://example.com/custom',
+        vertex: { projectId: 'legacy-project', location: 'global', accessToken: 'legacy-token' }
+      } as never
     });
 
-    expect(geminiUrl(profile)).toBe('https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-pro:streamGenerateContent?key=test-key&alt=sse');
-  });
-
-  it('parses SSE events without a trailing blank line', async () => {
-    const payloads = await collect(parseSseStream(new Response('data: {"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}')));
-
-    expect(payloads).toEqual([{ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }]);
-  });
-
-  it('treats legacy Vertex profiles without mode as OAuth profiles', () => {
-    const profile = createDefaultGenerationProfile({
-      provider: {
-        type: 'gemini',
-        model: 'gemini-2.5-pro',
-        vertex: { projectId: 'legacy-project', location: 'global', accessToken: 'legacy-token' } as never
-      }
-    });
-
+    expect(profile.provider).not.toHaveProperty('endpoint');
     expect(profile.provider.type).toBe('gemini');
     if (profile.provider.type !== 'gemini') throw new Error('Expected Gemini profile');
-    expect(profile.provider.vertex?.mode).toBe('oauth');
-    expect(geminiUrl(profile)).toBe('https://aiplatform.googleapis.com/v1/projects/legacy-project/locations/global/publishers/google/models/gemini-2.5-pro:streamGenerateContent?alt=sse');
+    expect(profile.provider.vertex).toEqual({ mode: 'oauth', projectId: 'legacy-project', location: 'global' });
+    expect(profile.provider.vertex).not.toHaveProperty('accessToken');
   });
 
-  it('sends provider authentication headers through adapters', async () => {
+  it('maps all supported Google authentication modes to official SDK options', () => {
+    const aiStudio = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'gemini-2.5-pro', apiKey: 'gemini-key' }
+    });
+    const vertexExpress = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'gemini-2.5-pro', vertex: { mode: 'express', apiKey: 'express-key' } }
+    });
+    const vertexAdc = createDefaultGenerationProfile({
+      provider: {
+        type: 'gemini',
+        model: 'gemini-2.5-pro',
+        vertex: { mode: 'oauth', projectId: 'project-id', location: 'us-central1' }
+      }
+    });
+
+    expect(buildGeminiClientOptions(aiStudio)).toEqual({ vertexai: false, apiKey: 'gemini-key', apiVersion: 'v1beta' });
+    expect(buildGeminiClientOptions(vertexExpress)).toEqual({ vertexai: true, apiKey: 'express-key', apiVersion: 'v1' });
+    expect(buildGeminiClientOptions(vertexAdc)).toEqual({
+      vertexai: true,
+      project: 'project-id',
+      location: 'us-central1',
+      apiVersion: 'v1'
+    });
+    expect(createGeminiClient(aiStudio)).toBeInstanceOf(GoogleGenAI);
+  });
+
+  it('parses OpenAI-compatible SSE events without a trailing blank line', async () => {
+    const payloads = await collect(parseSseStream(new Response('data: {"choices":[{"delta":{"content":"ok"}}]}')));
+
+    expect(payloads).toEqual([{ choices: [{ delta: { content: 'ok' } }] }]);
+  });
+
+  it('sends OpenAI-compatible provider authentication headers', async () => {
     const calls: Array<{ url: string; headers: Record<string, string> }> = [];
     const okStream = 'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n';
     const fetchImpl = async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -221,10 +263,7 @@ describe('provider request mapping', () => {
       }
     });
 
-    const chunks = [];
-    for await (const chunk of createOpenAICompatibleAdapter(fetchImpl).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile)) {
-      chunks.push(chunk);
-    }
+    const chunks = await collect(createOpenAICompatibleAdapter(fetchImpl).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile));
 
     expect(chunks[0]).toEqual(expect.objectContaining({ type: 'text', text: 'ok' }));
     expect(calls[0].headers.Authorization).toBe('Bearer direct-openai-key');
@@ -238,23 +277,19 @@ describe('provider request mapping', () => {
       request: { stream: false }
     });
     const openAIFetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: 'openai ok' } }] }));
-    const openAIChunks = [];
-    for await (const chunk of createOpenAICompatibleAdapter(openAIFetch).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, openAIProfile)) {
-      openAIChunks.push(chunk);
-    }
+    const openAIChunks = await collect(createOpenAICompatibleAdapter(openAIFetch).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, openAIProfile));
 
     const geminiProfile = createDefaultGenerationProfile({
       provider: { type: 'gemini', model: 'gemini-2.5-pro' },
       request: { stream: false }
     });
-    const geminiFetch = async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'gemini ok' }] } }] }));
-    const geminiChunks = [];
-    for await (const chunk of createGeminiAdapter(geminiFetch).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, geminiProfile)) {
-      geminiChunks.push(chunk);
-    }
+    const fake = fakeGeminiClient([geminiResponse({ candidates: [{ content: { parts: [{ text: 'gemini ok' }] } }] })]);
+    const geminiChunks = await collect(createGeminiAdapter(fake.factory).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, geminiProfile));
 
     expect(openAIChunks[0]).toEqual(expect.objectContaining({ type: 'text', text: 'openai ok' }));
     expect(geminiChunks[0]).toEqual(expect.objectContaining({ type: 'text', text: 'gemini ok' }));
+    expect(fake.generateCalls).toHaveLength(1);
+    expect(fake.streamCalls).toHaveLength(0);
   });
 
   it('normalizes native thinking chunks from OpenAI-compatible and Gemini providers', async () => {
@@ -267,8 +302,10 @@ describe('provider request mapping', () => {
     const geminiProfile = createDefaultGenerationProfile({
       provider: { type: 'gemini', model: 'gemini-2.5-pro' }
     });
-    const geminiStream = 'data: {"candidates":[{"content":{"parts":[{"text":"thinking ","thought":true},{"text":"answer"}]}}]}\n\n';
-    const geminiChunks = await collect(createGeminiAdapter(async () => new Response(geminiStream)).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, geminiProfile));
+    const fake = fakeGeminiClient([
+      geminiResponse({ candidates: [{ content: { parts: [{ text: 'thinking ', thought: true }, { text: 'answer' }] } }] })
+    ]);
+    const geminiChunks = await collect(createGeminiAdapter(fake.factory).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, geminiProfile));
 
     expect(openAIChunks[0]).toEqual(expect.objectContaining({ type: 'thinking', text: 'thinking ' }));
     expect(openAIChunks[1]).toEqual(expect.objectContaining({ type: 'text', text: 'answer' }));
@@ -276,80 +313,51 @@ describe('provider request mapping', () => {
     expect(geminiChunks[1]).toEqual(expect.objectContaining({ type: 'text', text: 'answer' }));
   });
 
-  it('normalizes Gemini JSON array stream responses', async () => {
-    const geminiProfile = createDefaultGenerationProfile({
+  it('normalizes multiple Google SDK stream chunks', async () => {
+    const profile = createDefaultGenerationProfile({
       provider: { type: 'gemini', model: 'gemini-2.5-pro' }
     });
-    const geminiFetch = async () =>
-      new Response(
-        JSON.stringify([
-          { candidates: [{ content: { parts: [{ text: 'first ' }] } }] },
-          { candidates: [{ content: { parts: [{ text: 'second' }] } }] }
-        ])
-      );
+    const fake = fakeGeminiClient([
+      geminiResponse({ candidates: [{ content: { parts: [{ text: 'first ' }] } }] }),
+      geminiResponse({ candidates: [{ content: { parts: [{ text: 'second' }] } }] })
+    ]);
 
-    const chunks = await collect(createGeminiAdapter(geminiFetch).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, geminiProfile));
+    const chunks = await collect(createGeminiAdapter(fake.factory).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile));
 
     expect(chunks.filter((chunk) => chunk.type === 'text').map((chunk) => chunk.text).join('')).toBe('first second');
+    expect(fake.streamCalls).toHaveLength(1);
   });
 
   it('surfaces Gemini stream events that finish without text', async () => {
-    const geminiProfile = createDefaultGenerationProfile({
+    const profile = createDefaultGenerationProfile({
       provider: { type: 'gemini', model: 'gemini-2.5-pro' }
     });
-    const geminiFetch = async () => new Response('data: {"candidates":[{"content":{"role":"model"},"finishReason":"MAX_TOKENS"}]}\n\n');
+    const fake = fakeGeminiClient([geminiResponse({ candidates: [{ content: { role: 'model' }, finishReason: 'MAX_TOKENS' }] })]);
 
-    const chunks = await collect(createGeminiAdapter(geminiFetch).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, geminiProfile));
+    const chunks = await collect(createGeminiAdapter(fake.factory).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile));
 
     expect(chunks[0]).toEqual(expect.objectContaining({ type: 'error' }));
     expect(chunks[0].text).toContain('MAX_TOKENS');
   });
 
-  it('uses x-goog-api-key for Gemini AI Studio, key query for Vertex Express, and bearer auth for Vertex OAuth', async () => {
-    const calls: Array<{ url: string; headers: Record<string, string> }> = [];
-    const geminiStream = 'data: {"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}\n\n';
-    const fetchImpl = async (url: RequestInfo | URL, init?: RequestInit) => {
-      calls.push({ url: String(url), headers: init?.headers as Record<string, string> });
-      return new Response(geminiStream);
-    };
-
-    const aiStudioProfile = createDefaultGenerationProfile({
-      provider: { type: 'gemini', model: 'gemini-2.5-pro', apiKey: 'gemini-key' }
+  it('normalizes official SDK API errors', async () => {
+    const profile = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'gemini-2.5-pro' }
     });
-    for await (const _chunk of createGeminiAdapter(fetchImpl).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, aiStudioProfile)) {
-      // drain stream
-    }
-
-    const vertexExpressProfile = createDefaultGenerationProfile({
-      provider: {
-        type: 'gemini',
-        model: 'gemini-2.5-pro',
-        vertex: { mode: 'express', location: 'global', apiKey: 'vertex-express-key' }
+    const error = new ApiError({ message: 'quota exceeded', status: 429 });
+    const factory: GeminiClientFactory = () => ({
+      models: {
+        async generateContent() {
+          throw error;
+        },
+        async generateContentStream() {
+          throw error;
+        }
       }
     });
-    for await (const _chunk of createGeminiAdapter(fetchImpl).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, vertexExpressProfile)) {
-      // drain stream
-    }
 
-    const vertexOAuthProfile = createDefaultGenerationProfile({
-      provider: {
-        type: 'gemini',
-        model: 'gemini-2.5-pro',
-        vertex: { mode: 'oauth', projectId: 'project-id', location: 'us-central1', accessToken: 'vertex-token' }
-      }
-    });
-    for await (const _chunk of createGeminiAdapter(fetchImpl).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, vertexOAuthProfile)) {
-      // drain stream
-    }
+    const chunks = await collect(createGeminiAdapter(factory).stream({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile));
 
-    expect(calls[0].headers['x-goog-api-key']).toBe('gemini-key');
-    expect(calls[0].headers.Authorization).toBeUndefined();
-    expect(calls[1].url).toContain('https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-pro:streamGenerateContent');
-    expect(calls[1].url).toContain('key=vertex-express-key');
-    expect(calls[1].headers['x-goog-api-key']).toBeUndefined();
-    expect(calls[1].headers.Authorization).toBeUndefined();
-    expect(calls[2].headers.Authorization).toBe('Bearer vertex-token');
-    expect(calls[2].headers['x-goog-api-key']).toBeUndefined();
-    expect(calls[2].url).toContain('/projects/project-id/locations/us-central1/publishers/google/models/gemini-2.5-pro:streamGenerateContent');
+    expect(chunks[0]).toEqual({ type: 'error', text: 'quota exceeded', raw: { status: 429 } });
   });
 });

@@ -1,20 +1,27 @@
+import {
+  ApiError,
+  GoogleGenAI,
+  ThinkingLevel,
+  type GenerateContentConfig,
+  type GenerateContentParameters,
+  type GenerateContentResponse,
+  type GoogleGenAIOptions,
+  type ThinkingConfig
+} from '@google/genai';
 import type { GenerationProfile } from '$lib/schemas/profile';
 import type { GenerationChunk, ProviderRequest } from '$lib/schemas/provider';
-import { parseSseStream, type ProviderAdapter, type ProviderFetch } from './ProviderAdapter';
+import type { ProviderAdapter } from './ProviderAdapter';
 
-type GeminiChunk = {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{ text?: string; thought?: boolean; thoughtSignature?: string }>;
-    };
-    finishReason?: string;
-    finishMessage?: string;
-  }>;
-  promptFeedback?: {
-    blockReason?: string;
-    blockReasonMessage?: string;
-  };
+type GeminiModelsClient = {
+  generateContent(params: GenerateContentParameters): Promise<GenerateContentResponse>;
+  generateContentStream(params: GenerateContentParameters): Promise<AsyncIterable<GenerateContentResponse>>;
 };
+
+export type GeminiClient = {
+  models: GeminiModelsClient;
+};
+
+export type GeminiClientFactory = (profile: GenerationProfile) => GeminiClient;
 
 function withDefinedValues<T extends Record<string, unknown>>(value: T): Partial<T> {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== '')) as Partial<T>;
@@ -46,20 +53,29 @@ function geminiRole(role: string): 'user' | 'model' {
   return role === 'assistant' ? 'model' : 'user';
 }
 
-export function buildGeminiThinkingConfig(profile: GenerationProfile) {
+const thinkingLevels = {
+  minimal: ThinkingLevel.MINIMAL,
+  low: ThinkingLevel.LOW,
+  medium: ThinkingLevel.MEDIUM,
+  high: ThinkingLevel.HIGH
+} as const;
+
+export function buildGeminiThinkingConfig(profile: GenerationProfile): ThinkingConfig | undefined {
   const thinking = profile.thinking?.gemini;
   if (!thinking) return undefined;
 
-  const config = withDefinedValues({
+  const config: ThinkingConfig = withDefinedValues({
     includeThoughts: thinking.includeThoughts ? true : undefined,
     thinkingBudget: thinking.mode === 'off' ? 0 : thinking.mode === 'budget' ? optionalNonNegativeInteger(thinking.budget) : undefined,
-    thinkingLevel: thinking.mode === 'level' ? thinking.level : undefined
+    thinkingLevel: thinking.mode === 'level' ? thinkingLevels[thinking.level] : undefined
   });
 
   return Object.keys(config).length ? config : undefined;
 }
 
-export function buildGeminiRequest(request: ProviderRequest, profile: GenerationProfile) {
+export function buildGeminiRequest(request: ProviderRequest, profile: GenerationProfile, signal?: AbortSignal): GenerateContentParameters {
+  if (profile.provider.type !== 'gemini') throw new Error('Invalid profile for Gemini adapter.');
+
   const systemText = request.messages
     .filter((message) => message.role === 'system')
     .map((message) => message.content)
@@ -73,7 +89,8 @@ export function buildGeminiRequest(request: ProviderRequest, profile: Generation
     }));
 
   const stop = request.stop.length ? request.stop : profile.sampler.stop;
-  const generationConfig = withDefinedValues({
+  const config: GenerateContentConfig = withDefinedValues({
+    systemInstruction: systemText || undefined,
     temperature: optionalNumber(request.temperature ?? profile.sampler.temperature, { allowZero: true }),
     topP: positiveNumber(request.topP ?? profile.sampler.topP),
     topK: optionalInteger(request.topK ?? profile.sampler.topK),
@@ -83,87 +100,48 @@ export function buildGeminiRequest(request: ProviderRequest, profile: Generation
     presencePenalty: optionalNumber(request.presencePenalty ?? profile.sampler.presencePenalty),
     seed: request.seed ?? profile.sampler.seed,
     candidateCount: optionalInteger(request.n ?? profile.sampler.n, { skipOne: true }),
-    thinkingConfig: buildGeminiThinkingConfig(profile)
+    thinkingConfig: buildGeminiThinkingConfig(profile),
+    abortSignal: signal
   });
 
-  return withDefinedValues({
-    ...(systemText ? { systemInstruction: { parts: [{ text: systemText }] } } : {}),
+  return {
+    model: profile.provider.model,
     contents,
-    generationConfig: Object.keys(generationConfig).length ? generationConfig : undefined
-  });
+    ...(Object.keys(config).length ? { config } : {})
+  };
 }
 
-function vertexBaseUrl(location: string): string {
-  return location === 'global' ? 'https://aiplatform.googleapis.com/v1' : `https://${location}-aiplatform.googleapis.com/v1`;
-}
-
-function withQuery(url: string, params: Record<string, string | undefined>): string {
-  const parsed = new URL(url);
-  for (const [key, value] of Object.entries(params)) {
-    if (value) parsed.searchParams.set(key, value);
-  }
-  return parsed.toString();
-}
-
-export function geminiUrl(profile: GenerationProfile, stream = true): string {
+export function buildGeminiClientOptions(profile: GenerationProfile): GoogleGenAIOptions {
   if (profile.provider.type !== 'gemini') throw new Error('Invalid profile for Gemini adapter.');
-  if (profile.provider.endpoint) return stream ? withQuery(profile.provider.endpoint, { alt: 'sse' }) : profile.provider.endpoint;
-  const method = stream ? 'streamGenerateContent' : 'generateContent';
-  if (profile.provider.vertex) {
-    const mode = profile.provider.vertex.mode ?? 'express';
-    const location = profile.provider.vertex.location ?? 'us-central1';
-    const model = encodeURIComponent(profile.provider.model);
 
-    if (mode === 'express') {
-      const projectPath = profile.provider.vertex.projectId
-        ? `/projects/${encodeURIComponent(profile.provider.vertex.projectId)}/locations/${encodeURIComponent(location)}`
-        : '';
-      return withQuery(`${vertexBaseUrl(location)}${projectPath}/publishers/google/models/${model}:${method}`, {
-        key: profile.provider.vertex.apiKey?.trim(),
-        alt: stream ? 'sse' : undefined
-      });
-    }
-
-    return withQuery(
-      `${vertexBaseUrl(location)}/projects/${encodeURIComponent(profile.provider.vertex.projectId ?? '')}/locations/${encodeURIComponent(location)}/publishers/google/models/${model}:${method}`,
-      { alt: stream ? 'sse' : undefined }
-    );
-  }
-  return withQuery(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(profile.provider.model)}:${method}`, {
-    alt: stream ? 'sse' : undefined
-  });
-}
-
-function geminiHeaders(profile: GenerationProfile, apiKey?: string, vertexToken?: string): HeadersInit {
-  if (profile.provider.type !== 'gemini') throw new Error('Invalid profile for Gemini adapter.');
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (profile.provider.vertex) {
-    const mode = profile.provider.vertex.mode ?? 'express';
-    if (mode === 'oauth' && vertexToken) headers.Authorization = `Bearer ${vertexToken}`;
-    return headers;
+  const vertex = profile.provider.vertex;
+  if (!vertex) {
+    const apiKey = profile.provider.apiKey?.trim();
+    if (!apiKey) throw new Error('Gemini API key is required.');
+    return { vertexai: false, apiKey, apiVersion: 'v1beta' };
   }
 
-  if (apiKey) headers['x-goog-api-key'] = apiKey;
-  return headers;
-}
-
-async function readProviderError(response: Response): Promise<string> {
-  const text = await response.text();
-  if (!text) return `${response.status} ${response.statusText}`;
-  const sseData = text
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice(5).trim())
-    .join('\n');
-  try {
-    const parsed = JSON.parse(sseData || text) as { error?: { message?: string }; message?: string };
-    return parsed.error?.message ?? parsed.message ?? text;
-  } catch {
-    return text;
+  if (vertex.mode === 'express') {
+    const apiKey = vertex.apiKey?.trim();
+    if (!apiKey) throw new Error('Vertex Express API key is required.');
+    return { vertexai: true, apiKey, apiVersion: 'v1' };
   }
+
+  const project = vertex.projectId?.trim();
+  if (!project) throw new Error('Google Cloud project ID is required for Vertex AI.');
+  return {
+    vertexai: true,
+    project,
+    location: vertex.location?.trim() || 'us-central1',
+    apiVersion: 'v1'
+  };
 }
 
-function emptyGeminiResultError(payload: GeminiChunk): string | undefined {
+export function createGeminiClient(profile: GenerationProfile): GeminiClient {
+  return new GoogleGenAI(buildGeminiClientOptions(profile));
+}
+
+function emptyGeminiResultError(payload: GenerateContentResponse): string | undefined {
   const feedback = payload.promptFeedback;
   if (feedback?.blockReason) {
     return feedback.blockReasonMessage ?? `Gemini blocked the prompt: ${feedback.blockReason}`;
@@ -176,7 +154,7 @@ function emptyGeminiResultError(payload: GeminiChunk): string | undefined {
   return `Gemini returned no text. Finish reason: ${finishReason}.${message}`;
 }
 
-function splitGeminiCandidateText(payload: GeminiChunk) {
+function geminiOutputChunks(payload: GenerateContentResponse): GenerationChunk[] {
   const parts = payload.candidates?.[0]?.content?.parts ?? [];
   let text = '';
   let thinking = '';
@@ -191,10 +169,22 @@ function splitGeminiCandidateText(payload: GeminiChunk) {
     }
   }
 
-  return { text, thinking };
+  return [
+    ...(thinking ? [{ type: 'thinking' as const, text: thinking, raw: payload }] : []),
+    ...(text ? [{ type: 'text' as const, text, raw: payload }] : [])
+  ];
 }
 
-export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderAdapter {
+function isAbortError(error: unknown, signal?: AbortSignal): boolean {
+  return signal?.aborted === true || (error instanceof Error && error.name === 'AbortError');
+}
+
+function providerErrorChunk(error: unknown): GenerationChunk {
+  const text = error instanceof Error ? error.message : String(error);
+  return error instanceof ApiError ? { type: 'error', text, raw: { status: error.status } } : { type: 'error', text };
+}
+
+export function createGeminiAdapter(clientFactory: GeminiClientFactory = createGeminiClient): ProviderAdapter {
   return {
     type: 'gemini',
     async *stream(request: ProviderRequest, profile: GenerationProfile, signal?: AbortSignal): AsyncIterable<GenerationChunk> {
@@ -202,54 +192,46 @@ export function createGeminiAdapter(fetchImpl: ProviderFetch = fetch): ProviderA
         throw new Error('Invalid profile for Gemini adapter.');
       }
 
-      const apiKey = profile.provider.apiKey?.trim();
-      const vertexToken = profile.provider.vertex?.accessToken?.trim();
-      const streaming = request.stream ?? profile.request.stream;
+      try {
+        const client = clientFactory(profile);
+        const params = buildGeminiRequest(request, profile, signal);
+        const streaming = request.stream ?? profile.request.stream;
 
-      const response = await fetchImpl(geminiUrl(profile, streaming), {
-        method: 'POST',
-        signal,
-        headers: geminiHeaders(profile, apiKey, vertexToken),
-        body: JSON.stringify(buildGeminiRequest(request, profile))
-      });
+        if (!streaming) {
+          const payload = await client.models.generateContent(params);
+          const chunks = geminiOutputChunks(payload);
+          if (!chunks.length) {
+            const emptyResultError = emptyGeminiResultError(payload);
+            if (emptyResultError) {
+              yield { type: 'error', text: emptyResultError, raw: payload };
+              return;
+            }
+          }
+          for (const chunk of chunks) yield chunk;
+          yield { type: 'done', text: '' };
+          return;
+        }
 
-      if (!response.ok) {
-        yield { type: 'error', text: await readProviderError(response), raw: { status: response.status } };
-        return;
-      }
+        let sawOutput = false;
+        let emptyResultError: string | undefined;
+        const response = await client.models.generateContentStream(params);
+        for await (const payload of response) {
+          const chunks = geminiOutputChunks(payload);
+          if (chunks.length) sawOutput = true;
+          for (const chunk of chunks) yield chunk;
+          emptyResultError = emptyGeminiResultError(payload) ?? emptyResultError;
+        }
 
-      if (!streaming) {
-        const payload = (await response.json()) as GeminiChunk;
-        const { text, thinking } = splitGeminiCandidateText(payload);
-        if (thinking) yield { type: 'thinking', text: thinking, raw: payload };
-        if (text) yield { type: 'text', text, raw: payload };
+        if (!sawOutput && emptyResultError) {
+          yield { type: 'error', text: emptyResultError };
+          return;
+        }
+
         yield { type: 'done', text: '' };
-        return;
+      } catch (error) {
+        if (isAbortError(error, signal)) throw error;
+        yield providerErrorChunk(error);
       }
-
-      let sawOutput = false;
-      let emptyResultError: string | undefined;
-      for await (const payload of parseSseStream(response)) {
-        const chunk = payload as GeminiChunk;
-        const { text, thinking } = splitGeminiCandidateText(chunk);
-        if (thinking) {
-          sawOutput = true;
-          yield { type: 'thinking', text: thinking, raw: payload };
-        }
-        if (text) {
-          sawOutput = true;
-          yield { type: 'text', text, raw: payload };
-        } else {
-          emptyResultError = emptyGeminiResultError(chunk) ?? emptyResultError;
-        }
-      }
-
-      if (!sawOutput && emptyResultError) {
-        yield { type: 'error', text: emptyResultError };
-        return;
-      }
-
-      yield { type: 'done', text: '' };
     }
   };
 }

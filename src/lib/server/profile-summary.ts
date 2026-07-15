@@ -21,13 +21,14 @@ export function profileSummary(profile: GenerationProfile) {
         ? {
             type: profile.provider.type,
             model: profile.provider.model,
-            endpoint: profile.provider.endpoint,
             vertex: profile.provider.vertex
-              ? {
-                  mode: profile.provider.vertex.mode,
-                  projectId: profile.provider.vertex.projectId,
-                  location: profile.provider.vertex.location
-                }
+              ? profile.provider.vertex.mode === 'oauth'
+                ? {
+                    mode: profile.provider.vertex.mode,
+                    projectId: profile.provider.vertex.projectId,
+                    location: profile.provider.vertex.location
+                  }
+                : { mode: profile.provider.vertex.mode }
               : undefined
           }
         : {

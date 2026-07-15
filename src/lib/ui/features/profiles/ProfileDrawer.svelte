@@ -12,6 +12,8 @@
 
   import Plus from '@lucide/svelte/icons/plus';
 
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+
   import Save from '@lucide/svelte/icons/save';
 
   import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -44,6 +46,7 @@
   type PromptStats = { total: number; ordered: number; enabled: number; inactive?: number; injected?: number };
   type UpdateDraftSlotInjection = NonNullable<PromptSlot['injection']> | undefined;
   type PromptDropPlacement = 'before' | 'after';
+  type ModelFetchStatus = { kind: 'loading' | 'success' | 'warning' | 'error'; text: string };
   const modelOptionsStorageKey = 'nanke.profile-model-options.v1';
   const defaultModelOptions: ModelOptions = {
     'openai-compatible': ['gpt-4o-mini'],
@@ -145,6 +148,8 @@
   let profilePickerOpen = false;
   let modelPickerOpen = false;
   let modelPickerInput = '';
+  let modelFetchStatus: ModelFetchStatus | null = null;
+  let modelFetchController: AbortController | null = null;
   let modelOptions: ModelOptions = {
     'openai-compatible': [...defaultModelOptions['openai-compatible']],
     gemini: [...defaultModelOptions.gemini]
@@ -155,6 +160,7 @@
 
   onMount(() => {
     modelOptions = loadModelOptions();
+    return () => modelFetchController?.abort();
   });
 
   function cleanModelIds(values: unknown[]) {
@@ -185,7 +191,65 @@
 
   function saveModelOptions() {
     if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(modelOptionsStorageKey, JSON.stringify(modelOptions));
+    try {
+      localStorage.setItem(modelOptionsStorageKey, JSON.stringify(modelOptions));
+    } catch {
+      // Model selection still works for this session when storage is unavailable.
+    }
+  }
+
+  function modelFetchFailureMessage(code?: string) {
+    if (code === 'model_list_invalid_request') return t('profile.modelFetchInvalidEndpoint');
+    if (code === 'model_list_unauthorized') return t('profile.modelFetchUnauthorized');
+    if (code === 'model_list_not_supported') return t('profile.modelFetchUnsupported');
+    if (code === 'model_list_timeout') return t('profile.modelFetchTimeout');
+    if (code === 'model_list_unreachable') return t('profile.modelFetchUnreachable');
+    if (code === 'model_list_invalid_response') return t('profile.modelFetchInvalidResponse');
+    return t('profile.modelFetchFailed');
+  }
+
+  async function fetchModelOptions() {
+    if (modelFetchStatus?.kind === 'loading' || profileDraftProviderType !== 'openai-compatible') return;
+
+    modelFetchController?.abort();
+    modelFetchController = new AbortController();
+    modelFetchStatus = { kind: 'loading', text: t('profile.modelFetching') };
+
+    try {
+      const response = await fetch('/api/providers/openai-compatible/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: profileDraftProviderEndpoint.trim() || 'https://api.openai.com/v1',
+          apiKey: profileDraftApiKey.trim() || undefined
+        }),
+        signal: modelFetchController.signal
+      });
+      const payload = (await response.json().catch(() => null)) as { models?: unknown; error?: { code?: string } } | null;
+
+      if (!response.ok) {
+        modelFetchStatus = { kind: 'error', text: modelFetchFailureMessage(payload?.error?.code) };
+        return;
+      }
+
+      const remoteModels = cleanModelIds(Array.isArray(payload?.models) ? payload.models : []);
+      if (!remoteModels.length) {
+        modelFetchStatus = { kind: 'warning', text: t('profile.modelFetchEmpty') };
+        return;
+      }
+
+      const selectedModel = profileDraftProviderModel.trim();
+      const models = cleanModelIds([...remoteModels, ...currentModelOptionsList, selectedModel]);
+      modelOptions = { ...modelOptions, 'openai-compatible': models };
+      saveModelOptions();
+      modelPickerOpen = true;
+      modelFetchStatus = { kind: 'success', text: t('profile.modelFetchSuccess', { count: remoteModels.length }) };
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      modelFetchStatus = { kind: 'error', text: t('profile.modelFetchUnreachable') };
+    } finally {
+      modelFetchController = null;
+    }
   }
 
   function addModelOption() {
@@ -335,11 +399,32 @@
 
         <div class="provider-config" class:single={profileDraftProviderType === 'gemini'}>
           <div class="model-picker">
-            <span>{t('profile.model')}</span>
+            <div class="model-picker-heading">
+              <span>{t('profile.model')}</span>
+              {#if profileDraftProviderType === 'openai-compatible'}
+                <button
+                  class:is-loading={modelFetchStatus?.kind === 'loading'}
+                  type="button"
+                  disabled={modelFetchStatus?.kind === 'loading'}
+                  on:click={fetchModelOptions}
+                  aria-label={t('profile.fetchModels')}
+                  title={t('profile.fetchModels')}
+                >
+                  <RefreshCw size={13} />
+                  <span>{t('profile.fetchModels')}</span>
+                </button>
+              {/if}
+            </div>
             <button class="model-picker-trigger" type="button" on:click={() => (modelPickerOpen = !modelPickerOpen)} aria-label={t('profile.model')} aria-expanded={modelPickerOpen}>
               <span class="model-picker-value">{profileDraftProviderModel || (profileDraftProviderType === 'gemini' ? DEFAULT_GEMINI_MODEL : 'gpt-4o-mini')}</span>
               <ChevronDown size={16} />
             </button>
+            {#if profileDraftProviderType === 'openai-compatible' && modelFetchStatus}
+              <div class="model-fetch-status" data-kind={modelFetchStatus.kind} role={modelFetchStatus.kind === 'error' ? 'alert' : 'status'} aria-live="polite">
+                <span aria-hidden="true"></span>
+                <small>{modelFetchStatus.text}</small>
+              </div>
+            {/if}
             {#if modelPickerOpen}
               <div class="model-picker-menu">
                 <div class="model-picker-add">

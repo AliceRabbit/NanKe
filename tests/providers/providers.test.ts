@@ -8,7 +8,15 @@ import {
   createGeminiClient,
   type GeminiClientFactory
 } from '$lib/providers/gemini';
-import { buildOpenAICompatibleRequest, createOpenAICompatibleAdapter, openAICompatibleUrl } from '$lib/providers/openai-compatible';
+import {
+  buildOpenAICompatibleRequest,
+  createOpenAICompatibleAdapter,
+  fetchOpenAICompatibleModels,
+  OpenAICompatibleModelListError,
+  openAICompatibleModelsUrl,
+  openAICompatibleUrl,
+  parseOpenAICompatibleModelList
+} from '$lib/providers/openai-compatible';
 import { createDefaultGenerationProfile } from '$lib/schemas/profile';
 
 async function collect<T>(source: AsyncIterable<T>): Promise<T[]> {
@@ -109,6 +117,58 @@ describe('provider request mapping', () => {
     expect(body.repetition_penalty).toBe(1.05);
     expect(body.max_tokens).toBe(256);
     expect(openAICompatibleUrl(profile)).toBe('http://localhost:1234/v1/chat/completions');
+  });
+
+  it('derives a model-list URL from base and completion endpoints', () => {
+    expect(openAICompatibleModelsUrl('https://example.com/v1/')).toBe('https://example.com/v1/models');
+    expect(openAICompatibleModelsUrl('https://example.com/v1/chat/completions')).toBe('https://example.com/v1/models');
+    expect(openAICompatibleModelsUrl('https://example.com/v1/responses?api-version=latest')).toBe(
+      'https://example.com/v1/models?api-version=latest'
+    );
+    expect(openAICompatibleModelsUrl('https://example.com/v1/models')).toBe('https://example.com/v1/models');
+  });
+
+  it('normalizes standard and common compatible model-list payloads', () => {
+    expect(
+      parseOpenAICompatibleModelList({
+        object: 'list',
+        data: [{ id: 'gpt-4o-mini' }, { id: 'gpt-4o' }, { id: 'gpt-4o-mini' }, { invalid: true }]
+      })
+    ).toEqual(['gpt-4o', 'gpt-4o-mini']);
+    expect(parseOpenAICompatibleModelList({ models: [{ model: 'qwen3' }, { name: 'llama3.2' }, 'custom-model'] })).toEqual([
+      'custom-model',
+      'llama3.2',
+      'qwen3'
+    ]);
+    expect(parseOpenAICompatibleModelList({ data: [] })).toEqual([]);
+    expect(() => parseOpenAICompatibleModelList({ result: 'not-a-list' })).toThrow(OpenAICompatibleModelListError);
+  });
+
+  it('fetches model IDs with bearer authentication and classifies provider failures', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const models = await fetchOpenAICompatibleModels(
+      { endpoint: 'https://example.com/v1', apiKey: 'test-key' },
+      async (url, init) => {
+        calls.push({ url: String(url), init });
+        return new Response(JSON.stringify({ data: [{ id: 'model-b' }, { id: 'model-a' }] }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    );
+
+    expect(models).toEqual(['model-a', 'model-b']);
+    expect(calls[0].url).toBe('https://example.com/v1/models');
+    expect(calls[0].init?.method).toBe('GET');
+    expect(calls[0].init?.headers).toEqual({ Accept: 'application/json', Authorization: 'Bearer test-key' });
+
+    await expect(
+      fetchOpenAICompatibleModels({ endpoint: 'https://example.com/v1' }, async () =>
+        new Response(JSON.stringify({ error: { message: 'Not found' } }), { status: 404 })
+      )
+    ).rejects.toMatchObject({ code: 'model_list_not_supported', status: 404, message: 'Not found' });
+    await expect(
+      fetchOpenAICompatibleModels({ endpoint: 'https://example.com/v1' }, async () => new Response('<html>proxy error</html>'))
+    ).rejects.toMatchObject({ code: 'model_list_invalid_response' });
   });
 
   it('maps canonical messages to Google Gen AI SDK parameters', () => {

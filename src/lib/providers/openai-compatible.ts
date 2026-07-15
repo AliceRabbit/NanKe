@@ -10,6 +10,28 @@ type OpenAIChunk = {
   }>;
 };
 
+type OpenAICompatibleModelListInput = {
+  endpoint: string;
+  apiKey?: string;
+};
+
+export type OpenAICompatibleModelListErrorCode =
+  | 'model_list_unauthorized'
+  | 'model_list_not_supported'
+  | 'model_list_provider_error'
+  | 'model_list_invalid_response';
+
+export class OpenAICompatibleModelListError extends Error {
+  constructor(
+    message: string,
+    public readonly code: OpenAICompatibleModelListErrorCode,
+    public readonly status?: number
+  ) {
+    super(message);
+    this.name = 'OpenAICompatibleModelListError';
+  }
+}
+
 function withDefinedValues<T extends Record<string, unknown>>(value: T): Partial<T> {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== '')) as Partial<T>;
 }
@@ -22,6 +44,77 @@ export function openAICompatibleUrl(profile: GenerationProfile): string {
   const endpoint = (profile.provider.endpoint || 'https://api.openai.com/v1').replace(/\/+$/, '');
   if (endpoint.endsWith('/chat/completions')) return endpoint;
   return `${endpoint}/chat/completions`;
+}
+
+export function openAICompatibleModelsUrl(endpoint: string): string {
+  const url = new URL(endpoint.trim() || 'https://api.openai.com/v1');
+  const path = url.pathname.replace(/\/+$/, '');
+  const completionSuffix = ['/chat/completions', '/completions', '/responses'].find((suffix) => path.endsWith(suffix));
+  const basePath = completionSuffix ? path.slice(0, -completionSuffix.length) : path;
+
+  url.pathname = basePath.endsWith('/models') ? basePath : `${basePath}/models`;
+  url.hash = '';
+  return url.toString();
+}
+
+function modelId(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (!value || typeof value !== 'object') return '';
+  const record = value as Record<string, unknown>;
+  const candidate = record.id ?? record.model ?? record.name;
+  return typeof candidate === 'string' ? candidate.trim() : '';
+}
+
+export function parseOpenAICompatibleModelList(payload: unknown): string[] {
+  let candidates: unknown;
+  if (Array.isArray(payload)) {
+    candidates = payload;
+  } else if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    candidates = Array.isArray(record.data) ? record.data : record.models;
+  }
+
+  if (!Array.isArray(candidates)) {
+    throw new OpenAICompatibleModelListError('The endpoint returned an invalid model list.', 'model_list_invalid_response');
+  }
+
+  return [...new Set(candidates.map(modelId).filter(Boolean))].sort((left, right) => left.localeCompare(right, 'en', { numeric: true }));
+}
+
+export async function fetchOpenAICompatibleModels(
+  input: OpenAICompatibleModelListInput,
+  fetchImpl: ProviderFetch = fetch,
+  signal?: AbortSignal
+): Promise<string[]> {
+  const apiKey = input.apiKey?.trim();
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  const response = await fetchImpl(openAICompatibleModelsUrl(input.endpoint), {
+    method: 'GET',
+    headers,
+    signal
+  });
+
+  if (!response.ok) {
+    const message = await readProviderError(response);
+    const code =
+      response.status === 401 || response.status === 403
+        ? 'model_list_unauthorized'
+        : response.status === 404 || response.status === 405
+          ? 'model_list_not_supported'
+          : 'model_list_provider_error';
+    throw new OpenAICompatibleModelListError(message, code, response.status);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new OpenAICompatibleModelListError('The endpoint did not return valid JSON.', 'model_list_invalid_response', response.status);
+  }
+
+  return parseOpenAICompatibleModelList(payload);
 }
 
 function openAIContentText(content: unknown): string {

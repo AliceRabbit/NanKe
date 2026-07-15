@@ -63,7 +63,7 @@
 <style>
   :global(.drawer-shell-overlay) {
     position: fixed;
-    inset: 0;
+    inset: 0 0 0 72px;
     z-index: 90;
     background: var(--nanke-overlay);
     backdrop-filter: blur(3px);
@@ -190,7 +190,7 @@
 
   @media (max-width: 860px) {
     :global(.drawer-shell-overlay) {
-      bottom: 68px;
+      inset: 0 0 68px;
     }
 
     :global(.drawer-shell),

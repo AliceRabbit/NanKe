@@ -4,9 +4,12 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
+  optimizeDeps: {
+    entries: ['src/routes/**/*.svelte', 'src/lib/ui/components/**/*.svelte', 'src/lib/ui/features/**/*.svelte']
+  },
   server: {
     warmup: {
-      clientFiles: ['./src/routes/+layout.svelte', './src/routes/+page.svelte'],
+      clientFiles: ['./src/routes/**/*.svelte', './src/lib/ui/components/**/*.svelte', './src/lib/ui/features/**/*.svelte'],
       ssrFiles: ['./src/routes/+layout.svelte', './src/routes/+page.server.ts', './src/routes/+page.svelte']
     }
   },

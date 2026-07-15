@@ -9,6 +9,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
+    "start": "vite preview --host 127.0.0.1 --port 5173 --open",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "test:unit": "vitest run tests/core tests/compat tests/providers",

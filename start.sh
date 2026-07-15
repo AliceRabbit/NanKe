@@ -26,5 +26,8 @@ fi
 echo "[NanKe] Installing dependencies..."
 pnpm install --frozen-lockfile
 
+echo "[NanKe] Building production application..."
+pnpm build
+
 echo "[NanKe] Starting http://127.0.0.1:5173 ..."
-exec pnpm dev --host 127.0.0.1 --open
+exec pnpm start

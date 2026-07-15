@@ -39,8 +39,16 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo [NanKe] Building production application...
+call pnpm build
+if errorlevel 1 (
+    echo [NanKe] Production build failed.
+    pause
+    exit /b 1
+)
+
 echo [NanKe] Starting http://127.0.0.1:5173 ...
-call pnpm dev --host 127.0.0.1 --open
+call pnpm start
 
 if errorlevel 1 (
     echo [NanKe] The server stopped unexpectedly.

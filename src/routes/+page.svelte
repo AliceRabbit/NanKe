@@ -323,6 +323,7 @@
   let ToolboxDrawerComponent: ToolboxDrawerComponent | null = null;
   let ImportDrawerComponent: ImportDrawerComponent | null = null;
   let InspectorDrawerComponent: InspectorDrawerComponent | null = null;
+  let drawerComponentsPreloadPromise: Promise<void> | null = null;
   let messages: ChatMessage[] = [];
   let messagesContainer: HTMLDivElement | null = null;
   let messagesScrollFrame: number | null = null;
@@ -375,9 +376,17 @@
     const handleAvatarViewerResize = () => {
       if (zoomedAvatar) clampCurrentAvatarViewer();
     };
+    const preloadDrawers = () => {
+      void preloadDrawerComponents();
+    };
+    const drawerPreloadIdleId =
+      typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback(preloadDrawers, { timeout: 1_500 }) : null;
+    const drawerPreloadTimer = drawerPreloadIdleId === null ? window.setTimeout(preloadDrawers, 400) : null;
     mediaQuery.addEventListener('change', handleThemePreferenceChange);
     window.addEventListener('resize', handleAvatarViewerResize);
     return () => {
+      if (drawerPreloadIdleId !== null) window.cancelIdleCallback(drawerPreloadIdleId);
+      if (drawerPreloadTimer !== null) window.clearTimeout(drawerPreloadTimer);
       mediaQuery.removeEventListener('change', handleThemePreferenceChange);
       window.removeEventListener('resize', handleAvatarViewerResize);
       if (messagesScrollFrame !== null) cancelAnimationFrame(messagesScrollFrame);
@@ -1145,6 +1154,23 @@
     if (!InspectorDrawerComponent) {
       InspectorDrawerComponent = (await import('$lib/ui/features/inspector/InspectorDrawer.svelte')).default as unknown as InspectorDrawerComponent;
     }
+  }
+
+  function preloadDrawerComponents(): Promise<void> {
+    if (!drawerComponentsPreloadPromise) {
+      drawerComponentsPreloadPromise = Promise.allSettled([
+        ensureCharacterDrawer(),
+        ensureWorldBookDrawer(),
+        ensureProfileDrawer(),
+        ensurePersonaDrawer(),
+        ensureSettingsDrawer(),
+        ensureToolboxDrawer(),
+        ensureImportDrawer(),
+        ensureInspectorDrawer(),
+        ensureConversationTreeDock()
+      ]).then(() => undefined);
+    }
+    return drawerComponentsPreloadPromise;
   }
 
   async function loadConversationTree(id: string) {

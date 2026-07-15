@@ -2,10 +2,12 @@ import { json } from '@sveltejs/kit';
 import { createCharacter } from '$lib/schemas/character';
 import { createRequestContext } from '$lib/server/request-context';
 import { errorResponse } from '$lib/server/errors';
+import { characterSummary } from '$lib/server/initial-data-summary';
 
-export function GET() {
+export function GET({ url }) {
   try {
-    return json(createRequestContext().characters.list());
+    const characters = createRequestContext().characters.list();
+    return json(url.searchParams.get('summary') === 'true' ? characters.map(characterSummary) : characters);
   } catch (error) {
     return errorResponse(error);
   }

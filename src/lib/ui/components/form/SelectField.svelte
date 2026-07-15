@@ -1,6 +1,6 @@
 <script lang="ts">
   import { cn } from '$lib/ui/cn';
-  import { ChevronDown } from '@lucide/svelte';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import type { Snippet } from 'svelte';
   import type { HTMLSelectAttributes } from 'svelte/elements';
 

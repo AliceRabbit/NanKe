@@ -3,10 +3,12 @@ import { normalizeWorldBookBindings } from '$lib/schemas/character';
 import { createWorldBook } from '$lib/schemas/worldbook';
 import { createRequestContext } from '$lib/server/request-context';
 import { AppError, errorResponse } from '$lib/server/errors';
+import { worldBookSummary } from '$lib/server/initial-data-summary';
 
-export function GET() {
+export function GET({ url }) {
   try {
-    return json(createRequestContext().worldBooks.list());
+    const worldBooks = createRequestContext().worldBooks.list();
+    return json(url.searchParams.get('summary') === 'true' ? worldBooks.map(worldBookSummary) : worldBooks);
   } catch (error) {
     return errorResponse(error);
   }

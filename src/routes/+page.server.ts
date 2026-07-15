@@ -1,5 +1,6 @@
 import { createRequestContext } from '$lib/server/request-context';
 import { profileSummary } from '$lib/server/profile-summary';
+import { characterSummary, worldBookSummary } from '$lib/server/initial-data-summary';
 import type { PageServerLoad } from './$types';
 
 const conversationPageSize = 80;
@@ -19,10 +20,12 @@ export const load = (() => {
     initial: {
       profiles: context.profiles.list().map(profileSummary),
       profilesHydrated: false,
-      characters: context.characters.list(),
+      characters: context.characters.list().map(characterSummary),
+      charactersHydrated: false,
       personas: context.personas.list(),
       personaCharacterBindings: context.personas.listCharacterBindings(),
-      worldBooks: context.worldBooks.list(),
+      worldBooks: context.worldBooks.list().map(worldBookSummary),
+      worldBooksHydrated: false,
       globalRegex: context.toolbox.getGlobalRegex(),
       conversations,
       conversationCursor: conversationCursorFrom(conversations),

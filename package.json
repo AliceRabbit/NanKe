@@ -12,12 +12,14 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "test:unit": "vitest run tests/core tests/compat tests/providers",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:update": "playwright test --update-snapshots"
   },
   "dependencies": {
     "@lucide/svelte": "^1.17.0",
     "@xyflow/svelte": "^1.6.0",
     "better-sqlite3": "^12.10.0",
+    "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
     "dompurify": "^3.4.7",
     "drizzle-orm": "^0.45.2",

@@ -666,6 +666,10 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.profile-workspace .mini-segment.levels {
+  grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
+}
+
 .profile-workspace .mini-segment.seven {
   grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
 }

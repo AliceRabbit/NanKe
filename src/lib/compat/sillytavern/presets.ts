@@ -12,6 +12,7 @@ import {
   type SamplerProfile
 } from '$lib/schemas/profile';
 import { regexScriptSchema, type RegexPlacement, type RegexScript } from '$lib/schemas/regex';
+import { DEFAULT_GEMINI_MODEL } from '$lib/providers/gemini-thinking';
 import { createCompatReport } from './report';
 
 type PresetKind = 'openai' | 'context' | 'instruct' | 'unknown';
@@ -298,7 +299,7 @@ function providerFromOpenAiPreset(preset: RecordValue, report?: ReturnType<typeo
     }
     return {
       type: 'gemini',
-      model: model ?? 'gemini-2.5-pro',
+      model: model ?? DEFAULT_GEMINI_MODEL,
       ...(source === 'vertexai'
         ? {
             vertex:

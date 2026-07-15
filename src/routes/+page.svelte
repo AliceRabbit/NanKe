@@ -27,6 +27,7 @@
   import type { Conversation as SchemaConversation } from '$lib/schemas/conversation';
   import type { NankeMessage } from '$lib/schemas/message';
   import type { GenerationProfile, PromptSlot } from '$lib/schemas/profile';
+  import { DEFAULT_GEMINI_MODEL, coerceGeminiThinkingLevel } from '$lib/providers/gemini-thinking';
   import type { RegexProfile, RegexScript } from '$lib/schemas/regex';
   import type { UserPersona } from '$lib/schemas/user-persona';
   import type { WorldBook, WorldBookEntry } from '$lib/schemas/worldbook';
@@ -520,7 +521,6 @@
   let profileDraftOpenAIReasoningEffort: OpenAIReasoningEffort = 'default';
   let profileDraftGeminiIncludeThoughts = false;
   let profileDraftGeminiThinkingMode: GeminiThinkingMode = 'default';
-  let profileDraftGeminiThinkingBudget = '';
   let profileDraftGeminiThinkingLevel: GeminiThinkingLevel = 'medium';
   let profileDraftSquashSystemMessages = false;
   let activeSamplerFields = openAIStrictSamplerFields;
@@ -558,7 +558,6 @@
   $: maxTokensFieldLabel =
     profileDraftProviderType === 'gemini' ? t('profile.maxOutput') : profileDraftOpenAICompatibility === 'extended' ? t('profile.maxTokens') : t('profile.maxCompletion');
   $: candidateCountFieldLabel = profileDraftProviderType === 'gemini' ? t('profile.candidates') : 'N';
-  $: draftModelUsesGeminiThinkingLevel = profileDraftProviderType === 'gemini' && /^gemini-3(?:\.|-|$)/i.test(profileDraftProviderModel.trim());
   $: showAdvancedSampler =
     samplerVisible.topA ||
     samplerVisible.minP ||
@@ -1951,12 +1950,6 @@
     return positiveDraftNumber(value);
   }
 
-  function nonNegativeIntegerDraft(value: string) {
-    const parsed = optionalNumber(value);
-    if (parsed === undefined || !Number.isInteger(parsed) || parsed < 0) return undefined;
-    return parsed;
-  }
-
   function clonePromptSlots(slots: PromptSlot[] | undefined): PromptSlot[] {
     return structuredClone(slots ?? []);
   }
@@ -1992,7 +1985,6 @@
       profileDraftOpenAIReasoningEffort = 'default';
       profileDraftGeminiIncludeThoughts = false;
       profileDraftGeminiThinkingMode = 'default';
-      profileDraftGeminiThinkingBudget = '';
       profileDraftGeminiThinkingLevel = 'medium';
       profileDraftSquashSystemMessages = false;
       profileDraftRegexEnabled = true;
@@ -2034,10 +2026,10 @@
     profileDraftStop = (sampler.stop ?? []).join('\n');
     profileDraftStream = profile.request?.stream !== false;
     profileDraftOpenAIReasoningEffort = profile.thinking?.openai?.effort ?? 'default';
-    profileDraftGeminiIncludeThoughts = profile.thinking?.gemini?.includeThoughts === true;
-    profileDraftGeminiThinkingMode = profile.thinking?.gemini?.mode ?? 'default';
-    profileDraftGeminiThinkingBudget = numberToDraft(profile.thinking?.gemini?.budget);
-    profileDraftGeminiThinkingLevel = profile.thinking?.gemini?.level ?? 'medium';
+    const geminiThinking = profile.thinking?.gemini;
+    profileDraftGeminiIncludeThoughts = geminiThinking?.includeThoughts === true;
+    profileDraftGeminiThinkingMode = geminiThinking?.mode ?? 'default';
+    profileDraftGeminiThinkingLevel = geminiThinking?.level ?? 'medium';
     profileDraftSquashSystemMessages = profile.prompt?.squashSystemMessages ?? false;
     profileDraftRegexEnabled = profile.regex?.enabled !== false;
     profileDraftRegexScripts = structuredClone(profile.regex?.scripts ?? []);
@@ -2092,7 +2084,7 @@
   }
 
   function profileDraftProvider(base: Profile): Profile['provider'] {
-    const model = profileDraftProviderModel.trim() || base.provider.model;
+    const requestedModel = profileDraftProviderModel.trim();
     const endpoint = profileDraftProviderEndpoint.trim();
     const apiKey = profileDraftApiKey.trim();
 
@@ -2113,7 +2105,7 @@
               };
       return {
         type: 'gemini',
-        model: model || 'gemini-2.5-pro',
+        model: requestedModel || (base.provider.type === 'gemini' ? base.provider.model : DEFAULT_GEMINI_MODEL),
         ...(apiKey ? { apiKey } : {}),
         ...(vertex ? { vertex } : {})
       };
@@ -2121,7 +2113,7 @@
 
     return {
       type: 'openai-compatible',
-      model: model || 'gpt-4o-mini',
+      model: requestedModel || (base.provider.type === 'openai-compatible' ? base.provider.model : 'gpt-4o-mini'),
       endpoint: endpoint || 'https://api.openai.com/v1',
       ...(apiKey ? { apiKey } : {}),
       compatibility: profileDraftOpenAICompatibility
@@ -2129,7 +2121,7 @@
   }
 
   function profileDraftThinking(): Profile['thinking'] {
-    const budget = nonNegativeIntegerDraft(profileDraftGeminiThinkingBudget);
+    const geminiModel = profileDraftProviderModel.trim() || DEFAULT_GEMINI_MODEL;
     return {
       openai: {
         effort: profileDraftOpenAIReasoningEffort
@@ -2137,8 +2129,7 @@
       gemini: {
         includeThoughts: profileDraftGeminiIncludeThoughts,
         mode: profileDraftGeminiThinkingMode,
-        ...(budget !== undefined ? { budget } : {}),
-        level: profileDraftGeminiThinkingLevel
+        level: coerceGeminiThinkingLevel(geminiModel, profileDraftGeminiThinkingLevel)
       }
     };
   }
@@ -2148,13 +2139,13 @@
     profileDraftProviderType = value;
     if (value === 'gemini') {
       profileDraftProviderEndpoint = '';
-      profileDraftProviderModel ||= 'gemini-2.5-pro';
+      profileDraftProviderModel = DEFAULT_GEMINI_MODEL;
       profileDraftVertexLocation ||= 'us-central1';
       return;
     }
 
     profileDraftProviderEndpoint = 'https://api.openai.com/v1';
-    profileDraftProviderModel ||= 'gpt-4o-mini';
+    profileDraftProviderModel = 'gpt-4o-mini';
     profileDraftVertexEnabled = false;
     profileDraftVertexMode = 'express';
     profileDraftVertexProjectId = '';
@@ -4709,7 +4700,6 @@
             bind:profileDraftOpenAIReasoningEffort
             bind:profileDraftGeminiIncludeThoughts
             bind:profileDraftGeminiThinkingMode
-            bind:profileDraftGeminiThinkingBudget
             bind:profileDraftGeminiThinkingLevel
             bind:profileDraftSquashSystemMessages
             bind:profileDraftRegexEnabled
@@ -4718,7 +4708,6 @@
             {samplerPanelHeading}
             {maxTokensFieldLabel}
             {candidateCountFieldLabel}
-            {draftModelUsesGeminiThinkingLevel}
             {showAdvancedSampler}
             {maxContextTokens}
             {maxOutputTokenRange}

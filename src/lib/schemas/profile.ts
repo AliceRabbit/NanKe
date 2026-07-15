@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { geminiThinkingLevelFromBudget } from '$lib/providers/gemini-thinking';
 import { regexProfileSchema } from './regex';
 
 export const promptSlotSourceSchema = z.enum([
@@ -132,12 +133,23 @@ export const thinkingProfileSchema = z
       })
       .default(() => ({ effort: 'default' as const })),
     gemini: z
-      .object({
-        includeThoughts: z.boolean().default(false),
-        mode: z.enum(['default', 'off', 'budget', 'level']).default('default'),
-        budget: z.number().int().min(0).optional(),
-        level: z.enum(['minimal', 'low', 'medium', 'high']).default('medium')
-      })
+      .preprocess(
+        (value) => {
+          if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+          const record = value as Record<string, unknown>;
+          if (record.mode === 'off') return { ...record, mode: 'level', level: 'minimal' };
+          if (record.mode === 'budget') {
+            const budget = typeof record.budget === 'number' ? record.budget : undefined;
+            return { ...record, mode: 'level', level: geminiThinkingLevelFromBudget(budget) };
+          }
+          return value;
+        },
+        z.object({
+          includeThoughts: z.boolean().default(false),
+          mode: z.enum(['default', 'level']).default('default'),
+          level: z.enum(['minimal', 'low', 'medium', 'high']).default('medium')
+        })
+      )
       .default(() => ({ includeThoughts: false, mode: 'default' as const, level: 'medium' as const }))
   })
   .default(() => ({

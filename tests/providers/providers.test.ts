@@ -136,17 +136,18 @@ describe('provider request mapping', () => {
     expect(params.config?.maxOutputTokens).toBe(512);
   });
 
-  it('maps Gemini thinking budgets into SDK config', () => {
+  it('migrates a legacy Gemini 2.5 budget and maps the canonical level back in the adapter', () => {
     const profile = createDefaultGenerationProfile({
       provider: { type: 'gemini', model: 'gemini-2.5-pro' },
       thinking: {
         openai: { effort: 'default' },
         gemini: { includeThoughts: true, mode: 'budget', budget: 1024, level: 'medium' }
-      }
+      } as never
     });
 
     const params = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile);
 
+    expect(profile.thinking.gemini).toEqual({ includeThoughts: true, mode: 'level', level: 'low' });
     expect(params.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingBudget: 1024 });
   });
 
@@ -162,6 +163,55 @@ describe('provider request mapping', () => {
     const params = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile);
 
     expect(params.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: ThinkingLevel.LOW });
+  });
+
+  it('migrates legacy numeric budgets to thinking levels for Gemini 3.x', () => {
+    const profile = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'publishers/google/models/gemini-3.5-flash' },
+      thinking: {
+        openai: { effort: 'default' },
+        gemini: { includeThoughts: true, mode: 'budget', budget: 7500, level: 'low' }
+      } as never
+    });
+
+    const params = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile);
+
+    expect(params.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: ThinkingLevel.MEDIUM });
+    expect(params.config?.thinkingConfig).not.toHaveProperty('thinkingBudget');
+  });
+
+  it.each([
+    ['minimal', 1024],
+    ['low', 1024],
+    ['medium', 8192],
+    ['high', 24576]
+  ] as const)('maps Gemini 2.5 %s strength to the recommended %i-token budget', (level, thinkingBudget) => {
+    const profile = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'gemini-2.5-pro' },
+      thinking: {
+        openai: { effort: 'default' },
+        gemini: { includeThoughts: false, mode: 'level', level }
+      }
+    });
+
+    const params = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile);
+
+    expect(params.config?.thinkingConfig).toEqual({ thinkingBudget });
+    expect(params.config?.thinkingConfig).not.toHaveProperty('thinkingLevel');
+  });
+
+  it('uses the lowest supported level when a Gemini 3 Pro preset previously disabled thinking', () => {
+    const profile = createDefaultGenerationProfile({
+      provider: { type: 'gemini', model: 'gemini-3.1-pro-preview' },
+      thinking: {
+        openai: { effort: 'default' },
+        gemini: { includeThoughts: false, mode: 'off', level: 'medium' }
+      } as never
+    });
+
+    const params = buildGeminiRequest({ messages: [{ role: 'user', content: 'Hello' }], stop: [] }, profile);
+
+    expect(params.config?.thinkingConfig).toEqual({ thinkingLevel: ThinkingLevel.LOW });
   });
 
   it('filters disabled SillyTavern sampler defaults from Gemini SDK config', () => {

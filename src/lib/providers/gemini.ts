@@ -11,6 +11,11 @@ import {
 import type { GenerationProfile } from '$lib/schemas/profile';
 import type { GenerationChunk, ProviderRequest } from '$lib/schemas/provider';
 import type { ProviderAdapter } from './ProviderAdapter';
+import {
+  coerceGeminiThinkingLevel,
+  geminiModelUsesThinkingLevel,
+  geminiThinkingBudgetFromLevel
+} from './gemini-thinking';
 
 type GeminiModelsClient = {
   generateContent(params: GenerateContentParameters): Promise<GenerateContentResponse>;
@@ -44,11 +49,6 @@ function optionalInteger(value: number | undefined, options: { skipOne?: boolean
   return value;
 }
 
-function optionalNonNegativeInteger(value: number | undefined): number | undefined {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return undefined;
-  return value;
-}
-
 function geminiRole(role: string): 'user' | 'model' {
   return role === 'assistant' ? 'model' : 'user';
 }
@@ -64,10 +64,13 @@ export function buildGeminiThinkingConfig(profile: GenerationProfile): ThinkingC
   const thinking = profile.thinking?.gemini;
   if (!thinking) return undefined;
 
+  const usesThinkingLevel = geminiModelUsesThinkingLevel(profile.provider.model);
+  const thinkingLevel = thinking.mode === 'level' ? coerceGeminiThinkingLevel(profile.provider.model, thinking.level) : undefined;
+
   const config: ThinkingConfig = withDefinedValues({
     includeThoughts: thinking.includeThoughts ? true : undefined,
-    thinkingBudget: thinking.mode === 'off' ? 0 : thinking.mode === 'budget' ? optionalNonNegativeInteger(thinking.budget) : undefined,
-    thinkingLevel: thinking.mode === 'level' ? thinkingLevels[thinking.level] : undefined
+    thinkingBudget: !usesThinkingLevel && thinkingLevel ? geminiThinkingBudgetFromLevel(thinkingLevel) : undefined,
+    thinkingLevel: usesThinkingLevel && thinkingLevel ? thinkingLevels[thinkingLevel] : undefined
   });
 
   return Object.keys(config).length ? config : undefined;

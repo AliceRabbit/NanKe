@@ -25,6 +25,7 @@
   import ProfilePromptManager from './ProfilePromptManager.svelte';
   import { t } from '$lib/i18n';
   import type { GenerationProfile, PromptSlot } from '$lib/schemas/profile';
+  import { DEFAULT_GEMINI_MODEL, supportedGeminiThinkingLevels } from '$lib/providers/gemini-thinking';
   import type { RegexScript } from '$lib/schemas/regex';
   import './profile-drawer.css';
 
@@ -46,7 +47,7 @@
   const modelOptionsStorageKey = 'nanke.profile-model-options.v1';
   const defaultModelOptions: ModelOptions = {
     'openai-compatible': ['gpt-4o-mini'],
-    gemini: ['gemini-2.5-pro']
+    gemini: [DEFAULT_GEMINI_MODEL]
   };
 
   export let profiles: Profile[] = [];
@@ -87,7 +88,6 @@
   export let profileDraftOpenAIReasoningEffort: OpenAIReasoningEffort = 'default';
   export let profileDraftGeminiIncludeThoughts = false;
   export let profileDraftGeminiThinkingMode: GeminiThinkingMode = 'default';
-  export let profileDraftGeminiThinkingBudget = '';
   export let profileDraftGeminiThinkingLevel: GeminiThinkingLevel = 'medium';
   export let profileDraftSquashSystemMessages = false;
   export let profileDraftRegexEnabled = true;
@@ -96,7 +96,6 @@
   export let samplerPanelHeading = '';
   export let maxTokensFieldLabel = '';
   export let candidateCountFieldLabel = '';
-  export let draftModelUsesGeminiThinkingLevel = false;
   export let showAdvancedSampler = false;
   export let maxContextTokens = 2_000_000;
   export let maxOutputTokenRange = 65_536;
@@ -338,7 +337,7 @@
           <div class="model-picker">
             <span>{t('profile.model')}</span>
             <button class="model-picker-trigger" type="button" on:click={() => (modelPickerOpen = !modelPickerOpen)} aria-label={t('profile.model')} aria-expanded={modelPickerOpen}>
-              <span class="model-picker-value">{profileDraftProviderModel || (profileDraftProviderType === 'gemini' ? 'gemini-2.5-pro' : 'gpt-4o-mini')}</span>
+              <span class="model-picker-value">{profileDraftProviderModel || (profileDraftProviderType === 'gemini' ? DEFAULT_GEMINI_MODEL : 'gpt-4o-mini')}</span>
               <ChevronDown size={16} />
             </button>
             {#if modelPickerOpen}
@@ -480,33 +479,15 @@
               </button>
             </div>
 
-            {#if draftModelUsesGeminiThinkingLevel}
-              <div class="thinking-field">
-                <span>{t('profile.thinkingLevel')}</span>
-                <div class="mini-segment five" aria-label={t('profile.thinkingLevel')}>
-                  <button class:active={profileDraftGeminiThinkingMode === 'default'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'default')}>{geminiThinkingModeLabel('default')}</button>
-                  <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === 'minimal'} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = 'minimal'; }}>{geminiThinkingModeLabel('minimal')}</button>
-                  <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === 'low'} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = 'low'; }}>{geminiThinkingModeLabel('low')}</button>
-                  <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === 'medium'} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = 'medium'; }}>{geminiThinkingModeLabel('medium')}</button>
-                  <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === 'high'} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = 'high'; }}>{geminiThinkingModeLabel('high')}</button>
-                </div>
+            <div class="thinking-field">
+              <span>{t('profile.thinkingLevel')}</span>
+              <div class="mini-segment levels" aria-label={t('profile.thinkingLevel')}>
+                <button class:active={profileDraftGeminiThinkingMode === 'default'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'default')}>{geminiThinkingModeLabel('default')}</button>
+                {#each supportedGeminiThinkingLevels(profileDraftProviderModel) as level}
+                  <button class:active={profileDraftGeminiThinkingMode === 'level' && profileDraftGeminiThinkingLevel === level} type="button" on:click={() => { profileDraftGeminiThinkingMode = 'level'; profileDraftGeminiThinkingLevel = level; }}>{geminiThinkingModeLabel(level)}</button>
+                {/each}
               </div>
-            {:else}
-              <div class="thinking-field">
-                <span>{t('profile.thinkingBudget')}</span>
-                <div class="mini-segment three" aria-label={t('profile.thinkingBudget')}>
-                  <button class:active={profileDraftGeminiThinkingMode === 'default'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'default')}>{geminiThinkingModeLabel('default')}</button>
-                  <button class:active={profileDraftGeminiThinkingMode === 'off'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'off')}>{geminiThinkingModeLabel('off')}</button>
-                  <button class:active={profileDraftGeminiThinkingMode === 'budget'} type="button" on:click={() => (profileDraftGeminiThinkingMode = 'budget')}>{geminiThinkingModeLabel('budget')}</button>
-                </div>
-                {#if profileDraftGeminiThinkingMode === 'budget'}
-                  <span class="sampler-control-body">
-                    <RangeField min="0" max="32768" step="128" value={profileDraftGeminiThinkingBudget || '1024'} oninput={(event) => (profileDraftGeminiThinkingBudget = (event.currentTarget as HTMLInputElement).value)} />
-                    <TextField controlClass="sampler-number" value={profileDraftGeminiThinkingBudget} inputmode="numeric" placeholder="1024" oninput={(event) => (profileDraftGeminiThinkingBudget = (event.currentTarget as HTMLInputElement).value)} />
-                  </span>
-                {/if}
-              </div>
-            {/if}
+            </div>
           {/if}
         </div>
 

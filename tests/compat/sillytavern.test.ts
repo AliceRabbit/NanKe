@@ -191,4 +191,16 @@ describe('SillyTavern compat importers', () => {
     if (profile.provider.type !== 'gemini') throw new Error('Expected Gemini profile');
     expect(profile.provider.vertex).toEqual({ mode: 'express' });
   });
+
+  it('uses a level-based Gemini 3.x model when a Google preset omits its model', () => {
+    const { profile } = importSillyTavernPreset({
+      name: 'Google Preset',
+      chat_completion_source: 'google_ai_studio',
+      prompts: [],
+      prompt_order: []
+    });
+
+    expect(profile.provider).toEqual(expect.objectContaining({ type: 'gemini', model: 'gemini-3.5-flash' }));
+    expect(profile.thinking.gemini.mode).toBe('default');
+  });
 });

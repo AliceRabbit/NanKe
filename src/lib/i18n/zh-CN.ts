@@ -463,8 +463,7 @@ export const zhCN = {
   'profile.visibleThoughts': '可见思考',
   'profile.requestThoughtSummaries': '请求思考摘要',
   'profile.doNotRequestSummaries': '不请求摘要',
-  'profile.thinkingLevel': '思考等级',
-  'profile.thinkingBudget': '思考预算',
+  'profile.thinkingLevel': '思考强度',
   'profile.temperature': '温度',
   'profile.topP': 'Top P',
   'profile.topK': 'Top K',
@@ -598,8 +597,6 @@ export const zhCN = {
   'reasoning.xhigh': '极高',
 
   'thinking.default': '自动',
-  'thinking.off': '关闭',
-  'thinking.budget': '预算',
   'thinking.minimal': '极低',
   'thinking.low': '低',
   'thinking.medium': '中',

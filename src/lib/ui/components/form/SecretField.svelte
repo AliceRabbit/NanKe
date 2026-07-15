@@ -1,6 +1,8 @@
 <script lang="ts">
   import { cn } from '$lib/ui/cn';
-  import { Eye, EyeOff } from '@lucide/svelte';
+  import Eye from '@lucide/svelte/icons/eye';
+
+  import EyeOff from '@lucide/svelte/icons/eye-off';
   import type { HTMLInputAttributes } from 'svelte/elements';
 
   type Props = Omit<HTMLInputAttributes, 'class' | 'type' | 'value'> & {
@@ -48,7 +50,7 @@
       class="min-w-0 border-0 bg-transparent px-3 py-2 text-[length:var(--app-text-sm)] text-[var(--nanke-ink)] shadow-none outline-none placeholder:text-[var(--nanke-ink-subtle)] disabled:text-[var(--nanke-ink-subtle)]"
     />
     <button
-      class="grid w-10 place-items-center border-l border-[var(--nanke-border-soft)] bg-[rgb(248_250_247_/_74%)] text-[var(--nanke-ink-muted)] transition hover:bg-[var(--nanke-accent-soft)] hover:text-[var(--nanke-accent-strong)]"
+      class="grid w-10 place-items-center border-l border-[var(--nanke-border-soft)] bg-[var(--nanke-surface-muted)] text-[var(--nanke-ink-muted)] transition hover:bg-[var(--nanke-accent-soft)] hover:text-[var(--nanke-accent-strong)]"
       type="button"
       aria-label={revealLabel}
       onclick={() => (revealed = !revealed)}

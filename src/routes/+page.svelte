@@ -3,12 +3,25 @@
   import { applyRegexScripts, REGEX_PLACEMENT } from '$lib/core/regex';
   import { t } from '$lib/i18n';
   import HomeStage from '$lib/ui/features/home/HomeStage.svelte';
-  import RegexScriptsEditor from '$lib/ui/components/RegexScriptsEditor.svelte';
-  import RangeField from '$lib/ui/components/form/RangeField.svelte';
-  import SecretField from '$lib/ui/components/form/SecretField.svelte';
-  import TextareaField from '$lib/ui/components/form/TextareaField.svelte';
-  import TextField from '$lib/ui/components/form/TextField.svelte';
+  import ConfirmDialog from '$lib/ui/components/ConfirmDialog.svelte';
+  import DrawerShell from '$lib/ui/components/DrawerShell.svelte';
+  import RenameDialog from '$lib/ui/components/RenameDialog.svelte';
+  import StatusBadge from '$lib/ui/components/StatusBadge.svelte';
+  import ToastRegion from '$lib/ui/components/ToastRegion.svelte';
+  import ChatComposer from '$lib/ui/features/chat/ChatComposer.svelte';
+  import NavigationRail from '$lib/ui/components/NavigationRail.svelte';
   import { renderMessageMarkdown } from '$lib/ui/markdown';
+  import { appStatus, statusToToast, type AppStatus, type AppToast, type StatusKind } from '$lib/ui/state/status';
+  import {
+    applyAppSettingsToDocument,
+    defaultAppSettings,
+    persistAppSettings,
+    readAppSettings,
+    serializeAppSettingsVariables,
+    settingsPreviewAvatarUrl,
+    type AppSettings
+  } from '$lib/ui/features/settings/app-settings';
+  import '$lib/ui/styles/app-shell.css';
   import type { Component } from 'svelte';
   import type { ConversationTreeNode, ConversationTreeSummary } from '$lib/ui/features/conversation-tree/types';
   import type { Character } from '$lib/schemas/character';
@@ -19,55 +32,55 @@
   import type { UserPersona } from '$lib/schemas/user-persona';
   import type { WorldBook, WorldBookEntry } from '$lib/schemas/worldbook';
   import type { PageData } from './$types';
-  import {
-    Archive,
-    ArchiveRestore,
-    ArrowDown,
-    ArrowUp,
-    Bot,
-    BookOpen,
-    ChevronDown,
-    ChevronLeft,
-    ChevronRight,
-    ClipboardList,
-    CircleStop,
-    CornerDownRight,
-    Copy,
-    Download,
-    Eraser,
-    FileInput,
-    GitBranch,
-    GripHorizontal,
-    House,
-    Image,
-    Link2,
-    MessageCircle,
-    MessageSquare,
-    Minus,
-    Pencil,
-    Plus,
-    Power,
-    PowerOff,
-    RefreshCw,
-    RotateCcw,
-    Search,
-    Send,
-    Save,
-    Settings2,
-    SlidersHorizontal,
-    Star,
-    Trash2,
-    Type,
-    Unlink,
-    Upload,
-    UserRound,
-    Wrench,
-    SquarePen,
-    X,
-    Sun,
-  Moon,
-  Monitor,
-} from '@lucide/svelte';
+  import Archive from '@lucide/svelte/icons/archive';
+
+  import ArchiveRestore from '@lucide/svelte/icons/archive-restore';
+
+  import ArrowDown from '@lucide/svelte/icons/arrow-down';
+
+  import Bot from '@lucide/svelte/icons/bot';
+
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
+
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+
+  import Copy from '@lucide/svelte/icons/copy';
+
+  import Download from '@lucide/svelte/icons/download';
+
+  import GitBranch from '@lucide/svelte/icons/git-branch';
+
+  import GripHorizontal from '@lucide/svelte/icons/grip-horizontal';
+
+  import MessageCircle from '@lucide/svelte/icons/message-circle';
+
+  import MessageSquare from '@lucide/svelte/icons/message-square';
+
+  import Minus from '@lucide/svelte/icons/minus';
+
+  import Pencil from '@lucide/svelte/icons/pencil';
+
+  import Plus from '@lucide/svelte/icons/plus';
+
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+
+  import Search from '@lucide/svelte/icons/search';
+
+  import Save from '@lucide/svelte/icons/save';
+
+  import Settings2 from '@lucide/svelte/icons/settings-2';
+
+  import Trash2 from '@lucide/svelte/icons/trash-2';
+
+  import UserRound from '@lucide/svelte/icons/user-round';
+
+  import SquarePen from '@lucide/svelte/icons/square-pen';
+
+  import X from '@lucide/svelte/icons/x';
 
   export let data: PageData;
 
@@ -140,22 +153,15 @@
     removedCharacterBindings: number;
     removedEmbeddedCharacterBooks: number;
   };
-  type AppFontFamily = 'system' | 'lxgw-wenkai' | 'noto-sans-sc' | 'noto-serif-sc' | 'source-han-sans' | 'source-han-serif' | 'serif' | 'mono';
-  type AppAvatarShape = 'square' | 'rectangle' | 'circle';
-  type AppSettings = {
-    fontFamily: AppFontFamily;
-    chatFontFamily: AppFontFamily;
-    fontWeight: number;
-    uiFontSize: number;
-    chatFontSize: number;
-    chatBubbleWidth: number;
-    avatarShape: AppAvatarShape;
-  };
   type MessageDeleteMode = 'node' | 'subtree';
   type PendingMessageDelete = {
     conversationId: string;
     nodeId: string;
     label: string;
+  };
+  type PendingWorldBookDelete = {
+    worldBook: WorldBook;
+    boundCount: number;
   };
   type SamplerField = Exclude<keyof NonNullable<Profile['sampler']>, 'stop'>;
   type ConversationTreeDockProps = {
@@ -170,7 +176,14 @@
     onDeleteNode?: (node: ConversationTreeNode) => void | Promise<void>;
   };
   type ConversationTreeDockComponent = Component<ConversationTreeDockProps>;
-  type ProfileDrawerComponent = Component<Record<string, unknown>, Record<string, never>, string>;
+  type CharacterDrawerComponent = (typeof import('$lib/ui/features/characters/CharacterDrawer.svelte'))['default'];
+  type WorldBookDrawerComponent = (typeof import('$lib/ui/features/worldbooks/WorldBookDrawer.svelte'))['default'];
+  type ProfileDrawerComponent = (typeof import('$lib/ui/features/profiles/ProfileDrawer.svelte'))['default'];
+  type PersonaDrawerComponent = (typeof import('$lib/ui/features/personas/PersonaDrawer.svelte'))['default'];
+  type SettingsDrawerComponent = (typeof import('$lib/ui/features/settings/SettingsDrawer.svelte'))['default'];
+  type ToolboxDrawerComponent = (typeof import('$lib/ui/features/toolbox/ToolboxDrawer.svelte'))['default'];
+  type ImportDrawerComponent = (typeof import('$lib/ui/features/import/ImportDrawer.svelte'))['default'];
+  type InspectorDrawerComponent = (typeof import('$lib/ui/features/inspector/InspectorDrawer.svelte'))['default'];
 
   const promptSources: PromptSlotSource[] = [
     'system',
@@ -200,14 +213,6 @@
     { value: 'title-desc', label: t('worldbook.sort.titleDesc') },
     { value: 'depth-asc', label: t('worldbook.sort.depthAsc') },
     { value: 'probability-desc', label: t('worldbook.sort.triggerDesc') }
-  ];
-  const characterSortModes: Array<{ value: CharacterSortMode; label: string }> = [
-    { value: 'favorite', label: t('sort.favorites') },
-    { value: 'name-asc', label: t('sort.nameAsc') },
-    { value: 'name-desc', label: t('sort.nameDesc') },
-    { value: 'newest', label: t('sort.newest') },
-    { value: 'oldest', label: t('sort.oldest') },
-    { value: 'tokens-desc', label: t('sort.mostTokens') }
   ];
   const importKindsByScope: Record<ImportScope, ImportKind[]> = {
     character: ['character-card-png', 'character-card-json'],
@@ -261,64 +266,7 @@
     'seed',
     'n'
   ];
-  const appSettingsStorageKey = 'nanke.interface-settings.v1';
   const conversationGroupStateStorageKey = 'nanke.conversation-groups.v1';
-  const appAvatarShapes: Array<{ value: AppAvatarShape; label: string; description: string }> = [
-    { value: 'square', label: t('avatarShape.square'), description: t('avatarShape.squareDescription') },
-    { value: 'rectangle', label: t('avatarShape.rectangle'), description: t('avatarShape.rectangleDescription') },
-    { value: 'circle', label: t('avatarShape.circle'), description: t('avatarShape.circleDescription') }
-  ];
-  const settingsPreviewAvatarUrl = '/brand/settings-preview-ant.png';
-  const appFontFamilies: Array<{ value: AppFontFamily; label: string; description: string; css: string }> = [
-    {
-      value: 'system',
-      label: t('font.system'),
-      description: t('font.systemDescription'),
-      css: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-    },
-    {
-      value: 'lxgw-wenkai',
-      label: '霞鹜文楷',
-      description: t('font.lxgwWenkaiDescription'),
-      css: '"LXGW WenKai Screen", "LXGW WenKai", "霞鹜文楷", "Kaiti SC", KaiTi, serif'
-    },
-    {
-      value: 'noto-sans-sc',
-      label: 'Noto Sans SC',
-      description: t('font.notoSansScDescription'),
-      css: '"Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "Source Han Sans CN", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
-    },
-    {
-      value: 'noto-serif-sc',
-      label: 'Noto Serif SC',
-      description: t('font.notoSerifScDescription'),
-      css: '"Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "Source Han Serif CN", "Songti SC", serif'
-    },
-    {
-      value: 'source-han-sans',
-      label: '思源黑体',
-      description: t('font.sourceHanSansDescription'),
-      css: '"Source Han Sans SC", "Source Han Sans CN", "Noto Sans CJK SC", "思源黑体", "Microsoft YaHei", sans-serif'
-    },
-    {
-      value: 'source-han-serif',
-      label: '思源宋体',
-      description: t('font.sourceHanSerifDescription'),
-      css: '"Source Han Serif SC", "Source Han Serif CN", "Noto Serif CJK SC", "思源宋体", "Songti SC", serif'
-    },
-    {
-      value: 'serif',
-      label: t('font.serif'),
-      description: t('font.serifDescription'),
-      css: 'Georgia, "Times New Roman", ui-serif, serif'
-    },
-    {
-      value: 'mono',
-      label: t('font.mono'),
-      description: t('font.monoDescription'),
-      css: '"Cascadia Code", "SFMono-Regular", Consolas, ui-monospace, monospace'
-    }
-  ];
 
   const initialData = data.initial;
 
@@ -326,9 +274,13 @@
   let profilesHydrated = initialData.profilesHydrated;
   let profilesLoadPromise: Promise<void> | null = null;
   let characters: Character[] = initialData.characters;
+  let charactersHydrated = initialData.charactersHydrated;
+  let charactersLoadPromise: Promise<void> | null = null;
   let personas: UserPersona[] = initialData.personas;
   let personaCharacterBindings: PersonaCharacterBinding[] = initialData.personaCharacterBindings;
   let worldBooks: WorldBook[] = initialData.worldBooks;
+  let worldBooksHydrated = initialData.worldBooksHydrated;
+  let worldBooksLoadPromise: Promise<void> | null = null;
   let globalRegex: RegexProfile = initialData.globalRegex;
   let conversations: Conversation[] = initialData.conversations;
   let conversationQuery = '';
@@ -351,15 +303,36 @@
   let conversationTreeSelectedNodeId = '';
   let conversationTreeActionStatus = '';
   let ConversationTreeDockComponent: ConversationTreeDockComponent | null = null;
+  let CharacterDrawerComponent: CharacterDrawerComponent | null = null;
+  let WorldBookDrawerComponent: WorldBookDrawerComponent | null = null;
   let ProfileDrawerComponent: ProfileDrawerComponent | null = null;
+  let PersonaDrawerComponent: PersonaDrawerComponent | null = null;
+  let SettingsDrawerComponent: SettingsDrawerComponent | null = null;
+  let ToolboxDrawerComponent: ToolboxDrawerComponent | null = null;
+  let ImportDrawerComponent: ImportDrawerComponent | null = null;
+  let InspectorDrawerComponent: InspectorDrawerComponent | null = null;
   let messages: ChatMessage[] = [];
   let messagesContainer: HTMLDivElement | null = null;
   let messagesScrollFrame: number | null = null;
   let input = '';
-  let composerToolsOpen = false;
-  let status = t('status.ready');
+  let status: AppStatus = appStatus.idle(t('status.ready'));
+  let toasts: AppToast[] = [];
+
+  function setStatus(kind: StatusKind, message: string, notify = kind === 'error' || kind === 'warning' || kind === 'success') {
+    const next = appStatus[kind](message);
+    status = next;
+    if (notify) {
+      toasts = [...toasts, statusToToast(next)].slice(-4);
+    }
+  }
+
+  function dismissToast(id: string) {
+    toasts = toasts.filter((toast) => toast.id !== id);
+  }
 
   let theme: 'light' | 'dark' | 'system' = 'system';
+  let mobileNavOpen = false;
+  let appHydrated = false;
 
   function applyTheme(t: 'light' | 'dark' | 'system') {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -377,6 +350,7 @@
   }
 
   onMount(() => {
+    appHydrated = true;
     const saved = localStorage.getItem('nanke-theme') as 'light' | 'dark' | 'system' | null;
     if (saved && ['light', 'dark', 'system'].includes(saved)) {
       theme = saved;
@@ -410,12 +384,19 @@
   let pendingConversationDelete: Conversation | null = null;
   let deletingConversation = false;
   let conversationDeleteStatus = '';
+  let pendingConversationRename: Conversation | null = null;
+  let renamingConversation = false;
+  let conversationRenameStatus = '';
   let pendingCharacterDelete: Character | null = null;
   let deletingCharacter = false;
   let characterDeleteStatus = '';
   let pendingProfileDelete: Profile | null = null;
   let deletingProfile = false;
   let profileDeleteStatus = '';
+  let pendingPersonaDelete: UserPersona | null = null;
+  let personaDeleteStatus = '';
+  let pendingWorldBookDelete: PendingWorldBookDelete | null = null;
+  let worldBookDeleteStatus = '';
   let importKind: ImportKind = 'preset';
   let importScope: ImportScope = 'profile';
   let importName = '';
@@ -477,6 +458,8 @@
   let worldBookDraftId = '';
   let worldBookDraftName = '';
   let worldBookDraftEntries: WorldBookEntry[] = [];
+  let filteredWorldBookEntries: WorldBookEntry[] = [];
+  let activeWorldBookEntry: WorldBookEntry | undefined = undefined;
   let activeWorldBookEntryId = '';
   let worldBookEntryQuery = '';
   let worldBookSortMode = 'order-desc';
@@ -573,8 +556,14 @@
   $: worldBookBindingCharacter = characters.find((character) => character.id === worldBookBindingCharacterId);
   $: worldBookBoundCharacters = characters.filter((character) => (activeWorldBook ? isWorldBookBoundToCharacter(character, activeWorldBook.id) : false));
   $: worldBookEnabledCharacters = characters.filter((character) => (activeWorldBook ? isWorldBookEnabledForCharacter(character, activeWorldBook.id) : false));
-  $: filteredWorldBookEntries = filterWorldBookEntries(worldBookDraftEntries, worldBookEntryQuery, worldBookSortMode);
-  $: activeWorldBookEntry = worldBookDraftEntries.find((entry) => entry.id === activeWorldBookEntryId);
+  $: {
+    if (activeWorldBookId !== worldBookDraftId) loadWorldBookDraft(activeWorldBook);
+    if (worldBookDraftEntries.length && !worldBookDraftEntries.some((entry) => entry.id === activeWorldBookEntryId)) {
+      activeWorldBookEntryId = worldBookDraftEntries[0].id;
+    }
+    filteredWorldBookEntries = filterWorldBookEntries(worldBookDraftEntries, worldBookEntryQuery, worldBookSortMode);
+    activeWorldBookEntry = worldBookDraftEntries.find((entry) => entry.id === activeWorldBookEntryId);
+  }
   $: activePersona = personas.find((persona) => persona.id === activePersonaId);
   $: filteredPersonas = filterPersonas(personas, personaQuery);
   $: activeCharacterPersonaBinding = activeCharacter
@@ -618,13 +607,15 @@
                     : activeDrawer === 'settings'
                       ? t('drawer.settings')
                       : '';
-  $: drawerIsRight = activeDrawer === 'import' || activeDrawer === 'inspector' || activeDrawer === 'settings';
+  $: if (activeDrawer === 'characters') void Promise.all([ensureCharactersLoaded(), ensureCharacterDrawer()]);
+  $: if (activeDrawer === 'worldbooks') void Promise.all([ensureCharactersLoaded(), ensureWorldBooksLoaded(), ensureWorldBookDrawer()]);
   $: importOptions = importKindsByScope[importScope];
   $: if (!importOptions.includes(importKind)) {
     importKind = importOptions[0];
   }
   $: hasImportPayload = importKind === 'character-card-png' ? Boolean(importFileBase64) : Boolean(importText.trim());
-  $: appSettingsStyle = `--app-font-family: ${appFontFamilyCss(appSettings.fontFamily)}; --app-chat-font-family: ${appFontFamilyCss(appSettings.chatFontFamily)}; --app-font-weight: ${appSettings.fontWeight}; --app-ui-font-size: ${appSettings.uiFontSize}px; --app-chat-font-size: ${appSettings.chatFontSize}px; --app-chat-bubble-width: ${appSettings.chatBubbleWidth}px; ${avatarShapeCss(appSettings.avatarShape)}`;
+  $: appSettingsStyle = serializeAppSettingsVariables(appSettings);
+  $: applyAppSettingsToDocument(appSettings);
   $: if (activeProfileId !== profileDraftId) {
     loadProfileDraft(activeProfile);
   }
@@ -649,14 +640,8 @@
     lastPersonaAutoCharacterId = activeCharacterId;
     if (activeCharacterPersona) activePersonaId = activeCharacterPersona.id;
   }
-  $: if (activeWorldBookId !== worldBookDraftId) {
-    loadWorldBookDraft(activeWorldBook);
-  }
   $: if (activeWorldBook && (!worldBookBindingCharacterId || !characters.some((character) => character.id === worldBookBindingCharacterId))) {
     worldBookBindingCharacterId = activeCharacterId || characters[0]?.id || '';
-  }
-  $: if (worldBookDraftEntries.length && !worldBookDraftEntries.some((entry) => entry.id === activeWorldBookEntryId)) {
-    activeWorldBookEntryId = worldBookDraftEntries[0].id;
   }
   $: if (!activeConversationId) {
     const opening = activeCharacter?.firstMessage?.trim() ? renderCharacterTemplate(activeCharacter.firstMessage) : '';
@@ -676,72 +661,12 @@
     loadConversationGroupState();
   });
 
-  function defaultAppSettings(): AppSettings {
-    return {
-      fontFamily: 'system',
-      chatFontFamily: 'system',
-      fontWeight: 450,
-      uiFontSize: 14,
-      chatFontSize: 15,
-      chatBubbleWidth: 760,
-      avatarShape: 'rectangle'
-    };
-  }
-
-  function appFontFamilyCss(value: AppFontFamily) {
-    return appFontFamilies.find((font) => font.value === value)?.css ?? appFontFamilies[0].css;
-  }
-
-  function clampSetting(value: unknown, min: number, max: number, fallback: number) {
-    const number = typeof value === 'number' ? value : Number(value);
-    if (!Number.isFinite(number)) return fallback;
-    return Math.min(max, Math.max(min, Math.round(number)));
-  }
-
-  function isAppFontFamily(value: unknown): value is AppFontFamily {
-    return appFontFamilies.some((font) => font.value === value);
-  }
-
-  function isAppAvatarShape(value: unknown): value is AppAvatarShape {
-    return appAvatarShapes.some((shape) => shape.value === value);
-  }
-
-  function avatarShapeCss(shape: AppAvatarShape) {
-    if (shape === 'rectangle') return '--app-message-avatar-width: 52px; --app-message-avatar-height: 64px; --app-message-avatar-radius: 10px;';
-    if (shape === 'circle') return '--app-message-avatar-width: 56px; --app-message-avatar-height: 56px; --app-message-avatar-radius: 999px;';
-    return '--app-message-avatar-width: 56px; --app-message-avatar-height: 56px; --app-message-avatar-radius: 10px;';
-  }
-
-  function normalizeAppSettings(value: Partial<AppSettings> | null | undefined): AppSettings {
-    const defaults = defaultAppSettings();
-    const candidateFontFamily = value?.fontFamily;
-    const fontFamily = isAppFontFamily(candidateFontFamily) ? candidateFontFamily : defaults.fontFamily;
-    const candidateChatFontFamily = value?.chatFontFamily;
-    const chatFontFamily = isAppFontFamily(candidateChatFontFamily) ? candidateChatFontFamily : fontFamily;
-    const candidateAvatarShape = value?.avatarShape;
-    return {
-      fontFamily,
-      chatFontFamily,
-      fontWeight: clampSetting(value?.fontWeight, 350, 650, defaults.fontWeight),
-      uiFontSize: clampSetting(value?.uiFontSize, 12, 18, defaults.uiFontSize),
-      chatFontSize: clampSetting(value?.chatFontSize, 13, 24, defaults.chatFontSize),
-      chatBubbleWidth: clampSetting(value?.chatBubbleWidth, 420, 1000, defaults.chatBubbleWidth),
-      avatarShape: isAppAvatarShape(candidateAvatarShape) ? candidateAvatarShape : defaults.avatarShape
-    };
-  }
-
   function loadAppSettings() {
-    try {
-      const raw = localStorage.getItem(appSettingsStorageKey);
-      appSettings = raw ? normalizeAppSettings(JSON.parse(raw) as Partial<AppSettings>) : defaultAppSettings();
-    } catch {
-      appSettings = defaultAppSettings();
-    }
+    appSettings = readAppSettings(localStorage);
   }
 
   function saveAppSettings(next: AppSettings) {
-    appSettings = normalizeAppSettings(next);
-    localStorage.setItem(appSettingsStorageKey, JSON.stringify(appSettings));
+    appSettings = persistAppSettings(localStorage, next);
   }
 
   function updateAppSettings(patch: Partial<AppSettings>) {
@@ -831,6 +756,7 @@
 
   function openHome() {
     activeView = 'home';
+    mobileNavOpen = false;
     closeDrawer();
     closeConversationTree();
   }
@@ -838,15 +764,18 @@
   async function openChatWorkspace() {
     await ensureProfilesLoaded();
     activeView = 'chat';
+    mobileNavOpen = false;
     closeDrawer();
   }
 
   function openLibrary(drawer: Exclude<Drawer, 'chats' | 'settings' | 'import' | 'inspector' | null>) {
+    mobileNavOpen = false;
     activeDrawer = activeDrawer === drawer ? null : drawer;
     if (activeDrawer === 'profiles') {
       void ensureProfilesLoaded();
       void ensureProfileDrawer();
     }
+    if (activeDrawer === 'personas') void ensurePersonaDrawer();
   }
 
   function loadGlobalRegexDraft() {
@@ -856,15 +785,21 @@
   }
 
   function openToolbox() {
+    mobileNavOpen = false;
     activeDrawer = activeDrawer === 'toolbox' ? null : 'toolbox';
-    if (activeDrawer === 'toolbox') loadGlobalRegexDraft();
+    if (activeDrawer === 'toolbox') {
+      loadGlobalRegexDraft();
+      void ensureToolboxDrawer();
+    }
   }
 
   function openDrawer(drawer: Exclude<Drawer, null>) {
+    mobileNavOpen = false;
     activeDrawer = activeDrawer === drawer ? null : drawer;
     if (activeDrawer === 'chats') {
       void refreshConversations({ reset: true });
     }
+    if (activeDrawer === 'settings') void ensureSettingsDrawer();
   }
 
   function openImport(scope: ImportScope, kind: ImportKind = importKindsByScope[scope][0]) {
@@ -875,6 +810,7 @@
     importFileName = '';
     importFileBase64 = '';
     activeDrawer = 'import';
+    void ensureImportDrawer();
   }
 
   function openPresetImport() {
@@ -883,6 +819,17 @@
 
   function closeDrawer() {
     activeDrawer = null;
+  }
+
+  function drawerSide(drawer: Drawer): 'left' | 'right' {
+    return drawer === 'import' || drawer === 'inspector' || drawer === 'settings' ? 'right' : 'left';
+  }
+
+  function drawerSize(drawer: Drawer): 'compact' | 'medium' | 'wide' | 'large' | 'full' {
+    if (drawer === 'characters' || drawer === 'worldbooks') return 'full';
+    if (drawer === 'personas') return 'large';
+    if (drawer === 'profiles') return 'wide';
+    return 'medium';
   }
 
   async function startNewConversation() {
@@ -907,7 +854,7 @@
     if (profilesHydrated) return Promise.resolve();
     if (!profilesLoadPromise) {
       profilesLoadPromise = (async () => {
-        status = t('status.loading');
+        setStatus('loading', t('status.loading'), false);
         try {
           const nextProfiles = await fetchJson<Profile[]>('/api/profiles');
           profiles = nextProfiles;
@@ -915,13 +862,53 @@
           activeProfileId ||= profiles[0]?.id ?? '';
           loadProfileDraft(profiles.find((profile) => profile.id === activeProfileId));
         } finally {
-          status = t('status.ready');
+          setStatus('idle', t('status.ready'), false);
         }
       })().finally(() => {
         profilesLoadPromise = null;
       });
     }
     return profilesLoadPromise;
+  }
+
+  function ensureCharactersLoaded(): Promise<void> {
+    if (charactersHydrated) return Promise.resolve();
+    if (!charactersLoadPromise) {
+      charactersLoadPromise = (async () => {
+        setStatus('loading', t('status.loading'), false);
+        try {
+          characters = await fetchJson<Character[]>('/api/characters');
+          charactersHydrated = true;
+          activeCharacterId ||= characters[0]?.id ?? '';
+          loadCharacterDraft(characters.find((character) => character.id === activeCharacterId));
+        } finally {
+          setStatus('idle', t('status.ready'), false);
+        }
+      })().finally(() => {
+        charactersLoadPromise = null;
+      });
+    }
+    return charactersLoadPromise;
+  }
+
+  function ensureWorldBooksLoaded(): Promise<void> {
+    if (worldBooksHydrated) return Promise.resolve();
+    if (!worldBooksLoadPromise) {
+      worldBooksLoadPromise = (async () => {
+        setStatus('loading', t('status.loading'), false);
+        try {
+          worldBooks = await fetchJson<WorldBook[]>('/api/worldbooks');
+          worldBooksHydrated = true;
+          activeWorldBookId ||= worldBooks[0]?.id ?? '';
+          loadWorldBookDraft(worldBooks.find((worldBook) => worldBook.id === activeWorldBookId));
+        } finally {
+          setStatus('idle', t('status.ready'), false);
+        }
+      })().finally(() => {
+        worldBooksLoadPromise = null;
+      });
+    }
+    return worldBooksLoadPromise;
   }
 
   function scrollMessagesToBottom() {
@@ -1106,6 +1093,48 @@
     }
   }
 
+  async function ensureCharacterDrawer() {
+    if (!CharacterDrawerComponent) {
+      CharacterDrawerComponent = (await import('$lib/ui/features/characters/CharacterDrawer.svelte')).default as unknown as CharacterDrawerComponent;
+    }
+  }
+
+  async function ensureWorldBookDrawer() {
+    if (!WorldBookDrawerComponent) {
+      WorldBookDrawerComponent = (await import('$lib/ui/features/worldbooks/WorldBookDrawer.svelte')).default as unknown as WorldBookDrawerComponent;
+    }
+  }
+
+  async function ensurePersonaDrawer() {
+    if (!PersonaDrawerComponent) {
+      PersonaDrawerComponent = (await import('$lib/ui/features/personas/PersonaDrawer.svelte')).default as unknown as PersonaDrawerComponent;
+    }
+  }
+
+  async function ensureSettingsDrawer() {
+    if (!SettingsDrawerComponent) {
+      SettingsDrawerComponent = (await import('$lib/ui/features/settings/SettingsDrawer.svelte')).default as unknown as SettingsDrawerComponent;
+    }
+  }
+
+  async function ensureToolboxDrawer() {
+    if (!ToolboxDrawerComponent) {
+      ToolboxDrawerComponent = (await import('$lib/ui/features/toolbox/ToolboxDrawer.svelte')).default as unknown as ToolboxDrawerComponent;
+    }
+  }
+
+  async function ensureImportDrawer() {
+    if (!ImportDrawerComponent) {
+      ImportDrawerComponent = (await import('$lib/ui/features/import/ImportDrawer.svelte')).default as unknown as ImportDrawerComponent;
+    }
+  }
+
+  async function ensureInspectorDrawer() {
+    if (!InspectorDrawerComponent) {
+      InspectorDrawerComponent = (await import('$lib/ui/features/inspector/InspectorDrawer.svelte')).default as unknown as InspectorDrawerComponent;
+    }
+  }
+
   async function loadConversationTree(id: string) {
     const summary = await fetchJson<ConversationTreeSummary>(`/api/conversations?id=${encodeURIComponent(id)}&tree=true`);
     conversationTreeSummary = summary;
@@ -1266,13 +1295,13 @@
   }
 
   async function refreshAll() {
-    status = t('status.loading');
+    setStatus('loading', t('status.loading'), false);
     const [nextProfiles, nextCharacters, nextPersonas, nextPersonaCharacterBindings, nextWorldBooks, nextConversations] = await Promise.all([
       fetchJson<Profile[]>(profilesHydrated ? '/api/profiles' : '/api/profiles?summary=true'),
-      fetchJson<Character[]>('/api/characters'),
+      fetchJson<Character[]>(charactersHydrated ? '/api/characters' : '/api/characters?summary=true'),
       fetchJson<UserPersona[]>('/api/personas'),
       fetchJson<PersonaCharacterBinding[]>('/api/personas/bindings'),
-      fetchJson<WorldBook[]>('/api/worldbooks'),
+      fetchJson<WorldBook[]>(worldBooksHydrated ? '/api/worldbooks' : '/api/worldbooks?summary=true'),
       fetchJson<Conversation[]>(conversationListUrl(null))
     ]);
     profiles = nextProfiles;
@@ -1291,7 +1320,7 @@
     if (!activeWorldBookId || !worldBooks.some((worldBook) => worldBook.id === activeWorldBookId)) {
       activeWorldBookId = worldBooks[0]?.id ?? '';
     }
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   function profileStats(profile?: Profile) {
@@ -1715,7 +1744,7 @@
       });
     }
     const nextBindings = [...unique.values()];
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const saved = await fetchJson<Character>('/api/characters', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1730,7 +1759,7 @@
     if (activeCharacterId === saved.id) {
       loadCharacterDraft(saved);
     }
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
     return saved;
   }
 
@@ -2177,21 +2206,21 @@
   async function saveActiveProfile() {
     if (!activeProfile) return false;
     if (!profileDraftName.trim()) {
-      status = t('status.profileNameRequired');
+      setStatus('warning', t('status.profileNameRequired'));
       return false;
     }
 
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     try {
       const saved = await saveProfilePayload(buildProfileFromDraft(activeProfile));
       profiles = profiles.map((profile) => (profile.id === saved.id ? saved : profile));
       activeProfileId = saved.id;
       loadProfileDraft(saved);
-      status = t('status.ready');
+      setStatus('idle', t('status.ready'), false);
       return true;
     } catch (error) {
       console.error(error);
-      status = t('status.profileSaveFailed');
+      setStatus('error', t('status.profileSaveFailed'));
       return false;
     }
   }
@@ -2199,7 +2228,7 @@
   async function duplicateActiveProfile() {
     if (!activeProfile) return;
     if (!profileDraftName.trim()) {
-      status = t('status.profileNameRequired');
+      setStatus('warning', t('status.profileNameRequired'));
       return;
     }
 
@@ -2215,23 +2244,23 @@
       legacy: copy.legacy ? structuredClone(copy.legacy) : undefined
     };
 
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     try {
       const saved = await saveProfilePayload(duplicate);
       profiles = [...profiles, saved].sort((a, b) => a.name.localeCompare(b.name));
       activeProfileId = saved.id;
       loadProfileDraft(saved);
-      status = t('status.ready');
+      setStatus('idle', t('status.ready'), false);
     } catch (error) {
       console.error(error);
-      status = t('status.profileCopyFailed');
+      setStatus('error', t('status.profileCopyFailed'));
     }
   }
 
   function deleteActiveProfile() {
     if (!activeProfile) return;
     if (profiles.length <= 1) {
-      status = t('profile.deleteLast');
+      setStatus('warning', t('profile.deleteLast'));
       return;
     }
     pendingProfileDelete = activeProfile;
@@ -2248,7 +2277,7 @@
     const profile = pendingProfileDelete;
     if (!profile) return;
     deletingProfile = true;
-    status = t('status.deleting');
+    setStatus('loading', t('status.deleting'), false);
     try {
       await fetchJson<{ deleted: boolean; id: string }>(`/api/profiles?id=${encodeURIComponent(profile.id)}`, {
         method: 'DELETE'
@@ -2258,11 +2287,11 @@
       activeProfileId = nextProfiles[0]?.id ?? '';
       loadProfileDraft(nextProfiles[0]);
       pendingProfileDelete = null;
-      status = t('status.ready');
+      setStatus('idle', t('status.ready'), false);
     } catch (error) {
       console.error(error);
       profileDeleteStatus = error instanceof Error ? error.message : t('profile.deleteFailed');
-      status = profileDeleteStatus;
+      setStatus('error', profileDeleteStatus);
     } finally {
       deletingProfile = false;
     }
@@ -2496,20 +2525,46 @@
     await refreshConversationState(id, { close: true });
   }
 
-  async function renameConversation(event: MouseEvent, conversation: Conversation) {
+  function renameConversation(event: MouseEvent, conversation: Conversation) {
     event.stopPropagation();
-    const title = window.prompt(t('chat.renamePrompt'), conversation.title)?.trim();
-    if (!title || title === conversation.title) return;
-    const updated = await fetchJson<Conversation>('/api/conversations', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'rename',
-        conversationId: conversation.id,
-        title
-      })
-    });
-    rememberConversation(updated);
+    pendingConversationRename = conversation;
+    conversationRenameStatus = '';
+  }
+
+  function closeConversationRenameDialog() {
+    if (renamingConversation) return;
+    pendingConversationRename = null;
+    conversationRenameStatus = '';
+  }
+
+  async function confirmConversationRename(title: string) {
+    const conversation = pendingConversationRename;
+    const nextTitle = title.trim();
+    if (!conversation || !nextTitle || renamingConversation) return;
+    if (nextTitle === conversation.title) {
+      closeConversationRenameDialog();
+      return;
+    }
+
+    renamingConversation = true;
+    conversationRenameStatus = '';
+    try {
+      const updated = await fetchJson<Conversation>('/api/conversations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'rename',
+          conversationId: conversation.id,
+          title: nextTitle
+        })
+      });
+      rememberConversation(updated);
+      pendingConversationRename = null;
+    } catch (error) {
+      conversationRenameStatus = error instanceof Error && error.message ? error.message : t('chat.renameFailed');
+    } finally {
+      renamingConversation = false;
+    }
   }
 
   async function archiveConversation(event: MouseEvent, conversation: Conversation) {
@@ -2529,7 +2584,7 @@
 
   async function cloneConversation(event: MouseEvent, conversation: Conversation) {
     event.stopPropagation();
-    status = t('status.cloning');
+    setStatus('loading', t('status.cloning'), false);
     const cloned = await fetchJson<Conversation>('/api/conversations', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -2542,7 +2597,7 @@
     messages = cloned.messages ?? [];
     rememberConversation(cloned);
     activeView = 'chat';
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   function openConversationDeleteDialog(event: MouseEvent, conversation: Conversation) {
@@ -2563,7 +2618,7 @@
 
     deletingConversation = true;
     conversationDeleteStatus = '';
-    status = t('status.deleting');
+    setStatus('loading', t('status.deleting'), false);
     try {
       await fetchJson<{ deleted: boolean; id: string }>(`/api/conversations?id=${encodeURIComponent(conversation.id)}`, {
         method: 'DELETE'
@@ -2580,10 +2635,10 @@
         closeConversationTree();
       }
       pendingConversationDelete = null;
-      status = t('status.ready');
+      setStatus('idle', t('status.ready'), false);
     } catch (error) {
       conversationDeleteStatus = error instanceof Error ? error.message : t('chat.deleteConversationFailed');
-      status = conversationDeleteStatus;
+      setStatus('error', conversationDeleteStatus);
     } finally {
       deletingConversation = false;
     }
@@ -2591,7 +2646,7 @@
 
   async function exportConversation(event: MouseEvent, conversation: Conversation) {
     event.stopPropagation();
-    status = t('status.exporting');
+    setStatus('loading', t('status.exporting'), false);
     try {
       const response = await fetch(`/api/conversations?id=${encodeURIComponent(conversation.id)}&export=true`);
       if (!response.ok) throw new Error(await response.text());
@@ -2602,9 +2657,9 @@
       link.download = conversationSnapshotFilename(conversation.title);
       link.click();
       URL.revokeObjectURL(url);
-      status = t('status.ready');
+      setStatus('idle', t('status.ready'), false);
     } catch {
-      status = t('status.exportFailed');
+      setStatus('error', t('status.exportFailed'));
     }
   }
 
@@ -2627,7 +2682,6 @@
     const content = input.trim();
     if (!content) return;
     input = '';
-    composerToolsOpen = false;
     inspector = '';
     const conversationId = await ensureConversation();
     messages = [
@@ -2659,16 +2713,14 @@
 
   function clearComposerInput() {
     input = '';
-    composerToolsOpen = false;
   }
 
   async function continueActiveLeaf() {
     const target = activeLeafMessage;
     const nodeId = target ? messageNodeId(target) : '';
     if (!target || !canContinueActiveLeaf || !nodeId || !activeConversationId) return;
-    composerToolsOpen = false;
     inspector = '';
-    status = t('status.continuing');
+    setStatus('loading', t('status.continuing'), false);
     await streamGeneration(
       {
         conversationId: activeConversationId,
@@ -2686,7 +2738,7 @@
   }
 
   async function streamGeneration(body: Record<string, unknown>, options: { preserveAssistantOnError?: boolean } = {}) {
-    status = t('status.generating');
+    setStatus('loading', t('status.generating'), false);
     const controller = new AbortController();
     generationAbortController = controller;
     let completedConversationId = typeof body.conversationId === 'string' ? body.conversationId : '';
@@ -2702,7 +2754,7 @@
       if (!response.body || !response.ok) {
         const errorMessage = await responseErrorMessage(response);
         showAssistantStreamError(`${t('status.providerError')}: ${errorMessage}`, options.preserveAssistantOnError);
-        status = t('status.providerError');
+        setStatus('error', t('status.providerError'));
         return;
       }
 
@@ -2716,7 +2768,7 @@
         if (event.type === 'done') completedConversationId = event.conversationId ?? completedConversationId;
         if (event.type === 'error') {
           showAssistantStreamError(`${t('status.generationError')}: ${event.text ?? ''}`.trim(), options.preserveAssistantOnError);
-          status = t('status.generationError');
+          setStatus('error', t('status.generationError'));
         }
       };
       while (true) {
@@ -2733,7 +2785,8 @@
       if (buffer.trim()) {
         consumeLine(buffer);
       }
-      status = controller.signal.aborted ? t('status.stopped') : t('status.ready');
+      if (controller.signal.aborted) setStatus('warning', t('status.stopped'), false);
+      else setStatus('idle', t('status.ready'), false);
       if (!controller.signal.aborted && completedConversationId) {
         await refreshConversationState(completedConversationId);
         void queueMessagesScrollToBottom();
@@ -2741,10 +2794,10 @@
     } catch (error) {
       if (controller.signal.aborted) {
         removeEmptyAssistantDraft();
-        status = t('status.stopped');
+        setStatus('warning', t('status.stopped'), false);
       } else {
         showAssistantStreamError(`${t('status.generationError')}: ${error instanceof Error ? error.message : ''}`.trim(), options.preserveAssistantOnError);
-        status = t('status.generationError');
+        setStatus('error', t('status.generationError'));
       }
     } finally {
       if (generationAbortController === controller) {
@@ -2857,7 +2910,7 @@
 
   function stopGeneration() {
     generationAbortController?.abort();
-    status = t('status.stopping');
+    setStatus('loading', t('status.stopping'), false);
   }
 
   async function switchMessageSibling(message: ChatMessage, direction: 'left' | 'right') {
@@ -2967,7 +3020,7 @@
     const nodeId = message.branch?.nodeId ?? message.id;
     const conversationId = message.conversationId ?? activeConversationId;
     if (!nodeId || !conversationId || isGenerating) return;
-    status = t('status.forking');
+    setStatus('loading', t('status.forking'), false);
     const conversation = await fetchJson<Conversation>('/api/conversations', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -2981,7 +3034,7 @@
     messages = conversation.messages ?? [];
     rememberConversation(conversation);
     activeView = 'chat';
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   async function focusConversationTreeNode(node: ConversationTreeNode, restoreSubtree = true) {
@@ -3129,8 +3182,9 @@
   }
 
   async function openInspector() {
-    await inspectCurrentPrompt();
+    mobileNavOpen = false;
     activeDrawer = 'inspector';
+    await Promise.all([inspectCurrentPrompt(), ensureInspectorDrawer()]);
   }
 
   function renderCharacterTemplate(template: string): string {
@@ -3265,7 +3319,9 @@
     closeDrawer();
   }
 
-  function openCharacterWorldBooks(character: Character | undefined = activeCharacter) {
+  async function openCharacterWorldBooks(character: Character | undefined = activeCharacter) {
+    await ensureWorldBooksLoaded();
+    character = characters.find((item) => item.id === character?.id) ?? character;
     const firstWorldBook = boundWorldBooksForCharacter(character)[0];
     if (firstWorldBook) {
       activeWorldBookId = firstWorldBook.id;
@@ -3310,10 +3366,10 @@
 
   async function runImport() {
     if (!hasImportPayload) {
-      status = t('status.importFileRequired');
+      setStatus('warning', t('status.importFileRequired'));
       return;
     }
-    status = t('status.importing');
+    setStatus('loading', t('status.importing'), false);
     const scope = importScope;
     const data =
       importKind === 'chat-jsonl'
@@ -3346,13 +3402,13 @@
     } else {
       activeDrawer = scope === 'character' ? 'characters' : scope === 'worldbook' ? 'worldbooks' : 'profiles';
     }
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   async function createCharacter() {
     const name = newCharacterName.trim();
     if (!name) return;
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const character = await fetchJson<Character>('/api/characters', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3379,14 +3435,14 @@
     characterPanelMode = 'edit';
     loadCharacterDraft(character);
     resetNewCharacterDraft();
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   async function saveActiveCharacter() {
     if (!activeCharacter) return;
     const name = characterDraftName.trim();
     if (!name) return;
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const character = await fetchJson<Character>('/api/characters', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3413,12 +3469,12 @@
     characters = characters.map((item) => (item.id === character.id ? character : item));
     activeCharacterId = character.id;
     loadCharacterDraft(character);
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   async function toggleCharacterFavorite(character: Character | undefined = activeCharacter) {
     if (!character) return;
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const saved = await fetchJson<Character>('/api/characters', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3432,12 +3488,12 @@
     if (activeCharacterId === saved.id) {
       loadCharacterDraft(saved);
     }
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   async function duplicateActiveCharacter() {
     if (!activeCharacter) return;
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, characterBook: _characterBook, ...rest } = structuredClone(activeCharacter);
     const worldBookBindings = normalizedWorldBookBindingsForCharacter(activeCharacter);
     const character = await fetchJson<Character>('/api/characters', {
@@ -3454,7 +3510,7 @@
     characters = [...characters, character];
     activeCharacterId = character.id;
     loadCharacterDraft(character);
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   function deleteActiveCharacter() {
@@ -3473,7 +3529,7 @@
     const character = pendingCharacterDelete;
     if (!character) return;
     deletingCharacter = true;
-    status = t('status.deleting');
+    setStatus('loading', t('status.deleting'), false);
     try {
       await fetchJson<{ deleted: boolean }>('/api/characters', {
         method: 'DELETE',
@@ -3493,11 +3549,11 @@
       }
       loadCharacterDraft(characters.find((item) => item.id === activeCharacterId));
       pendingCharacterDelete = null;
-      status = t('status.ready');
+      setStatus('idle', t('status.ready'), false);
     } catch (error) {
       console.error(error);
       characterDeleteStatus = error instanceof Error ? error.message : t('character.deleteFailed');
-      status = characterDeleteStatus;
+      setStatus('error', characterDeleteStatus);
     } finally {
       deletingCharacter = false;
     }
@@ -3506,7 +3562,7 @@
   async function createPersona() {
     const name = newPersonaName.trim();
     if (!name) return;
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const persona = await fetchJson<UserPersona>('/api/personas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3518,14 +3574,14 @@
     newPersonaTitle = '';
     newPersonaDescription = '';
     newPersonaDefault = false;
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   async function saveActivePersona() {
     if (!activePersona) return;
     const name = personaDraftName.trim();
     if (!name) return;
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const persona = await fetchJson<UserPersona>('/api/personas', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -3543,12 +3599,12 @@
     personaDraftTitle = persona.title ?? '';
     personaDraftDescription = persona.description;
     personaDraftDefault = persona.isDefault;
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   async function setActivePersonaDefault() {
     if (!activePersona) return;
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const persona = await fetchJson<UserPersona>('/api/personas', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -3556,7 +3612,7 @@
     });
     upsertPersona(persona);
     personaDraftDefault = true;
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   async function uploadActivePersonaAvatar(event: Event) {
@@ -3566,7 +3622,7 @@
     inputElement.value = '';
     if (!file) return;
     personaAvatarUploading = true;
-    status = t('status.uploading');
+    setStatus('loading', t('status.uploading'), false);
     try {
       const form = new FormData();
       form.set('personaId', activePersona.id);
@@ -3576,7 +3632,7 @@
         body: form
       });
       upsertPersona(persona);
-      status = t('status.ready');
+      setStatus('idle', t('status.ready'), false);
     } finally {
       personaAvatarUploading = false;
     }
@@ -3584,12 +3640,12 @@
 
   async function clearActivePersonaAvatar() {
     if (!activePersona?.avatarAssetId) return;
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const persona = await fetchJson<UserPersona>(`/api/personas/avatar?personaId=${encodeURIComponent(activePersona.id)}`, {
       method: 'DELETE'
     });
     upsertPersona(persona);
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   async function refreshPersonaBindings(characterId?: string) {
@@ -3604,7 +3660,7 @@
 
   async function toggleActivePersonaCharacterBinding() {
     if (!activePersona || !activeCharacter) return;
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     if (activePersonaBoundToActiveCharacter) {
       await fetchJson<{ deleted: boolean }>(
         `/api/personas/bindings?personaId=${encodeURIComponent(activePersona.id)}&characterId=${encodeURIComponent(activeCharacter.id)}`,
@@ -3618,15 +3674,15 @@
       });
     }
     await refreshPersonaBindings(activeCharacter.id);
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   async function lockActivePersonaToCurrentChat() {
     if (!activePersona || !activeConversationId) {
-      status = t('persona.noActiveConversation');
+      setStatus('warning', t('persona.noActiveConversation'));
       return;
     }
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const conversation = await fetchJson<Conversation>('/api/conversations', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -3634,12 +3690,12 @@
     });
     activeConversationRecord = conversation;
     rememberConversation(conversation);
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   async function duplicateActivePersona() {
     if (!activePersona) return;
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const persona = await fetchJson<UserPersona>('/api/personas', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -3647,16 +3703,29 @@
     });
     upsertPersona(persona);
     activePersonaId = persona.id;
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
-  async function deleteActivePersona() {
-    if (!activePersona) return;
-    if (!window.confirm(t('persona.deleteConfirm', { name: activePersona.name }))) return;
+  function deleteActivePersona() {
+    if (!activePersona || personaDeleting) return;
+    pendingPersonaDelete = activePersona;
+    personaDeleteStatus = '';
+  }
+
+  function closePersonaDeleteDialog() {
+    if (personaDeleting) return;
+    pendingPersonaDelete = null;
+    personaDeleteStatus = '';
+  }
+
+  async function confirmPersonaDelete() {
+    const personaToDelete = pendingPersonaDelete;
+    if (!personaToDelete || personaDeleting) return;
     personaDeleting = true;
-    status = t('status.deleting');
+    personaDeleteStatus = '';
+    setStatus('loading', t('status.deleting'), false);
     try {
-      const result = await fetchJson<UserPersonaDeleteResult>(`/api/personas?id=${encodeURIComponent(activePersona.id)}`, {
+      const result = await fetchJson<UserPersonaDeleteResult>(`/api/personas?id=${encodeURIComponent(personaToDelete.id)}`, {
         method: 'DELETE'
       });
       const remaining = personas.filter((persona) => persona.id !== result.id);
@@ -3668,10 +3737,17 @@
       if (activeConversationRecord?.personaId === result.id) {
         activeConversationRecord = { ...activeConversationRecord, personaId: undefined };
       }
-      status = t('persona.deleteResult', {
-        conversations: result.affectedConversationIds.length,
-        bindings: result.removedCharacterBindings
-      });
+      setStatus(
+        'success',
+        t('persona.deleteResult', {
+          conversations: result.affectedConversationIds.length,
+          bindings: result.removedCharacterBindings
+        })
+      );
+      pendingPersonaDelete = null;
+    } catch (error) {
+      personaDeleteStatus = error instanceof Error && error.message ? error.message : t('persona.deleteFailed');
+      setStatus('error', personaDeleteStatus);
     } finally {
       personaDeleting = false;
     }
@@ -3680,7 +3756,7 @@
   async function createWorldBook() {
     const name = newWorldBookName.trim();
     if (!name) return;
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const worldBook = await fetchJson<WorldBook>('/api/worldbooks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3690,12 +3766,12 @@
     activeWorldBookId = worldBook.id;
     newWorldBookName = '';
     loadWorldBookDraft(worldBook);
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
   async function saveActiveWorldBook() {
     if (!activeWorldBook || !worldBookDraftName.trim()) return;
-    status = t('status.saving');
+    setStatus('loading', t('status.saving'), false);
     const payload: WorldBook = {
       ...activeWorldBook,
       name: worldBookDraftName.trim(),
@@ -3720,24 +3796,30 @@
     worldBooks = worldBooks.map((worldBook) => (worldBook.id === saved.id ? saved : worldBook));
     activeWorldBookId = saved.id;
     loadWorldBookDraft(saved);
-    status = t('status.ready');
+    setStatus('idle', t('status.ready'), false);
   }
 
-  async function deleteActiveWorldBook() {
+  function deleteActiveWorldBook() {
     const worldBook = activeWorldBook;
     if (!worldBook || deletingWorldBook) return;
     const boundCount = characters.filter((character) => isWorldBookBoundToCharacter(character, worldBook.id)).length;
-    const confirmed = window.confirm(
-      t('worldbook.deleteConfirm', {
-        name: worldBook.name,
-        entries: worldBook.entries.length,
-        characters: boundCount
-      })
-    );
-    if (!confirmed) return;
+    pendingWorldBookDelete = { worldBook, boundCount };
+    worldBookDeleteStatus = '';
+  }
 
+  function closeWorldBookDeleteDialog() {
+    if (deletingWorldBook) return;
+    pendingWorldBookDelete = null;
+    worldBookDeleteStatus = '';
+  }
+
+  async function confirmWorldBookDelete() {
+    const pending = pendingWorldBookDelete;
+    if (!pending || deletingWorldBook) return;
+    const { worldBook } = pending;
     deletingWorldBook = true;
-    status = t('status.deleting');
+    worldBookDeleteStatus = '';
+    setStatus('loading', t('status.deleting'), false);
     try {
       const result = await fetchJson<WorldBookDeleteResult>(`/api/worldbooks?id=${encodeURIComponent(worldBook.id)}`, {
         method: 'DELETE'
@@ -3746,12 +3828,17 @@
       characters = await fetchJson<Character[]>('/api/characters');
       activeWorldBookId = worldBooks[0]?.id ?? '';
       loadWorldBookDraft(worldBooks.find((item) => item.id === activeWorldBookId));
-      status = t('worldbook.deleteDone', {
-        characters: result.affectedCharacterIds.length,
-        bindings: result.removedCharacterBindings
-      });
+      setStatus(
+        'success',
+        t('worldbook.deleteDone', {
+          characters: result.affectedCharacterIds.length,
+          bindings: result.removedCharacterBindings
+        })
+      );
+      pendingWorldBookDelete = null;
     } catch (error) {
-      status = error instanceof Error ? error.message : t('worldbook.deleteFailed');
+      worldBookDeleteStatus = error instanceof Error && error.message ? error.message : t('worldbook.deleteFailed');
+      setStatus('error', worldBookDeleteStatus);
     } finally {
       deletingWorldBook = false;
     }
@@ -3762,129 +3849,24 @@
   <title>NanKe</title>
 </svelte:head>
 
-<main class="workspace" style={appSettingsStyle}>
-  <aside class="rail" aria-label={t('nav.navigation')}>
-    <div class="brand" aria-label="NanKe">
-      <img class="brand-logo" src="/brand/nanke-icon-256.png" alt="" />
-    </div>
-    <button
-      class="icon-button"
-      class:active={activeView === 'home' && !activeDrawer}
-      title={t('nav.home')}
-      aria-label={t('nav.home')}
-      aria-pressed={activeView === 'home' && !activeDrawer}
-      on:click={openHome}
-    >
-      <House size={20} />
-    </button>
-    <button
-      class="icon-button"
-      class:active={activeView === 'chat' && activeDrawer !== 'chats'}
-      title={t('nav.chat')}
-      aria-label={t('nav.chat')}
-      aria-pressed={activeView === 'chat' && activeDrawer !== 'chats'}
-      on:click={openChatWorkspace}
-    >
-      <MessageCircle size={20} />
-    </button>
-    <button
-      class="icon-button"
-      class:active={activeDrawer === 'chats'}
-      title={t('nav.chatHistory')}
-      aria-label={t('nav.chatHistory')}
-      aria-pressed={activeDrawer === 'chats'}
-      on:click={() => openDrawer('chats')}
-    >
-      <MessageSquare size={20} />
-    </button>
-    <button
-      class="icon-button"
-      class:active={activeDrawer === 'characters'}
-      title={t('nav.characters')}
-      aria-label={t('nav.characters')}
-      aria-pressed={activeDrawer === 'characters'}
-      on:click={() => openLibrary('characters')}
-    >
-      <Bot size={20} />
-    </button>
-    <button
-      class="icon-button"
-      class:active={activeDrawer === 'personas'}
-      title={t('nav.personas')}
-      aria-label={t('nav.personas')}
-      aria-pressed={activeDrawer === 'personas'}
-      on:click={() => openLibrary('personas')}
-    >
-      <UserRound size={20} />
-    </button>
-    <button
-      class="icon-button"
-      class:active={activeDrawer === 'worldbooks'}
-      title={t('nav.worldbooks')}
-      aria-label={t('nav.worldbooks')}
-      aria-pressed={activeDrawer === 'worldbooks'}
-      on:click={() => openLibrary('worldbooks')}
-    >
-      <BookOpen size={20} />
-    </button>
-    <button
-      class="icon-button"
-      class:active={activeDrawer === 'profiles'}
-      title={t('nav.profiles')}
-      aria-label={t('nav.profiles')}
-      aria-pressed={activeDrawer === 'profiles'}
-      on:click={() => openLibrary('profiles')}
-    >
-      <Settings2 size={20} />
-    </button>
-    <button
-      class="icon-button"
-      class:active={activeDrawer === 'toolbox'}
-      title={t('nav.toolbox')}
-      aria-label={t('nav.toolbox')}
-      aria-pressed={activeDrawer === 'toolbox'}
-      on:click={openToolbox}
-    >
-      <Wrench size={20} />
-    </button>
-
-    <div class="rail-spacer"></div>
-    <button
-      class="icon-button"
-      title={t('nav.theme')}
-      aria-label={t('nav.theme')}
-      on:click={cycleTheme}
-    >
-      {#if theme === 'light'}
-        <Sun size={20} />
-      {:else if theme === 'dark'}
-        <Moon size={20} />
-      {:else}
-        <Monitor size={20} />
-      {/if}
-    </button>
-
-    <button
-      class="icon-button"
-      class:active={activeDrawer === 'settings'}
-      title={t('nav.settings')}
-      aria-label={t('nav.settings')}
-      aria-pressed={activeDrawer === 'settings'}
-      on:click={() => openDrawer('settings')}
-    >
-      <SlidersHorizontal size={20} />
-    </button>
-    <button
-      class="icon-button"
-      class:active={activeDrawer === 'inspector'}
-      title={t('nav.inspector')}
-      aria-label={t('nav.inspector')}
-      aria-pressed={activeDrawer === 'inspector'}
-      on:click={openInspector}
-    >
-      <ClipboardList size={20} />
-    </button>
-  </aside>
+<main class="nanke-app-scope workspace" style={appSettingsStyle} data-app-ready={appHydrated}>
+  <NavigationRail
+    bind:mobileOpen={mobileNavOpen}
+    {activeView}
+    {activeDrawer}
+    {theme}
+    onHome={openHome}
+    onChat={openChatWorkspace}
+    onChats={() => openDrawer('chats')}
+    onCharacters={() => openLibrary('characters')}
+    onPersonas={() => openLibrary('personas')}
+    onWorldBooks={() => openLibrary('worldbooks')}
+    onProfiles={() => openLibrary('profiles')}
+    onToolbox={openToolbox}
+    onTheme={cycleTheme}
+    onSettings={() => openDrawer('settings')}
+    onInspector={openInspector}
+  />
 
   {#if activeDrawer === 'settings'}
     <section class="stage settings-preview-stage" aria-label={t('settings.preview')}>
@@ -3939,7 +3921,7 @@
     </section>
   {:else if activeView === 'home'}
     <HomeStage
-      {status}
+      status={status.message}
       {activeProfile}
       {activeCharacter}
       {activePersona}
@@ -3994,7 +3976,7 @@
           <Settings2 size={15} />
           <span>{activeProfile ? `${activeProfile.name} · ${activeProfile.provider.model}` : t('chat.noProfile')}</span>
         </button>
-        <span class="status-pill">{status}</span>
+        <StatusBadge {status} />
       </div>
 
       <div class="toolbar" aria-label={t('chat.actions')}>
@@ -4134,59 +4116,15 @@
       </div>
     </div>
 
-    <form class="composer" on:submit|preventDefault={sendMessage}>
-      <div class="composer-dock">
-        <div class="composer-toolbox">
-          <button
-            class="composer-toolbox-trigger"
-            class:active={composerToolsOpen}
-            type="button"
-            title={t('chat.tools')}
-            aria-label={t('chat.tools')}
-            aria-expanded={composerToolsOpen}
-            on:click={() => (composerToolsOpen = !composerToolsOpen)}
-          >
-            <Wrench size={18} />
-          </button>
-          {#if composerToolsOpen}
-            <div class="composer-menu" role="menu" aria-label={t('chat.composerTools')}>
-              <button type="button" role="menuitem" disabled={!canContinueActiveLeaf} on:click={continueActiveLeaf}>
-                <CornerDownRight size={16} />
-                <span>
-                  <strong>{t('common.continue')}</strong>
-                  <small>{t('chat.extendLastReply')}</small>
-                </span>
-              </button>
-              <button type="button" role="menuitem" disabled={!input.trim()} on:click={clearComposerInput}>
-                <Eraser size={16} />
-                <span>
-                  <strong>{t('chat.clear')}</strong>
-                  <small>{t('chat.discardDraft')}</small>
-                </span>
-              </button>
-            </div>
-          {/if}
-        </div>
-        <textarea class="composer-input" bind:value={input} rows="1" placeholder={t('chat.messagePlaceholder')} aria-label={t('chat.messagePlaceholder')}></textarea>
-        <button
-          class="composer-action"
-          class:stopping={isGenerating}
-          type={isGenerating ? 'button' : 'submit'}
-          title={isGenerating ? t('chat.stopGeneration') : t('chat.sendMessage')}
-          aria-label={isGenerating ? t('chat.stopGeneration') : t('chat.sendMessage')}
-          disabled={!isGenerating && !input.trim()}
-          on:click={() => {
-            if (isGenerating) stopGeneration();
-          }}
-        >
-          {#if isGenerating}
-            <CircleStop size={20} />
-          {:else}
-            <Send size={20} />
-          {/if}
-        </button>
-      </div>
-    </form>
+    <ChatComposer
+      bind:input
+      {isGenerating}
+      canContinue={canContinueActiveLeaf}
+      onSend={sendMessage}
+      onStop={stopGeneration}
+      onContinue={continueActiveLeaf}
+      onClear={clearComposerInput}
+    />
 
     {#if conversationTreeLoading || conversationTreeSummary}
       {#if ConversationTreeDockComponent}
@@ -4256,130 +4194,127 @@
   {/if}
 
   {#if pendingMessageDelete}
-    <section class="delete-dialog-backdrop" role="presentation">
-      <div class="delete-dialog" role="dialog" aria-modal="true" aria-label={t('chat.deleteMessage')}>
-        <header>
-          <Trash2 size={17} />
-          <strong>{t('chat.deleteDialogTitle')}</strong>
-        </header>
-        <p>{pendingMessageDelete.label || t('chat.deleteEmpty')}</p>
-        <div class="delete-dialog-actions">
-          <button type="button" disabled={deletingMessageNode} on:click={closeMessageDeleteDialog}>
-            {t('common.cancel')}
-          </button>
-          <button type="button" disabled={deletingMessageNode} on:click={() => confirmMessageDelete('node')}>
-            {t('chat.deleteNodeOnly')}
-          </button>
-          <button class="danger" type="button" disabled={deletingMessageNode} on:click={() => confirmMessageDelete('subtree')}>
-            {t('chat.deleteWithDescendants')}
-          </button>
-        </div>
-        {#if messageDeleteStatus}
-          <small>{messageDeleteStatus}</small>
-        {/if}
-      </div>
-    </section>
+    <ConfirmDialog
+      title={t('chat.deleteDialogTitle')}
+      description={pendingMessageDelete.label || t('chat.deleteEmpty')}
+      cancelLabel={t('common.cancel')}
+      secondaryLabel={t('chat.deleteNodeOnly')}
+      confirmLabel={t('chat.deleteWithDescendants')}
+      busy={deletingMessageNode}
+      status={messageDeleteStatus}
+      onCancel={closeMessageDeleteDialog}
+      onSecondary={() => confirmMessageDelete('node')}
+      onConfirm={() => confirmMessageDelete('subtree')}
+    />
   {/if}
 
   {#if pendingConversationDelete}
-    <section class="delete-dialog-backdrop" role="presentation">
-      <div class="delete-dialog" role="dialog" aria-modal="true" aria-label={t('chat.delete')}>
-        <header>
-          <Trash2 size={17} />
-          <strong>{t('chat.deleteConversationTitle')}</strong>
-        </header>
-        <p>
-          <strong>{pendingConversationDelete.title}</strong>
-          <span>{t('chat.deleteConversationBody')}</span>
-        </p>
-        <div class="delete-dialog-actions conversation-delete-actions">
-          <button type="button" disabled={deletingConversation} on:click={closeConversationDeleteDialog}>
-            {t('common.cancel')}
-          </button>
-          <button class="danger" type="button" disabled={deletingConversation} on:click={confirmConversationDelete}>
-            {deletingConversation ? t('status.deleting') : t('chat.delete')}
-          </button>
-        </div>
-        {#if conversationDeleteStatus}
-          <small>{conversationDeleteStatus}</small>
-        {/if}
-      </div>
-    </section>
+    <ConfirmDialog
+      title={t('chat.deleteConversationTitle')}
+      subject={pendingConversationDelete.title}
+      description={t('chat.deleteConversationBody')}
+      cancelLabel={t('common.cancel')}
+      confirmLabel={deletingConversation ? t('status.deleting') : t('chat.delete')}
+      busy={deletingConversation}
+      status={conversationDeleteStatus}
+      onCancel={closeConversationDeleteDialog}
+      onConfirm={confirmConversationDelete}
+    />
   {/if}
 
   {#if pendingCharacterDelete}
-    <section class="delete-dialog-backdrop" role="presentation">
-      <div class="delete-dialog" role="dialog" aria-modal="true" aria-label={t('character.delete')}>
-        <header>
-          <Trash2 size={17} />
-          <strong>{t('character.delete')}</strong>
-        </header>
-        <p>
-          <strong>{pendingCharacterDelete.name}</strong>
-          <span>{t('character.deleteConfirm', { name: pendingCharacterDelete.name })}</span>
-        </p>
-        <div class="delete-dialog-actions conversation-delete-actions">
-          <button type="button" disabled={deletingCharacter} on:click={closeCharacterDeleteDialog}>
-            {t('common.cancel')}
-          </button>
-          <button class="danger" type="button" disabled={deletingCharacter} on:click={confirmCharacterDelete}>
-            {deletingCharacter ? t('status.deleting') : t('character.delete')}
-          </button>
-        </div>
-        {#if characterDeleteStatus}
-          <small>{characterDeleteStatus}</small>
-        {/if}
-      </div>
-    </section>
+    <ConfirmDialog
+      title={t('character.delete')}
+      subject={pendingCharacterDelete.name}
+      description={t('character.deleteConfirm', { name: pendingCharacterDelete.name })}
+      cancelLabel={t('common.cancel')}
+      confirmLabel={deletingCharacter ? t('status.deleting') : t('character.delete')}
+      busy={deletingCharacter}
+      status={characterDeleteStatus}
+      onCancel={closeCharacterDeleteDialog}
+      onConfirm={confirmCharacterDelete}
+    />
   {/if}
 
   {#if pendingProfileDelete}
-    <section class="delete-dialog-backdrop" role="presentation">
-      <div class="delete-dialog" role="dialog" aria-modal="true" aria-label={t('profile.delete')}>
-        <header>
-          <Trash2 size={17} />
-          <strong>{t('profile.delete')}</strong>
-        </header>
-        <p>
-          <strong>{pendingProfileDelete.name}</strong>
-          <span>{t('profile.deleteConfirm', { name: pendingProfileDelete.name })}</span>
-        </p>
-        <div class="delete-dialog-actions conversation-delete-actions">
-          <button type="button" disabled={deletingProfile} on:click={closeProfileDeleteDialog}>
-            {t('common.cancel')}
-          </button>
-          <button class="danger" type="button" disabled={deletingProfile} on:click={confirmProfileDelete}>
-            {deletingProfile ? t('status.deleting') : t('profile.delete')}
-          </button>
-        </div>
-        {#if profileDeleteStatus}
-          <small>{profileDeleteStatus}</small>
-        {/if}
-      </div>
-    </section>
+    <ConfirmDialog
+      title={t('profile.delete')}
+      subject={pendingProfileDelete.name}
+      description={t('profile.deleteConfirm', { name: pendingProfileDelete.name })}
+      cancelLabel={t('common.cancel')}
+      confirmLabel={deletingProfile ? t('status.deleting') : t('profile.delete')}
+      busy={deletingProfile}
+      status={profileDeleteStatus}
+      onCancel={closeProfileDeleteDialog}
+      onConfirm={confirmProfileDelete}
+    />
   {/if}
 
-  {#if activeDrawer}
-    {#if activeDrawer !== 'settings'}
-      <button class="scrim" type="button" aria-label={t('common.close')} on:click={closeDrawer}></button>
-    {/if}
-    <aside
-      class="drawer"
-      class:right={drawerIsRight}
-      class:characters={activeDrawer === 'characters'}
-      class:personas={activeDrawer === 'personas'}
-      class:profiles={activeDrawer === 'profiles'}
-      class:toolbox={activeDrawer === 'toolbox'}
-      class:worldbooks={activeDrawer === 'worldbooks'}
-      aria-label={drawerTitle}
-    >
-      <header class="drawer-header">
-        <h2>{drawerTitle}</h2>
-        <button class="tool-button" type="button" title={t('common.close')} aria-label={t('common.close')} on:click={closeDrawer}>
-          <X size={18} />
-        </button>
-      </header>
+  {#if pendingConversationRename}
+    <RenameDialog
+      title={t('chat.rename')}
+      description={t('chat.renameDescription')}
+      label={t('chat.renameField')}
+      initialValue={pendingConversationRename.title}
+      cancelLabel={t('common.cancel')}
+      confirmLabel={renamingConversation ? t('status.saving') : t('common.save')}
+      busy={renamingConversation}
+      status={conversationRenameStatus}
+      onCancel={closeConversationRenameDialog}
+      onConfirm={confirmConversationRename}
+    />
+  {/if}
 
+  {#if pendingPersonaDelete}
+    <ConfirmDialog
+      title={t('persona.deleteTitle')}
+      subject={pendingPersonaDelete.name}
+      description={t('persona.deleteConfirm', { name: pendingPersonaDelete.name })}
+      cancelLabel={t('common.cancel')}
+      confirmLabel={personaDeleting ? t('status.deleting') : t('common.delete')}
+      busy={personaDeleting}
+      status={personaDeleteStatus}
+      onCancel={closePersonaDeleteDialog}
+      onConfirm={confirmPersonaDelete}
+    />
+  {/if}
+
+  {#if pendingWorldBookDelete}
+    <ConfirmDialog
+      title={t('worldbook.delete')}
+      subject={pendingWorldBookDelete.worldBook.name}
+      description={t('worldbook.deleteConfirm', {
+        name: pendingWorldBookDelete.worldBook.name,
+        entries: pendingWorldBookDelete.worldBook.entries.length,
+        characters: pendingWorldBookDelete.boundCount
+      })}
+      cancelLabel={t('common.cancel')}
+      confirmLabel={deletingWorldBook ? t('status.deleting') : t('common.delete')}
+      busy={deletingWorldBook}
+      status={worldBookDeleteStatus}
+      onCancel={closeWorldBookDeleteDialog}
+      onConfirm={confirmWorldBookDelete}
+    />
+  {/if}
+
+  <ToastRegion
+    {toasts}
+    ariaLabel={t('toast.region')}
+    dismissLabel={t('toast.dismiss')}
+    onDismiss={dismissToast}
+  />
+
+  {#if activeDrawer}
+    <DrawerShell
+      title={drawerTitle}
+      closeLabel={t('common.close')}
+      side={drawerSide(activeDrawer)}
+      size={drawerSize(activeDrawer)}
+      showOverlay={activeDrawer !== 'settings'}
+      trapFocus={activeDrawer !== 'settings'}
+      preventScroll={activeDrawer !== 'settings'}
+      onClose={closeDrawer}
+    >
       {#if activeDrawer === 'chats'}
         <div class="drawer-actions">
           <button class="secondary full" type="button" on:click={startNewConversation}>
@@ -4473,851 +4408,174 @@
           {/if}
         </div>
       {:else if activeDrawer === 'characters'}
-        <div class="character-workspace">
-          <section class="character-library" aria-label={t('character.library')}>
-            <div class="character-library-actions">
-              <button class="primary" type="button" on:click={startCharacterCreate}>
-                <Plus size={16} />{t('common.new')}
-              </button>
-              <button class="secondary" type="button" on:click={openCharacterImport}>
-                <FileInput size={16} />{t('common.import')}
-              </button>
-            </div>
-
-            <div class="character-toolbar">
-              <input class="profile-search" bind:value={characterQuery} placeholder={t('character.search')} aria-label={t('character.search')} />
-              <select bind:value={characterSortMode} aria-label={t('character.sort')}>
-                {#each characterSortModes as option}
-                  <option value={option.value}>{option.label}</option>
-                {/each}
-              </select>
-            </div>
-
-            <div class="character-list" aria-label={t('nav.characters')}>
-              {#each filteredCharacters as character}
-                <article class="character-row" class:active={character.id === activeCharacterId}>
-                  <button class="character-row-main" type="button" on:click={() => selectCharacter(character)}>
-                    <span class="character-avatar-small">
-                      {#if characterAvatarUrl(character)}
-                        <img src={characterAvatarUrl(character)} alt={t('chat.avatarAlt', { name: character.name })} />
-                      {:else}
-                        <span>{characterInitials(character)}</span>
-                      {/if}
-                    </span>
-                    <span class="character-row-copy">
-                      <strong>{character.name}</strong>
-                      <small>{characterListLine(character)}</small>
-                    </span>
-                  </button>
-                  <button
-                    class="favorite-button"
-                    class:active={character.favorite}
-                    type="button"
-                    on:click={() => toggleCharacterFavorite(character)}
-                    title={character.favorite ? t('character.unfavorite') : t('common.favorite')}
-                    aria-label={`${character.favorite ? t('character.unfavorite') : t('common.favorite')} ${character.name}`}
-                  >
-                    <Star size={15} fill={character.favorite ? 'currentColor' : 'none'} />
-                  </button>
-                </article>
-              {:else}
-                <div class="drawer-empty compact">{t('character.noMatching')}</div>
-              {/each}
-            </div>
-          </section>
-
-          {#if characterPanelMode === 'create'}
-            <form class="character-editor character-editor-create" on:submit|preventDefault={createCharacter}>
-              <header class="character-editor-hero">
-                <div class="character-avatar-large placeholder-avatar" aria-hidden="true">
-                  <Image size={28} />
-                </div>
-
-                <div class="character-hero-copy">
-                  <div class="character-hero-title">
-                    <div>
-                      <strong>{newCharacterName.trim() || t('character.newCharacter')}</strong>
-                      <span>{t('character.newDraft')}</span>
-                    </div>
-                    <button
-                      class="favorite-button hero-favorite"
-                      class:active={newCharacterFavorite}
-                      type="button"
-                      on:click={() => (newCharacterFavorite = !newCharacterFavorite)}
-                      title={newCharacterFavorite ? t('character.unfavorite') : t('common.favorite')}
-                      aria-label={t('character.toggleFavorite')}
-                    >
-                      <Star size={16} fill={newCharacterFavorite ? 'currentColor' : 'none'} />
-                    </button>
-                  </div>
-
-                  <div class="character-chips" aria-label={t('character.statsNew')}>
-                    <span>{t('character.tokens', { count: createCharacterStats.tokens })}</span>
-                    <span>{t('character.greetings', { count: createCharacterStats.greetings })}</span>
-                    <span>{t('character.tagsCount', { count: createCharacterStats.tags })}</span>
-                    {#if createCharacterStats.overrides}
-                      <span>{t('character.overrides', { count: createCharacterStats.overrides })}</span>
-                    {/if}
-                  </div>
-                </div>
-
-                <div class="character-actions">
-                  <button class="tool-button" type="button" on:click={openCharacterImport} title={t('character.importCard')} aria-label={t('character.importCard')}>
-                    <FileInput size={16} />
-                  </button>
-                  <button class="tool-button" type="button" on:click={resetNewCharacterDraft} title={t('character.resetDraft')} aria-label={t('character.resetDraft')}>
-                    <RotateCcw size={16} />
-                  </button>
-                  <button class="tool-button" type="submit" title={t('character.create')} aria-label={t('character.create')} disabled={!newCharacterName.trim()}>
-                    <Save size={16} />
-                  </button>
-                </div>
-              </header>
-
-              <nav class="character-tabs" aria-label={t('character.newSections')}>
-                <button class:active={characterEditorTab === 'core'} type="button" on:click={() => (characterEditorTab = 'core')}>{t('character.tab.core')}</button>
-                <button class:active={characterEditorTab === 'prompt'} type="button" on:click={() => (characterEditorTab = 'prompt')}>{t('character.tab.prompt')}</button>
-                <button class:active={characterEditorTab === 'lore'} type="button" on:click={() => (characterEditorTab = 'lore')}>{t('character.tab.lore')}</button>
-                <button class:active={characterEditorTab === 'metadata'} type="button" on:click={() => (characterEditorTab = 'metadata')}>{t('character.tab.metadata')}</button>
-              </nav>
-
-              {#if characterEditorTab === 'core'}
-                <section class="character-editor-section">
-                  <div class="character-field-grid">
-                    <label>
-                      <span>{t('common.name')}</span>
-                      <input bind:value={newCharacterName} placeholder={t('character.placeholder.name')} />
-                    </label>
-                    <label>
-                      <span>{t('common.tags')}</span>
-                      <input bind:value={newCharacterTags} placeholder={t('character.placeholder.tags')} />
-                    </label>
-                    <label class="span-2">
-                      <span>{t('character.description')}</span>
-                      <textarea bind:value={newCharacterDescription} rows="8" placeholder={t('character.placeholder.description')}></textarea>
-                    </label>
-                    <label>
-                      <span>{t('character.personality')}</span>
-                      <textarea bind:value={newCharacterPersonality} rows="5" placeholder={t('character.placeholder.personality')}></textarea>
-                    </label>
-                    <label>
-                      <span>{t('character.scenario')}</span>
-                      <textarea bind:value={newCharacterScenario} rows="5" placeholder={t('character.placeholder.scenario')}></textarea>
-                    </label>
-                    <label class="span-2">
-                      <span>{t('character.firstMessage')}</span>
-                      <textarea bind:value={newCharacterFirstMessage} rows="6" placeholder={t('character.placeholder.firstMessage')}></textarea>
-                    </label>
-                    <label class="span-2">
-                      <span>{t('character.alternateGreetings')}</span>
-                      <textarea bind:value={newCharacterAlternateGreetings} rows="5" placeholder={t('character.placeholder.alternateGreetings')}></textarea>
-                    </label>
-                  </div>
-                </section>
-              {:else if characterEditorTab === 'prompt'}
-                <section class="character-editor-section">
-                  <div class="character-field-grid">
-                    <label class="span-2">
-                      <span>{t('character.systemPromptOverride')}</span>
-                      <textarea bind:value={newCharacterSystemPrompt} rows="7" placeholder={t('character.placeholder.systemPrompt')}></textarea>
-                    </label>
-                    <label class="span-2">
-                      <span>{t('character.postHistoryInstructions')}</span>
-                      <textarea bind:value={newCharacterPostHistoryInstructions} rows="7" placeholder={t('character.placeholder.postHistory')}></textarea>
-                    </label>
-                    <label class="span-2">
-                      <span>{t('character.exampleMessages')}</span>
-                      <textarea bind:value={newCharacterExampleMessages} rows="9" placeholder={t('character.placeholder.exampleMessages')}></textarea>
-                    </label>
-                  </div>
-                </section>
-              {:else if characterEditorTab === 'lore'}
-                <section class="character-editor-section">
-                  <div class="character-lore-header">
-                    <div>
-                      <strong>{t('character.lore')}</strong>
-                      <span>{t('character.boundWorldBooks', { count: 0 })}</span>
-                    </div>
-                    <button class="secondary" type="button" on:click={openCharacterImport}>
-                      <FileInput size={16} />{t('common.import')}
-                    </button>
-                  </div>
-
-                  <label class="character-textarea-label">
-                    <span>{t('character.creatorNotes')}</span>
-                    <textarea bind:value={newCharacterCreatorNotes} rows="8" placeholder={t('character.placeholder.creatorNotes')}></textarea>
-                  </label>
-                </section>
-              {:else}
-                <section class="character-editor-section">
-                  <div class="character-field-grid">
-                    <label>
-                      <span>{t('character.creator')}</span>
-                      <input bind:value={newCharacterCreator} placeholder={t('character.creator')} />
-                    </label>
-                    <label>
-                      <span>{t('common.version')}</span>
-                      <input bind:value={newCharacterCharacterVersion} placeholder={t('character.characterVersion')} />
-                    </label>
-                    <label>
-                      <span>{t('character.talkativeness')}</span>
-                      <input bind:value={newCharacterTalkativeness} inputmode="decimal" placeholder={t('common.optional')} />
-                    </label>
-                    <div class="character-source-panel">
-                      <span>{t('character.cardSource')}</span>
-                      <strong>{t('character.nativeDraft')}</strong>
-                      <small>{t('character.newCharacter')}</small>
-                    </div>
-                  </div>
-                </section>
-              {/if}
-            </form>
-          {:else if activeCharacter}
-            <form class="character-editor" on:submit|preventDefault={saveActiveCharacter}>
-              <header class="character-editor-hero">
-                <button class="character-avatar-large" type="button" on:click={() => openCharacterAvatar(activeCharacter)} title={t('character.openAvatarPreview')} aria-label={t('chat.openAvatar', { name: activeCharacter.name })}>
-                  {#if characterAvatarUrl(activeCharacter)}
-                    <img src={characterAvatarUrl(activeCharacter)} alt={t('chat.avatarAlt', { name: activeCharacter.name })} />
-                  {:else}
-                    <span>{characterInitials(activeCharacter)}</span>
-                  {/if}
-                </button>
-
-                <div class="character-hero-copy">
-                  <div class="character-hero-title">
-                    <div>
-                      <strong>{activeCharacter.name}</strong>
-                      <span>{characterOrigin(activeCharacter)}</span>
-                    </div>
-                    <button
-                      class="favorite-button hero-favorite"
-                      class:active={characterDraftFavorite}
-                      type="button"
-                      on:click={() => (characterDraftFavorite = !characterDraftFavorite)}
-                      title={characterDraftFavorite ? t('character.unfavoriteOnSave') : t('character.favoriteOnSave')}
-                      aria-label={t('character.toggleFavorite')}
-                    >
-                      <Star size={16} fill={characterDraftFavorite ? 'currentColor' : 'none'} />
-                    </button>
-                  </div>
-
-                  <div class="character-chips" aria-label={t('character.stats')}>
-                    <span>{t('character.tokens', { count: activeCharacterStats.tokens })}</span>
-                    <span>{t('character.greetings', { count: activeCharacterStats.greetings })}</span>
-                    <span>{t('character.loreCount', { count: activeCharacterStats.worldBooks })}</span>
-                    <span>{t('character.tagsCount', { count: activeCharacterStats.tags })}</span>
-                    {#if activeCharacterStats.overrides}
-                      <span>{t('character.overrides', { count: activeCharacterStats.overrides })}</span>
-                    {/if}
-                  </div>
-                </div>
-
-                <div class="character-actions">
-                  <button class="tool-button" type="button" on:click={() => startChatWithCharacter(activeCharacter)} title={t('character.startChat')} aria-label={t('character.startChat')}>
-                    <MessageCircle size={16} />
-                  </button>
-                  <button class="tool-button" type="button" on:click={openCharacterImport} title={t('character.importCard')} aria-label={t('character.importCard')}>
-                    <FileInput size={16} />
-                  </button>
-                  <button class="tool-button" type="button" on:click={duplicateActiveCharacter} title={t('character.duplicate')} aria-label={t('character.duplicate')}>
-                    <Copy size={16} />
-                  </button>
-                  <button class="tool-button danger" type="button" on:click={deleteActiveCharacter} title={t('character.delete')} aria-label={t('character.delete')}>
-                    <Trash2 size={16} />
-                  </button>
-                  <button class="tool-button" type="submit" title={t('character.save')} aria-label={t('character.save')}>
-                    <Save size={16} />
-                  </button>
-                </div>
-              </header>
-
-              <nav class="character-tabs" aria-label={t('character.editorSections')}>
-                <button class:active={characterEditorTab === 'core'} type="button" on:click={() => (characterEditorTab = 'core')}>{t('character.tab.core')}</button>
-                <button class:active={characterEditorTab === 'prompt'} type="button" on:click={() => (characterEditorTab = 'prompt')}>{t('character.tab.prompt')}</button>
-                <button class:active={characterEditorTab === 'lore'} type="button" on:click={() => (characterEditorTab = 'lore')}>{t('character.tab.lore')}</button>
-                <button class:active={characterEditorTab === 'metadata'} type="button" on:click={() => (characterEditorTab = 'metadata')}>{t('character.tab.metadata')}</button>
-              </nav>
-
-              {#if characterEditorTab === 'core'}
-                <section class="character-editor-section">
-                  <div class="character-field-grid">
-                    <label>
-                      <span>{t('common.name')}</span>
-                      <input bind:value={characterDraftName} placeholder={t('character.placeholder.name')} />
-                    </label>
-                    <label>
-                      <span>{t('common.tags')}</span>
-                      <input bind:value={characterDraftTags} placeholder={t('character.placeholder.tags')} />
-                    </label>
-                    <label class="span-2">
-                      <span>{t('character.description')}</span>
-                      <textarea bind:value={characterDraftDescription} rows="8" placeholder={t('character.placeholder.description')}></textarea>
-                    </label>
-                    <label>
-                      <span>{t('character.personality')}</span>
-                      <textarea bind:value={characterDraftPersonality} rows="5" placeholder={t('character.placeholder.personality')}></textarea>
-                    </label>
-                    <label>
-                      <span>{t('character.scenario')}</span>
-                      <textarea bind:value={characterDraftScenario} rows="5" placeholder={t('character.placeholder.scenario')}></textarea>
-                    </label>
-                    <label class="span-2">
-                      <span>{t('character.firstMessage')}</span>
-                      <textarea bind:value={characterDraftFirstMessage} rows="6" placeholder={t('character.placeholder.firstMessage')}></textarea>
-                    </label>
-                    <label class="span-2">
-                      <span>{t('character.alternateGreetings')}</span>
-                      <textarea bind:value={characterDraftAlternateGreetings} rows="5" placeholder={t('character.placeholder.alternateGreetings')}></textarea>
-                    </label>
-                  </div>
-                </section>
-              {:else if characterEditorTab === 'prompt'}
-                <section class="character-editor-section">
-                  <div class="character-field-grid">
-                    <label class="span-2">
-                      <span>{t('character.systemPromptOverride')}</span>
-                      <textarea bind:value={characterDraftSystemPrompt} rows="7" placeholder={t('character.placeholder.systemPrompt')}></textarea>
-                    </label>
-                    <label class="span-2">
-                      <span>{t('character.postHistoryInstructions')}</span>
-                      <textarea bind:value={characterDraftPostHistoryInstructions} rows="7" placeholder={t('character.placeholder.postHistory')}></textarea>
-                    </label>
-                    <label class="span-2">
-                      <span>{t('character.exampleMessages')}</span>
-                      <textarea bind:value={characterDraftExampleMessages} rows="9" placeholder={t('character.placeholder.exampleMessages')}></textarea>
-                    </label>
-                  </div>
-                </section>
-              {:else if characterEditorTab === 'lore'}
-                <section class="character-editor-section">
-                  <div class="character-lore-header">
-                    <div>
-                      <strong>{t('character.lore')}</strong>
-                      <span>{t('character.boundWorldBooks', { count: activeCharacterWorldBooks.length })}</span>
-                    </div>
-                    <button class="secondary" type="button" on:click={() => openCharacterWorldBooks(activeCharacter)}>
-                      <BookOpen size={16} />{t('character.openWorldBook')}
-                    </button>
-                  </div>
-                  {#if activeCharacterWorldBooks.length}
-                    <div class="character-lore-list">
-                      {#each activeCharacterWorldBooks as worldBook}
-                        {@const binding = worldBookBindingForCharacter(activeCharacter, worldBook.id)}
-                        <article class:disabled={binding?.enabled === false}>
-                          <button type="button" on:click={() => { activeWorldBookId = worldBook.id; activeDrawer = 'worldbooks'; worldBookBindingCharacterId = activeCharacter?.id ?? ''; }}>
-                            <BookOpen size={16} />
-                            <span>
-                              <strong>{worldBook.name}</strong>
-                              <small>
-                                {t('worldbook.entries', { count: worldBook.entries.length })} · {metadataSourceLabel(worldBook.metadata?.source)} · {binding?.enabled === false ? t('worldbook.bindingDisabled') : t('worldbook.bindingEnabled')}
-                              </small>
-                            </span>
-                          </button>
-                          <div class="character-lore-actions">
-                            <button
-                              type="button"
-                              title={binding?.enabled === false ? t('worldbook.enableForCharacter') : t('worldbook.disableForCharacter')}
-                              aria-label={binding?.enabled === false ? t('worldbook.enableForCharacter') : t('worldbook.disableForCharacter')}
-                              on:click={() => setWorldBookBindingEnabled(activeCharacter, worldBook, binding?.enabled === false)}
-                            >
-                              {#if binding?.enabled === false}
-                                <PowerOff size={14} />
-                              {:else}
-                                <Power size={14} />
-                              {/if}
-                            </button>
-                            <button type="button" title={t('worldbook.unbind')} aria-label={t('worldbook.unbind')} on:click={() => unbindWorldBookFromCharacter(activeCharacter, worldBook)}>
-                              <Unlink size={14} />
-                            </button>
-                          </div>
-                        </article>
-                      {/each}
-                    </div>
-                  {:else}
-                    <div class="drawer-empty compact">{t('character.noBoundWorldBook')}</div>
-                  {/if}
-
-                  <label class="character-textarea-label">
-                    <span>{t('character.creatorNotes')}</span>
-                    <textarea bind:value={characterDraftCreatorNotes} rows="8" placeholder={t('character.placeholder.creatorNotes')}></textarea>
-                  </label>
-                </section>
-              {:else}
-                <section class="character-editor-section">
-                  <div class="character-field-grid">
-                    <label>
-                      <span>{t('character.creator')}</span>
-                      <input bind:value={characterDraftCreator} placeholder={t('character.creator')} />
-                    </label>
-                    <label>
-                      <span>{t('common.version')}</span>
-                      <input bind:value={characterDraftCharacterVersion} placeholder={t('character.characterVersion')} />
-                    </label>
-                    <label>
-                      <span>{t('character.talkativeness')}</span>
-                      <input bind:value={characterDraftTalkativeness} inputmode="decimal" placeholder={t('common.optional')} />
-                    </label>
-                    <div class="character-source-panel">
-                      <span>{t('character.cardSource')}</span>
-                      <strong>{characterOrigin(activeCharacter)}</strong>
-                      <small>{activeCharacter.id}</small>
-                    </div>
-                  </div>
-                </section>
-              {/if}
-            </form>
-          {:else}
-            <section class="character-editor empty">
-              <Image size={28} />
-              <strong>{t('character.selectOrCreate')}</strong>
-            </section>
-          {/if}
-        </div>
+        {#if CharacterDrawerComponent && charactersHydrated}
+        <CharacterDrawerComponent
+          bind:newCharacterName
+          bind:newCharacterDescription
+          bind:newCharacterPersonality
+          bind:newCharacterScenario
+          bind:newCharacterFirstMessage
+          bind:newCharacterAlternateGreetings
+          bind:newCharacterExampleMessages
+          bind:newCharacterSystemPrompt
+          bind:newCharacterPostHistoryInstructions
+          bind:newCharacterCreatorNotes
+          bind:newCharacterTags
+          bind:newCharacterCreator
+          bind:newCharacterCharacterVersion
+          bind:newCharacterTalkativeness
+          bind:newCharacterFavorite
+          bind:characterQuery
+          bind:characterSortMode
+          bind:characterPanelMode
+          bind:characterEditorTab
+          bind:characterDraftName
+          bind:characterDraftDescription
+          bind:characterDraftPersonality
+          bind:characterDraftScenario
+          bind:characterDraftFirstMessage
+          bind:characterDraftAlternateGreetings
+          bind:characterDraftExampleMessages
+          bind:characterDraftSystemPrompt
+          bind:characterDraftPostHistoryInstructions
+          bind:characterDraftCreatorNotes
+          bind:characterDraftTags
+          bind:characterDraftCreator
+          bind:characterDraftCharacterVersion
+          bind:characterDraftTalkativeness
+          bind:characterDraftFavorite
+          bind:activeCharacterId
+          bind:activeWorldBookId
+          bind:activeDrawer
+          bind:worldBookBindingCharacterId
+          {filteredCharacters}
+          {activeCharacter}
+          {activeCharacterWorldBooks}
+          {activeCharacterStats}
+          {createCharacterStats}
+          {startCharacterCreate}
+          {openCharacterImport}
+          {characterAvatarUrl}
+          {characterInitials}
+          {characterListLine}
+          {selectCharacter}
+          {toggleCharacterFavorite}
+          {createCharacter}
+          {resetNewCharacterDraft}
+          {saveActiveCharacter}
+          {openCharacterAvatar}
+          {characterOrigin}
+          {startChatWithCharacter}
+          {duplicateActiveCharacter}
+          {deleteActiveCharacter}
+          {openCharacterWorldBooks}
+          {worldBookBindingForCharacter}
+          {metadataSourceLabel}
+          {setWorldBookBindingEnabled}
+          {unbindWorldBookFromCharacter}
+        />
+        {:else}
+          <div class="drawer-empty">{t('status.loading')}</div>
+        {/if}
       {:else if activeDrawer === 'personas'}
-        <div class="persona-workspace">
-          <section class="persona-library" aria-label={t('persona.library')}>
-            <form class="persona-create" on:submit|preventDefault={createPersona}>
-              <div class="persona-section-head">
-                <strong>{t('persona.create')}</strong>
-                <small>{t('persona.createHint')}</small>
-              </div>
-              <TextField bind:value={newPersonaName} label={t('common.name')} placeholder={t('persona.namePlaceholder')} />
-              <TextField bind:value={newPersonaTitle} label={t('persona.title')} placeholder={t('persona.titlePlaceholder')} />
-              <TextareaField bind:value={newPersonaDescription} label={t('persona.description')} rows={4} placeholder={t('persona.descriptionPlaceholder')} />
-              <label class="checkbox-row compact">
-                <input type="checkbox" bind:checked={newPersonaDefault} />
-                <span>{t('persona.default')}</span>
-              </label>
-              <button class="primary full" type="submit"><UserRound size={16} />{t('common.create')}</button>
-            </form>
-
-            <label class="search-field persona-search">
-              <Search size={15} />
-              <input bind:value={personaQuery} placeholder={t('persona.search')} aria-label={t('persona.search')} />
-            </label>
-
-            <div class="persona-list">
-              {#each filteredPersonas as persona}
-                <button
-                  class="persona-row"
-                  class:active={persona.id === activePersonaId}
-                  type="button"
-                  on:click={() => (activePersonaId = persona.id)}
-                >
-                  <span class="persona-row-avatar">
-                    {#if personaAvatarUrl(persona)}
-                      <img src={personaAvatarUrl(persona)} alt="" />
-                    {:else}
-                      <span>{personaInitials(persona)}</span>
-                    {/if}
-                  </span>
-                  <span class="persona-row-copy">
-                    <strong>{persona.name}</strong>
-                    <small>{personaBindingLabel(persona)}</small>
-                  </span>
-                </button>
-              {/each}
-            </div>
-          </section>
-
-          <section class="persona-detail" aria-label={t('persona.current')}>
-            {#if activePersona}
-              <div class="persona-identity">
-                <label class="persona-avatar-uploader" title={t('persona.changeAvatar')}>
-                  {#if personaAvatarUrl(activePersona)}
-                    <img src={personaAvatarUrl(activePersona)} alt="" />
-                  {:else}
-                    <span>{personaInitials(activePersona)}</span>
-                  {/if}
-                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={personaAvatarUploading} on:change={uploadActivePersonaAvatar} />
-                </label>
-                <div>
-                  <span>{t('persona.current')}</span>
-                  <h3>{activePersona.name}</h3>
-                  <p>{activePersona.title || personaBindingLabel(activePersona)}</p>
-                </div>
-              </div>
-
-              <div class="persona-action-grid">
-                <button class:active={activePersona.isDefault} type="button" on:click={setActivePersonaDefault}>
-                  <Star size={15} />{t('persona.setDefault')}
-                </button>
-                <button class:active={activePersonaBoundToActiveCharacter} type="button" disabled={!activeCharacter} on:click={toggleActivePersonaCharacterBinding}>
-                  {#if activePersonaBoundToActiveCharacter}
-                    <Unlink size={15} />{t('persona.unbindCharacter')}
-                  {:else}
-                    <Link2 size={15} />{t('persona.bindCharacter')}
-                  {/if}
-                </button>
-                <button class:active={activePersonaLockedToConversation} type="button" disabled={!activeConversationId} on:click={lockActivePersonaToCurrentChat}>
-                  <Link2 size={15} />{t('persona.lockChat')}
-                </button>
-                <button type="button" on:click={duplicateActivePersona}>
-                  <Copy size={15} />{t('persona.duplicate')}
-                </button>
-                <button type="button" disabled={!activePersona.avatarAssetId || personaAvatarUploading} on:click={clearActivePersonaAvatar}>
-                  <Image size={15} />{t('persona.clearAvatar')}
-                </button>
-                <button class="danger" type="button" disabled={personaDeleting} on:click={deleteActivePersona}>
-                  <Trash2 size={15} />{t('common.delete')}
-                </button>
-              </div>
-
-              <form class="persona-editor" on:submit|preventDefault={saveActivePersona}>
-                <TextField bind:value={personaDraftName} label={t('common.name')} placeholder={t('persona.namePlaceholder')} />
-                <TextField bind:value={personaDraftTitle} label={t('persona.title')} placeholder={t('persona.titlePlaceholder')} />
-                <TextareaField bind:value={personaDraftDescription} label={t('persona.description')} rows={9} placeholder={t('persona.descriptionPlaceholder')} />
-                <div class="persona-editor-meta">
-                  <span>{t('persona.tokenEstimate', { count: personaTokenEstimate(activePersona) })}</span>
-                  <label class="checkbox-row compact">
-                    <input type="checkbox" bind:checked={personaDraftDefault} />
-                    <span>{t('persona.default')}</span>
-                  </label>
-                </div>
-                <button class="primary full" type="submit"><Save size={16} />{t('common.save')}</button>
-              </form>
-
-              <section class="persona-connections">
-                <div class="persona-section-head">
-                  <strong>{t('persona.connections')}</strong>
-                  <small>{activeCharacter ? t('persona.currentCharacter', { name: activeCharacter.name }) : t('character.noCharacter')}</small>
-                </div>
-                <div class="persona-connection-row">
-                  <span>{t('persona.characterBinding')}</span>
-                  <strong>{activeCharacterPersona?.name ?? t('persona.noCharacterBinding')}</strong>
-                </div>
-                <div class="persona-connection-row">
-                  <span>{t('persona.chatLock')}</span>
-                  <strong>{activeConversationRecord?.personaId ? personas.find((persona) => persona.id === activeConversationRecord?.personaId)?.name ?? t('persona.missingPersona') : t('persona.noChatLock')}</strong>
-                </div>
-              </section>
-            {:else}
-              <div class="persona-empty">
-                <UserRound size={30} />
-                <strong>{t('persona.selectOrCreate')}</strong>
-              </div>
-            {/if}
-          </section>
-        </div>
+        {#if PersonaDrawerComponent}
+        <PersonaDrawerComponent
+          bind:newPersonaName
+          bind:newPersonaTitle
+          bind:newPersonaDescription
+          bind:newPersonaDefault
+          bind:personaQuery
+          bind:activePersonaId
+          bind:personaDraftName
+          bind:personaDraftTitle
+          bind:personaDraftDescription
+          bind:personaDraftDefault
+          {personas}
+          {filteredPersonas}
+          {activePersona}
+          {activeCharacter}
+          {activeCharacterPersona}
+          {activeConversationRecord}
+          {activeConversationId}
+          {activePersonaBoundToActiveCharacter}
+          {activePersonaLockedToConversation}
+          {personaAvatarUploading}
+          {personaDeleting}
+          {createPersona}
+          {saveActivePersona}
+          {setActivePersonaDefault}
+          {toggleActivePersonaCharacterBinding}
+          {lockActivePersonaToCurrentChat}
+          {duplicateActivePersona}
+          {clearActivePersonaAvatar}
+          {deleteActivePersona}
+          {uploadActivePersonaAvatar}
+          {personaAvatarUrl}
+          {personaInitials}
+          {personaBindingLabel}
+          {personaTokenEstimate}
+        />
+        {:else}
+          <div class="drawer-empty">{t('status.loading')}</div>
+        {/if}
       {:else if activeDrawer === 'worldbooks'}
-        <div class="worldbook-workspace">
-          <section class="worldbook-library" aria-label={t('worldbook.library')}>
-            <div class="worldbook-library-actions">
-              <form class="worldbook-create" on:submit|preventDefault={createWorldBook}>
-                <input bind:value={newWorldBookName} placeholder={t('worldbook.namePlaceholder')} />
-                <button class="primary" type="submit"><BookOpen size={16} />{t('common.create')}</button>
-              </form>
-              <button class="secondary full" type="button" on:click={openWorldBookImport}>
-                <FileInput size={16} />{t('worldbook.import')}
-              </button>
-            </div>
-
-            <div class="worldbook-list">
-              {#each worldBooks as worldBook}
-                {@const boundCount = characters.filter((character) => isWorldBookBoundToCharacter(character, worldBook.id)).length}
-                <button
-                  class="worldbook-row"
-                  class:active={worldBook.id === activeWorldBookId}
-                  type="button"
-                  on:click={() => (activeWorldBookId = worldBook.id)}
-                >
-                  <span>
-                    <strong>{worldBook.name}</strong>
-                    <small>{worldBookLine(worldBook)}</small>
-                  </span>
-                  {#if boundCount}
-                    <em>{t('worldbook.boundCount', { count: boundCount })}</em>
-                  {/if}
-                </button>
-              {:else}
-                <div class="drawer-empty compact">{t('worldbook.noWorldBooks')}</div>
-              {/each}
-            </div>
-          </section>
-
-          {#if activeWorldBook}
-            {@const worldStats = worldBookStats(worldBookDraftEntries)}
-            <section class="worldbook-editor" aria-label={t('worldbook.editor')}>
-              <header class="worldbook-editor-header">
-                <div>
-                  <strong>{t('worldbook.editor')}</strong>
-                  <span>{t('worldbook.enabledStats', { enabled: worldStats.enabled, total: worldStats.total, constant: worldStats.constant, regex: worldStats.regex })}</span>
-                </div>
-                <div class="preset-actions">
-                  <button class="tool-button" type="button" on:click={addWorldBookEntry} title={t('worldbook.newEntry')} aria-label={t('worldbook.newEntry')}>
-                    <Plus size={16} />
-                  </button>
-                  <button class="tool-button" type="button" on:click={saveActiveWorldBook} title={t('worldbook.save')} aria-label={t('worldbook.save')}>
-                    <Save size={16} />
-                  </button>
-                  <button class="tool-button danger" type="button" on:click={deleteActiveWorldBook} disabled={deletingWorldBook} title={t('worldbook.delete')} aria-label={t('worldbook.delete')}>
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </header>
-
-              <div class="worldbook-title-row">
-                <label>
-                  <span>{t('common.name')}</span>
-                  <input bind:value={worldBookDraftName} placeholder={t('worldbook.name')} />
-                </label>
-                <div class="worldbook-source">
-                  <span>{t('common.source')}</span>
-                  <strong>{metadataSourceLabel(activeWorldBook.metadata?.source)}</strong>
-                  {#if activeWorldBook.metadata?.characterName}
-                    <small>{activeWorldBook.metadata.characterName}</small>
-                  {/if}
-                </div>
-              </div>
-
-              <section class="worldbook-binding-panel" aria-label={t('worldbook.binding')}>
-                <header>
-                  <div>
-                    <strong>{t('worldbook.binding')}</strong>
-                    <span>{t('worldbook.bindingStats', { enabled: worldBookEnabledCharacters.length, total: worldBookBoundCharacters.length })}</span>
-                  </div>
-                  <select bind:value={worldBookBindingCharacterId} aria-label={t('worldbook.selectCharacter')}>
-                    {#each characters as character}
-                      <option value={character.id}>{character.name}</option>
-                    {/each}
-                  </select>
-                </header>
-                {#if worldBookBindingCharacter}
-                  {@const selectedBinding = worldBookBindingForCharacter(worldBookBindingCharacter, activeWorldBook.id)}
-                  <div class="worldbook-binding-selected">
-                    <span class="character-avatar-small compact">
-                      {#if characterAvatarUrl(worldBookBindingCharacter)}
-                        <img src={characterAvatarUrl(worldBookBindingCharacter)} alt={t('chat.avatarAlt', { name: worldBookBindingCharacter.name })} />
-                      {:else}
-                        <span>{characterInitials(worldBookBindingCharacter)}</span>
-                      {/if}
-                    </span>
-                    <div>
-                      <strong>{worldBookBindingCharacter.name}</strong>
-                      <small>
-                        {selectedBinding
-                          ? selectedBinding.enabled !== false
-                            ? t('worldbook.bindingEnabled')
-                            : t('worldbook.bindingDisabled')
-                          : t('worldbook.notBound')}
-                      </small>
-                    </div>
-                    <div class="worldbook-binding-actions">
-                      {#if selectedBinding}
-                        <button
-                          class="tool-button"
-                          type="button"
-                          on:click={() => setWorldBookBindingEnabled(worldBookBindingCharacter, activeWorldBook, selectedBinding.enabled === false)}
-                          title={selectedBinding.enabled !== false ? t('worldbook.disableForCharacter') : t('worldbook.enableForCharacter')}
-                          aria-label={selectedBinding.enabled !== false ? t('worldbook.disableForCharacter') : t('worldbook.enableForCharacter')}
-                        >
-                          {#if selectedBinding.enabled !== false}
-                            <Power size={16} />
-                          {:else}
-                            <PowerOff size={16} />
-                          {/if}
-                        </button>
-                        <button class="tool-button danger" type="button" on:click={() => unbindWorldBookFromCharacter(worldBookBindingCharacter, activeWorldBook)} title={t('worldbook.unbind')} aria-label={t('worldbook.unbind')}>
-                          <Unlink size={16} />
-                        </button>
-                      {:else}
-                        <button class="secondary" type="button" on:click={() => bindWorldBookToCharacter(worldBookBindingCharacter, activeWorldBook)}>
-                          <Link2 size={16} />{t('worldbook.bindToCharacter')}
-                        </button>
-                      {/if}
-                    </div>
-                  </div>
-                  <div class="worldbook-binding-list" aria-label={t('worldbook.boundCharacters')}>
-                    {#each characters as character}
-                      {@const binding = worldBookBindingForCharacter(character, activeWorldBook.id)}
-                      <button
-                        type="button"
-                        class:active={character.id === worldBookBindingCharacterId}
-                        class:enabled={binding?.enabled !== false && Boolean(binding)}
-                        class:disabled={binding?.enabled === false}
-                        on:click={() => (worldBookBindingCharacterId = character.id)}
-                      >
-                        <span>{character.name}</span>
-                        <small>{binding ? (binding.enabled !== false ? t('common.on') : t('common.off')) : t('worldbook.notBound')}</small>
-                      </button>
-                    {/each}
-                  </div>
-                {:else}
-                  <div class="drawer-empty compact">{t('worldbook.noCharacters')}</div>
-                {/if}
-              </section>
-
-              <div class="worldbook-entry-toolbar">
-                <input class="profile-search" bind:value={worldBookEntryQuery} placeholder={t('worldbook.searchEntries')} aria-label={t('worldbook.searchEntries')} />
-                <select bind:value={worldBookSortMode} aria-label={t('worldbook.sortEntries')}>
-                  {#each worldBookSortModes as option}
-                    <option value={option.value}>{option.label}</option>
-                  {/each}
-                </select>
-              </div>
-
-              <div class="worldbook-editor-grid">
-                <div class="worldbook-entry-list" aria-label={t('worldbook.entriesLabel')}>
-                  {#each filteredWorldBookEntries as entry}
-                    <article class="worldbook-entry-row" class:active={entry.id === activeWorldBookEntryId}>
-                      <button class="worldbook-entry-main" type="button" on:click={() => (activeWorldBookEntryId = entry.id)}>
-                        <span class="entry-state" data-state={entryStatus(entry)}>{entryStatus(entry) === 'constant' ? 'C' : entryStatus(entry) === 'disabled' ? 'X' : 'N'}</span>
-                        <span>
-                          <strong>{entryTitle(entry)}</strong>
-                          <small>{entryMetaLine(entry)}</small>
-                        </span>
-                      </button>
-                      <div class="worldbook-entry-actions">
-                        <button type="button" on:click={() => moveWorldBookEntryOrder(entry, 1)} title={t('worldbook.raiseOrder', { title: entryTitle(entry) })} aria-label={t('worldbook.raiseOrder', { title: entryTitle(entry) })}>
-                          <ArrowUp size={14} />
-                        </button>
-                        <button type="button" on:click={() => moveWorldBookEntryOrder(entry, -1)} title={t('worldbook.lowerOrder', { title: entryTitle(entry) })} aria-label={t('worldbook.lowerOrder', { title: entryTitle(entry) })}>
-                          <ArrowDown size={14} />
-                        </button>
-                        <button type="button" on:click={() => duplicateWorldBookEntry(entry)} title={t('worldbook.duplicateEntry')} aria-label={`${t('worldbook.duplicateEntry')} ${entryTitle(entry)}`}>
-                          <Copy size={14} />
-                        </button>
-                        <button type="button" on:click={() => removeWorldBookEntry(entry)} title={t('worldbook.deleteEntry')} aria-label={`${t('worldbook.deleteEntry')} ${entryTitle(entry)}`}>
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </article>
-                  {:else}
-                    <div class="drawer-empty compact">{t('worldbook.noMatchingEntries')}</div>
-                  {/each}
-                </div>
-
-                {#if activeWorldBookEntry}
-                  <section class="worldbook-entry-editor" aria-label={t('worldbook.entryEditor')}>
-                    <div class="worldbook-entry-editor-head">
-                      <div>
-                        <strong>{entryTitle(activeWorldBookEntry)}</strong>
-                        <span>{entryTokenEstimate(activeWorldBookEntry)} {t('common.tokenUnit')} · {entryStatusLabel(activeWorldBookEntry)}</span>
-                      </div>
-                      <div class="preset-actions">
-                        <button class="tool-button" type="button" on:click={() => duplicateWorldBookEntry(activeWorldBookEntry)} title={t('worldbook.duplicateEntry')} aria-label={t('worldbook.duplicateEntry')}>
-                          <Copy size={16} />
-                        </button>
-                        <button class="tool-button" type="button" on:click={() => removeWorldBookEntry(activeWorldBookEntry)} title={t('worldbook.deleteEntry')} aria-label={t('worldbook.deleteEntry')}>
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="worldbook-entry-fields">
-                      <label class="span-2">
-                        <span>{t('worldbook.memoTitle')}</span>
-                        <input value={activeWorldBookEntry.comment} on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { comment: (event.currentTarget as HTMLInputElement).value })} />
-                      </label>
-
-                      <div class="segmented-field">
-                        <span>{t('common.status')}</span>
-                        <div class="mini-segment three" aria-label={t('worldbook.entryStatus')}>
-                          <button class:active={entryStatus(activeWorldBookEntry) === 'normal'} type="button" on:click={() => setWorldBookEntryState(activeWorldBookEntry, 'normal')}>{t('worldbook.status.normal')}</button>
-                          <button class:active={entryStatus(activeWorldBookEntry) === 'constant'} type="button" on:click={() => setWorldBookEntryState(activeWorldBookEntry, 'constant')}>{t('worldbook.status.constant')}</button>
-                          <button class:active={entryStatus(activeWorldBookEntry) === 'disabled'} type="button" on:click={() => setWorldBookEntryState(activeWorldBookEntry, 'disabled')}>{t('common.off')}</button>
-                        </div>
-                      </div>
-
-                      <div class="segmented-field">
-                        <span>{t('worldbook.position')}</span>
-                        <div class="mini-segment three" aria-label={t('worldbook.position')}>
-                          {#each worldBookPositions as position}
-                            <button class:active={activeWorldBookEntry.position === position.value} type="button" on:click={() => updateWorldBookEntry(activeWorldBookEntry.id, { position: position.value })}>
-                              {position.label}
-                            </button>
-                          {/each}
-                        </div>
-                      </div>
-
-                      <label>
-                        <span>{t('worldbook.depth')}</span>
-                        <input
-                          value={activeWorldBookEntry.depth}
-                          inputmode="numeric"
-                          on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { depth: optionalInteger((event.currentTarget as HTMLInputElement).value) ?? 0 })}
-                        />
-                      </label>
-                      <label>
-                        <span>{t('worldbook.order')}</span>
-                        <input
-                          value={activeWorldBookEntry.order}
-                          inputmode="numeric"
-                          on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { order: optionalNumber((event.currentTarget as HTMLInputElement).value) ?? 0 })}
-                        />
-                      </label>
-                      <label>
-                        <span>{t('worldbook.triggerPercent')}</span>
-                        <input
-                          value={activeWorldBookEntry.probability}
-                          inputmode="numeric"
-                          on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { probability: Math.min(100, Math.max(0, optionalNumber((event.currentTarget as HTMLInputElement).value) ?? 100)) })}
-                        />
-                      </label>
-
-                      <div class="segmented-field">
-                        <span>{t('worldbook.roleAtDepth')}</span>
-                        <div class="mini-segment three" aria-label={t('worldbook.roleAtDepth')}>
-                          {#each promptRoles as role}
-                            <button class:active={activeWorldBookEntry.role === role} type="button" on:click={() => updateWorldBookEntry(activeWorldBookEntry.id, { role })}>{roleLabel(role)}</button>
-                          {/each}
-                        </div>
-                      </div>
-
-                      <label class="span-2">
-                        <span>{t('worldbook.primaryKeywords')}</span>
-                        <textarea
-                          rows="2"
-                          value={keywordText(activeWorldBookEntry.keys)}
-                          placeholder={t('character.placeholder.tags')}
-                          on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { keys: parseKeywordText((event.currentTarget as HTMLTextAreaElement).value) })}
-                        ></textarea>
-                      </label>
-                      <label class="span-2">
-                        <span>{t('worldbook.optionalFilter')}</span>
-                        <textarea
-                          rows="2"
-                          value={keywordText(activeWorldBookEntry.secondaryKeys)}
-                          placeholder={t('worldbook.placeholder.secondaryKeys')}
-                          on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { secondaryKeys: parseKeywordText((event.currentTarget as HTMLTextAreaElement).value) })}
-                        ></textarea>
-                      </label>
-                      <label class="span-2 content-field">
-                        <span>{t('common.content')}</span>
-                        <textarea
-                          rows="10"
-                          value={activeWorldBookEntry.content}
-                          placeholder={t('worldbook.placeholder.content')}
-                          on:input={(event) => updateWorldBookEntry(activeWorldBookEntry.id, { content: (event.currentTarget as HTMLTextAreaElement).value })}
-                        ></textarea>
-                      </label>
-                    </div>
-
-                    <div class="worldbook-toggle-grid">
-                      <button class="toggle-pill" class:active={activeWorldBookEntry.selective} type="button" on:click={() => updateWorldBookEntry(activeWorldBookEntry.id, { selective: !activeWorldBookEntry.selective })}>{t('worldbook.selective')}</button>
-                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.useProbability !== false} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'useProbability', activeWorldBookEntry.extensions.useProbability === false)}>{t('worldbook.useProbability')}</button>
-                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.use_regex === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'use_regex', activeWorldBookEntry.extensions.use_regex !== true)}>{t('worldbook.regexKeys')}</button>
-                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.case_sensitive === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'case_sensitive', activeWorldBookEntry.extensions.case_sensitive !== true)}>{t('worldbook.caseSensitive')}</button>
-                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.match_whole_words === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'match_whole_words', activeWorldBookEntry.extensions.match_whole_words !== true)}>{t('worldbook.wholeWords')}</button>
-                      <button class="toggle-pill" class:active={activeWorldBookEntry.extensions.ignore_budget === true} type="button" on:click={() => updateWorldBookEntryExtension(activeWorldBookEntry.id, 'ignore_budget', activeWorldBookEntry.extensions.ignore_budget !== true)}>{t('worldbook.ignoreBudget')}</button>
-                    </div>
-                  </section>
-                {:else}
-                  <section class="worldbook-entry-editor empty">
-                    <BookOpen size={28} />
-                    <strong>{t('worldbook.noEntry')}</strong>
-                    <button class="primary" type="button" on:click={addWorldBookEntry}><Plus size={16} />{t('worldbook.newEntry')}</button>
-                  </section>
-                {/if}
-              </div>
-            </section>
-          {:else}
-            <section class="worldbook-editor empty">
-              <BookOpen size={28} />
-              <strong>{t('worldbook.selectOrCreate')}</strong>
-            </section>
-          {/if}
-        </div>
+        {#if WorldBookDrawerComponent && charactersHydrated && worldBooksHydrated}
+        <WorldBookDrawerComponent
+          {worldBooks}
+          {characters}
+          {activeWorldBook}
+          bind:activeWorldBookId
+          bind:worldBookDraftName
+          {worldBookDraftEntries}
+          {activeWorldBookEntry}
+          bind:activeWorldBookEntryId
+          {filteredWorldBookEntries}
+          bind:newWorldBookName
+          bind:worldBookBindingCharacterId
+          {worldBookBindingCharacter}
+          {worldBookBoundCharacters}
+          {worldBookEnabledCharacters}
+          bind:worldBookEntryQuery
+          bind:worldBookSortMode
+          {deletingWorldBook}
+          {worldBookPositions}
+          {worldBookSortModes}
+          {promptRoles}
+          {createWorldBook}
+          {openWorldBookImport}
+          {isWorldBookBoundToCharacter}
+          {worldBookLine}
+          {worldBookStats}
+          {addWorldBookEntry}
+          {saveActiveWorldBook}
+          {deleteActiveWorldBook}
+          {metadataSourceLabel}
+          {worldBookBindingForCharacter}
+          {characterAvatarUrl}
+          {characterInitials}
+          {setWorldBookBindingEnabled}
+          {unbindWorldBookFromCharacter}
+          {bindWorldBookToCharacter}
+          {entryStatus}
+          {entryTitle}
+          {entryMetaLine}
+          {moveWorldBookEntryOrder}
+          {duplicateWorldBookEntry}
+          {removeWorldBookEntry}
+          {entryTokenEstimate}
+          {entryStatusLabel}
+          {updateWorldBookEntry}
+          {setWorldBookEntryState}
+          {optionalInteger}
+          {optionalNumber}
+          {roleLabel}
+          {keywordText}
+          {parseKeywordText}
+          {updateWorldBookEntryExtension}
+        />
+        {:else}
+          <div class="drawer-empty">{t('status.loading')}</div>
+        {/if}
       {:else if activeDrawer === 'profiles'}
         {#if ProfileDrawerComponent}
           <ProfileDrawerComponent
@@ -5419,3321 +4677,48 @@
           <div class="drawer-empty">{t('status.loading')}</div>
         {/if}
       {:else if activeDrawer === 'toolbox'}
-        <div class="toolbox-panel">
-          <section class="toolbox-section" aria-label={t('toolbox.globalRegex')}>
-            <div class="toolbox-section-head">
-              <div>
-                <strong>{t('toolbox.globalRegex')}</strong>
-                <span>{t('toolbox.globalRegexDescription')}</span>
-              </div>
-              <button class="secondary" type="button" on:click={saveGlobalRegex} disabled={globalRegexSaving}>
-                <Save size={16} />{globalRegexSaving ? t('common.saving') : t('common.save')}
-              </button>
-            </div>
-            {#if globalRegexStatus}
-              <span class="toolbox-status">{globalRegexStatus}</span>
-            {/if}
-            <RegexScriptsEditor
-              title={t('toolbox.globalRegex')}
-              showTitle={false}
-              statsLabel={t('toolbox.globalRegexStats', { active: globalRegexStats.active, total: globalRegexStats.total })}
-              emptyLabel={t('toolbox.noGlobalRegexScripts')}
-              bind:enabled={globalRegexDraftEnabled}
-              bind:scripts={globalRegexDraftScripts}
-              {regexScriptSurface}
-            />
-          </section>
-        </div>
+        {#if ToolboxDrawerComponent}
+        <ToolboxDrawerComponent
+          bind:enabled={globalRegexDraftEnabled}
+          bind:scripts={globalRegexDraftScripts}
+          saving={globalRegexSaving}
+          status={globalRegexStatus}
+          stats={globalRegexStats}
+          {regexScriptSurface}
+          onSave={saveGlobalRegex}
+        />
+        {:else}
+          <div class="drawer-empty">{t('status.loading')}</div>
+        {/if}
       {:else if activeDrawer === 'settings'}
-        <div class="settings-panel">
-          <section class="settings-section" aria-label={t('settings.interfaceTypography')}>
-            <div class="settings-section-head">
-              <div>
-                <strong>{t('settings.typography')}</strong>
-                <span>{t('settings.localOnly')}</span>
-              </div>
-              <Type size={18} />
-            </div>
-
-            <div class="font-field">
-              <strong>{t('settings.interfaceFontFamily')}</strong>
-              <div class="font-choice-grid" aria-label={t('settings.interfaceFontFamily')}>
-                {#each appFontFamilies as font}
-                  <button
-                    class:active={appSettings.fontFamily === font.value}
-                    type="button"
-                    on:click={() => updateAppSettings({ fontFamily: font.value })}
-                  >
-                    <strong>{font.label}</strong>
-                    <span>{font.description}</span>
-                  </button>
-                {/each}
-              </div>
-            </div>
-
-            <div class="font-field">
-              <strong>{t('settings.chatFontFamily')}</strong>
-              <div class="font-choice-grid" aria-label={t('settings.chatFontFamily')}>
-                {#each appFontFamilies as font}
-                  <button
-                    class:active={appSettings.chatFontFamily === font.value}
-                    type="button"
-                    on:click={() => updateAppSettings({ chatFontFamily: font.value })}
-                  >
-                    <strong>{font.label}</strong>
-                    <span>{font.description}</span>
-                  </button>
-                {/each}
-              </div>
-            </div>
-
-            <RangeField
-              class="settings-range"
-              label={t('settings.interfaceSize')}
-              valueLabel={`${appSettings.uiFontSize}px`}
-              min="12"
-              max="18"
-              step="1"
-              value={appSettings.uiFontSize}
-              oninput={(event) => updateAppSettings({ uiFontSize: (event.currentTarget as HTMLInputElement).valueAsNumber })}
-            />
-
-            <RangeField
-              class="settings-range"
-              label={t('settings.interfaceWeight')}
-              valueLabel={`${appSettings.fontWeight}`}
-              min="350"
-              max="650"
-              step="25"
-              value={appSettings.fontWeight}
-              oninput={(event) => updateAppSettings({ fontWeight: (event.currentTarget as HTMLInputElement).valueAsNumber })}
-            />
-
-            <RangeField
-              class="settings-range"
-              label={t('settings.chatTextSize')}
-              valueLabel={`${appSettings.chatFontSize}px`}
-              min="13"
-              max="24"
-              step="1"
-              value={appSettings.chatFontSize}
-              oninput={(event) => updateAppSettings({ chatFontSize: (event.currentTarget as HTMLInputElement).valueAsNumber })}
-            />
-
-            <RangeField
-              class="settings-range"
-              label={t('settings.chatBubbleWidth')}
-              valueLabel={`${appSettings.chatBubbleWidth}px`}
-              min="420"
-              max="1000"
-              step="20"
-              value={appSettings.chatBubbleWidth}
-              oninput={(event) => updateAppSettings({ chatBubbleWidth: (event.currentTarget as HTMLInputElement).valueAsNumber })}
-            />
-
-            <div class="font-field">
-              <strong>{t('settings.avatarShape')}</strong>
-              <div class="font-choice-grid" aria-label={t('settings.avatarShape')}>
-                {#each appAvatarShapes as shape}
-                  <button
-                    class:active={appSettings.avatarShape === shape.value}
-                    type="button"
-                    on:click={() => updateAppSettings({ avatarShape: shape.value })}
-                  >
-                    <strong>{shape.label}</strong>
-                    <span>{shape.description}</span>
-                  </button>
-                {/each}
-              </div>
-            </div>
-
-          </section>
-
-          <button class="secondary full" type="button" on:click={resetAppSettings}>
-            <RotateCcw size={16} />{t('settings.resetInterface')}
-          </button>
-        </div>
+        {#if SettingsDrawerComponent}
+          <SettingsDrawerComponent settings={appSettings} onUpdate={updateAppSettings} onReset={resetAppSettings} />
+        {:else}
+          <div class="drawer-empty">{t('status.loading')}</div>
+        {/if}
       {:else if activeDrawer === 'import'}
-        <div class="import-panel">
-          {#if importOptions.length > 1}
-            <select aria-label={t('import.kind')} bind:value={importKind} on:change={resetImportFile}>
-              {#each importOptions as option}
-                <option value={option}>{importKindLabel(option)}</option>
-              {/each}
-            </select>
-          {:else}
-            <div class="import-kind-note">
-              <span>{t('import.kind')}</span>
-              <strong>{importKindLabel(importKind)}</strong>
-            </div>
-          {/if}
-          <input bind:value={importName} placeholder={t('import.namePlaceholder')} />
-          <label class="file-picker">
-            <Upload size={16} />
-            <span>{importFileName || (importKind === 'character-card-png' ? t('import.choosePng') : t('import.chooseFile'))}</span>
-            <input
-              type="file"
-              accept={importKind === 'character-card-png' ? 'image/png,.png' : importKind === 'chat-jsonl' ? '.jsonl,.ndjson,.txt' : '.json,application/json,.txt'}
-              on:change={readImportFile}
-            />
-          </label>
-          <button class="secondary full" type="button" on:click={runImport} disabled={!hasImportPayload}><Download size={16} />{t('common.import')}</button>
-        </div>
+        {#if ImportDrawerComponent}
+        <ImportDrawerComponent
+          bind:kind={importKind}
+          bind:name={importName}
+          options={importOptions}
+          fileName={importFileName}
+          hasPayload={hasImportPayload}
+          kindLabel={importKindLabel}
+          onKindChange={resetImportFile}
+          onFileChange={readImportFile}
+          onImport={runImport}
+        />
+        {:else}
+          <div class="drawer-empty">{t('status.loading')}</div>
+        {/if}
       {:else if activeDrawer === 'inspector'}
-        <div class="inspector-panel">
-          <button class="secondary full" type="button" on:click={inspectCurrentPrompt}><ClipboardList size={16} />{t('inspector.inspect')}</button>
-          <pre>{inspector}</pre>
-        </div>
+        {#if InspectorDrawerComponent}
+          <InspectorDrawerComponent content={inspector} onInspect={inspectCurrentPrompt} />
+        {:else}
+          <div class="drawer-empty">{t('status.loading')}</div>
+        {/if}
       {/if}
-    </aside>
+    </DrawerShell>
   {/if}
 </main>
-
-<style>
-  .workspace {
-    display: grid;
-    grid-template-columns: 64px minmax(0, 1fr);
-    min-height: 100vh;
-    background: var(--nanke-surface);
-    color: var(--nanke-ink);
-    font-family: var(--app-font-family);
-    font-size: var(--app-ui-font-size);
-    font-weight: var(--app-font-weight);
-    --app-text-2xs: max(10px, calc(var(--app-ui-font-size) - 3px));
-    --app-text-xs: max(11px, calc(var(--app-ui-font-size) - 2px));
-    --app-text-sm: max(12px, calc(var(--app-ui-font-size) - 1px));
-    --app-text-md: var(--app-ui-font-size);
-    --app-text-lg: calc(var(--app-ui-font-size) + 1px);
-    --app-text-xl: calc(var(--app-ui-font-size) + 2px);
-    --app-text-2xl: calc(var(--app-ui-font-size) + 4px);
-    --app-text-3xl: calc(var(--app-ui-font-size) + 6px);
-    --app-text-4xl: calc(var(--app-ui-font-size) + 8px);
-    --app-text-5xl: calc(var(--app-ui-font-size) + 10px);
-    --app-text-6xl: calc(var(--app-ui-font-size) + 14px);
-  }
-
-  .rail {
-    border-right: 1px solid var(--nanke-border-soft);
-    box-shadow: inset -1px 0 0 rgba(255,255,255,0.02);
-    position: sticky;
-    top: 0;
-    z-index: 40;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    height: 100vh;
-    padding: 14px 10px;
-    background: var(--nanke-surface-acrylic);
-    backdrop-filter: blur(20px) saturate(180%);
-    color: var(--nanke-ink);
-  }
-
-  .brand {
-    display: grid;
-    place-items: center;
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--nanke-border-strong);
-    border-radius: 8px;
-    background: #fff;
-    overflow: hidden;
-    padding: 2px;
-  }
-
-  .brand-logo {
-    display: block;
-    width: 100%;
-    height: 100%;
-    border-radius: 6px;
-    object-fit: cover;
-  }
-
-  .rail-spacer {
-    flex: 1;
-  }
-
-  .icon-button,
-  .tool-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    border-radius: 8px;
-    width: 40px;
-    height: 40px;
-    background: transparent;
-    color: inherit;
-  }
-
-  .tool-button {
-    border: 1px solid var(--nanke-border);
-    background: var(--nanke-surface);
-    color: var(--nanke-ink);
-  }
-
-  .icon-button.active,
-  .icon-button:hover {
-    background: var(--nanke-surface-muted);
-    color: inherit;
-  }
-
-  .tool-button:hover {
-    border-color: inherit;
-    background: var(--nanke-surface-muted);
-  }
-
-  .tool-button.danger {
-    border-color: inherit;
-    color: var(--nanke-danger);
-  }
-
-  .tool-button.danger:hover {
-    border-color: inherit;
-    background: var(--nanke-surface);
-  }
-
-  .tool-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.42;
-  }
-
-  .stage {
-    min-width: 0;
-    height: 100vh;
-    min-height: 100vh;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    overflow: hidden;
-  }
-
-  .settings-preview-stage .chatbar {
-    grid-template-columns: minmax(180px, 0.8fr) minmax(280px, 1.5fr);
-  }
-
-  .settings-preview-stage {
-    margin-right: min(440px, calc(100vw - 64px));
-  }
-
-  .settings-preview-stage .context-chip {
-    pointer-events: none;
-  }
-
-  .stage.tree-open {
-    grid-template-columns: minmax(0, 1fr) minmax(340px, 38vw);
-  }
-
-  .stage.tree-open .chatbar {
-    backdrop-filter: blur(20px) saturate(180%);
-    background: var(--nanke-surface-acrylic);
-    grid-column: 1 / -1;
-  }
-
-  .stage.tree-open .messages,
-  .stage.tree-open .composer {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .stage.tree-open :global(.tree-dock),
-  .stage.tree-open .tree-dock-loading {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
-  .tree-dock-loading {
-    display: grid;
-    place-items: center;
-    gap: 8px;
-    min-height: 0;
-    border-left: 1px solid var(--nanke-border);
-    background: var(--nanke-surface);
-    color: var(--nanke-ink-muted);
-    font-size: var(--app-text-sm);
-  }
-
-  .chatbar {
-    backdrop-filter: blur(20px) saturate(180%);
-    background: var(--nanke-surface-acrylic);
-    display: grid;
-    grid-template-columns: minmax(180px, 0.75fr) minmax(280px, 1.45fr) auto;
-    align-items: center;
-    gap: 12px;
-    min-height: 72px;
-    border-bottom: 1px solid var(--nanke-border);
-    padding: 12px 20px;
-    background: var(--nanke-surface);
-  }
-
-  .scene {
-    display: grid;
-    gap: 5px;
-    min-width: 0;
-  }
-
-  .conversation-title-card {
-    box-shadow: var(--nanke-shadow-field);
-    backdrop-filter: blur(20px) saturate(180%);
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    max-width: 100%;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    padding: 9px 10px;
-    background: var(--nanke-surface-acrylic);
-    color: var(--nanke-ink);
-    font-weight: 700;
-  }
-
-  .title-edit-button {
-    display: inline-grid;
-    flex: 0 0 auto;
-    place-items: center;
-    width: 26px;
-    height: 26px;
-    border: 1px solid transparent;
-    border-radius: 7px;
-    background: transparent;
-    color: inherit;
-    padding: 0;
-  }
-
-  .title-edit-button:hover,
-  .title-edit-button:focus-visible {
-    border-color: var(--nanke-border);
-    background: var(--nanke-surface);
-    outline: 0;
-  }
-
-  .conversation-title-card span,
-  .context-chip span,
-  .status-pill {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .context-strip {
-    display: grid;
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 0.7fr) minmax(0, 1.25fr) auto;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .context-chip,
-  .status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    min-width: 0;
-    min-height: 40px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: var(--nanke-ink);
-    padding: 8px 10px;
-    font-size: var(--app-text-sm);
-    text-align: left;
-  }
-
-  .context-chip:hover,
-  .context-chip:focus-visible {
-    border-color: var(--nanke-border-strong);
-    background: var(--nanke-surface-muted);
-    outline: 0;
-  }
-
-  .context-chip.profile {
-    color: var(--nanke-accent);
-  }
-
-  .status-pill {
-    justify-content: center;
-    min-width: 78px;
-    border-color: var(--nanke-border);
-    background: var(--nanke-surface-muted);
-    color: var(--nanke-accent);
-    font-weight: 700;
-  }
-
-  .toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  button,
-  select,
-  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
-  textarea {
-    font: inherit;
-  }
-
-  select,
-  input,
-  textarea {
-    width: 100%;
-    border: 1px solid var(--nanke-border);
-    border-radius: var(--nanke-radius-md);
-    background: var(--nanke-field);
-    color: var(--nanke-ink);
-    box-shadow: var(--nanke-shadow-field);
-    padding: 10px 12px;
-    outline: 0;
-    transition:
-      border-color 120ms ease,
-      background-color 120ms ease,
-      box-shadow 120ms ease;
-  }
-
-  select:hover,
-  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):hover,
-  textarea:hover {
-    border-color: var(--nanke-border-strong);
-    background: var(--nanke-field-hover);
-  }
-
-  select:focus,
-  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):focus,
-  textarea:focus {
-    border-color: var(--nanke-accent);
-    box-shadow:
-      var(--nanke-shadow-field-focus),
-      0 0 0 4px var(--nanke-focus);
-  }
-
-  textarea {
-    resize: vertical;
-  }
-
-  .messages {
-    grid-column: 1;
-    grid-row: 2;
-    min-height: 0;
-    overflow: auto;
-    padding: 24px 24px 124px;
-    overscroll-behavior: contain;
-  }
-
-  .message-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    width: min(100%, calc(var(--app-chat-bubble-width) + 120px));
-    min-height: 100%;
-    margin: 0 auto;
-  }
-
-  .empty-state {
-    display: grid;
-    place-items: center;
-    align-content: center;
-    gap: 8px;
-    min-height: 52vh;
-    color: inherit;
-    text-align: center;
-  }
-
-  .empty-state h1 {
-    margin: 0;
-    color: var(--nanke-ink);
-    font-size: var(--app-text-5xl);
-    letter-spacing: 0;
-  }
-
-  .empty-state p {
-    margin: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .message-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    width: min(100%, var(--app-chat-bubble-width));
-    align-self: flex-start;
-  }
-
-  .message-row.user {
-    align-self: flex-end;
-    flex-direction: row-reverse;
-  }
-
-  .message-row.system {
-    align-self: center;
-  }
-
-  .message-avatar {
-    flex: 0 0 var(--app-message-avatar-width);
-    width: var(--app-message-avatar-width);
-    height: var(--app-message-avatar-height);
-    padding: 0;
-    overflow: hidden;
-    border: 1px solid var(--nanke-border);
-    border-radius: var(--app-message-avatar-radius);
-    background: var(--nanke-field);
-    color: inherit;
-    cursor: zoom-in;
-  }
-
-  .message-avatar:hover,
-  .message-avatar:focus-visible {
-    border-color: inherit;
-    box-shadow: 0 0 0 3px rgb(146 191 164 / 22%);
-    outline: 0;
-  }
-
-  .message-avatar img,
-  .message-avatar span {
-    display: grid;
-    place-items: center;
-    width: 100%;
-    height: 100%;
-  }
-
-  .message-avatar img {
-    object-fit: cover;
-    object-position: center top;
-  }
-
-  .settings-preview-avatar {
-    cursor: default;
-  }
-
-  .message-avatar span {
-    background: var(--nanke-surface-raised);
-    color: var(--nanke-ink);
-    font-weight: 800;
-  }
-
-  .message-row.user .message-avatar span {
-    background: var(--nanke-field);
-  }
-
-  .message {
-    min-width: 0;
-    flex: 1 1 auto;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 12px 14px;
-    box-shadow: 0 1px 0 rgb(31 36 33 / 4%);
-  }
-
-  .message.user {
-    border-color: inherit;
-    background: var(--nanke-field);
-  }
-
-  .message.assistant {
-    background: var(--nanke-surface);
-  }
-
-  .message strong {
-    display: block;
-    margin-bottom: 6px;
-    color: var(--nanke-ink-muted);
-    font-size: var(--app-text-xs);
-    text-transform: none;
-  }
-
-  .thinking-block {
-    overflow: hidden;
-    margin: 2px 0 10px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-field);
-  }
-
-  .thinking-block[open] {
-    background: var(--nanke-surface);
-  }
-
-  .thinking-block summary {
-    display: flex;
-    min-height: 36px;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 8px 11px;
-    color: inherit;
-    cursor: pointer;
-    font-size: var(--app-text-xs);
-    font-weight: 700;
-    list-style: none;
-  }
-
-  .thinking-block summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .thinking-block-content {
-    border-top: 1px solid var(--nanke-border);
-    padding: 10px 12px 12px;
-    color: inherit;
-    font-family: var(--app-chat-font-family);
-    font-size: calc(var(--app-chat-font-size) * 0.92);
-    line-height: 1.65;
-  }
-
-  .thinking-block-content.rich :global(p) {
-    margin: 0 0 0.6em;
-  }
-
-  .thinking-block-content.rich :global(p:last-child) {
-    margin-bottom: 0;
-  }
-
-  .thinking-block-content.rich :global(ul),
-  .thinking-block-content.rich :global(ol) {
-    margin: 0.35em 0 0.65em;
-    padding-left: 1.25em;
-  }
-
-  .message-content {
-    margin: 0;
-    overflow-wrap: anywhere;
-    font-family: var(--app-chat-font-family);
-    font-size: var(--app-chat-font-size);
-    white-space: pre-wrap;
-  }
-
-  .message-content.rich {
-    line-height: 1.72;
-    white-space: normal;
-  }
-
-  .message-content.rich :global(*) {
-    max-width: 100%;
-  }
-
-  .message-content.rich :global(p) {
-    margin: 0 0 0.72em;
-  }
-
-  .message-content.rich :global(p:last-child) {
-    margin-bottom: 0;
-  }
-
-  .message-editor {
-    display: grid;
-    gap: 8px;
-  }
-
-  .message-editor textarea {
-    width: 100%;
-    min-height: 118px;
-    resize: vertical;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: inherit;
-    font-family: var(--app-chat-font-family);
-    font-size: var(--app-chat-font-size);
-    line-height: 1.58;
-    padding: 10px 11px;
-  }
-
-  .message-editor textarea:focus {
-    border-color: inherit;
-    box-shadow: 0 0 0 3px rgb(127 178 141 / 20%);
-    outline: 0;
-  }
-
-  .message-editor-actions {
-    background: var(--nanke-surface-muted);
-    display: flex;
-    justify-content: flex-end;
-    gap: 7px;
-  }
-
-  .message-editor-actions button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    min-height: 30px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: inherit;
-    font-size: var(--app-text-xs);
-    font-weight: 700;
-    padding: 0 10px;
-  }
-
-  .message-editor-actions button.primary {
-    border-color: inherit;
-    background: var(--nanke-accent);
-    color: var(--nanke-ink);
-  }
-
-  .message-editor-actions button:not(:disabled):hover {
-    border-color: inherit;
-    background: var(--nanke-field);
-  }
-
-  .message-editor-actions button.primary:not(:disabled):hover {
-    border-color: inherit;
-    background: var(--nanke-field);
-  }
-
-  .message-editor-actions button:disabled {
-    cursor: not-allowed;
-    opacity: 0.56;
-  }
-
-  .message-editor small {
-    color: inherit;
-    font-size: var(--app-text-2xs);
-  }
-
-  .branch-controls {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-top: 10px;
-    min-height: 28px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-field);
-    padding: 2px;
-    color: inherit;
-    font-size: var(--app-text-xs);
-  }
-
-  .message-row.user .branch-controls {
-    background: var(--nanke-field);
-  }
-
-  .branch-controls button {
-    display: grid;
-    place-items: center;
-    width: 24px;
-    height: 24px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: inherit;
-    padding: 0;
-  }
-
-  .branch-controls button:not(:disabled):hover {
-    background: var(--nanke-field);
-    color: inherit;
-  }
-
-  .branch-controls button.danger:not(:disabled):hover {
-    background: var(--nanke-field);
-    color: inherit;
-  }
-
-  .branch-controls button:disabled {
-    cursor: default;
-    opacity: 0.36;
-  }
-
-  .branch-controls span {
-    min-width: 38px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .message-content.rich :global(ul),
-  .message-content.rich :global(ol) {
-    margin: 0.45em 0 0.8em;
-    padding-left: 1.35em;
-  }
-
-  .message-content.rich :global(li) {
-    margin: 0.18em 0;
-  }
-
-  .message-content.rich :global(li > p) {
-    margin: 0.2em 0;
-  }
-
-  .message-content.rich :global(blockquote) {
-    margin: 0.75em 0;
-    border-left: 3px solid var(--nanke-border-strong);
-    padding: 0.2em 0 0.2em 0.85em;
-    color: inherit;
-  }
-
-  .message-content.rich :global(em) {
-    color: inherit;
-  }
-
-  .message-content.rich :global(code) {
-    border: 1px solid var(--nanke-border);
-    border-radius: 5px;
-    background: var(--nanke-field);
-    padding: 0.08em 0.34em;
-    font-size: 0.92em;
-  }
-
-  .message-content.rich :global(pre) {
-    min-height: 0;
-    max-height: 42vh;
-    margin: 0.8em 0;
-    white-space: pre;
-  }
-
-  .message-content.rich :global(pre code) {
-    border: 0;
-    background: transparent;
-    padding: 0;
-  }
-
-  .message-content.rich :global(details) {
-    margin: 0.45em 0 0.85em;
-  }
-
-  .message-content.rich :global(details:not([open])) {
-    margin-bottom: 0.6em;
-  }
-
-  .message-content.rich :global(details:not([open]) > :not(summary)) {
-    display: none !important;
-  }
-
-  .message-content.rich :global(summary) {
-    cursor: pointer;
-  }
-
-  .message-content.rich :global(.konata-thinking-wrapper) {
-    display: block;
-    margin: 10px 0 12px;
-    font-family:
-      system-ui,
-      -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      sans-serif;
-  }
-
-  .message-content.rich :global(.konata-thinking-details) {
-    overflow: hidden;
-    border: 1px solid var(--nanke-border-strong);
-    border-radius: 12px;
-    background: var(--nanke-surface-muted);
-    box-shadow: 0 8px 20px rgb(15 23 42 / 14%);
-    color: inherit;
-  }
-
-  .message-content.rich :global(.konata-thinking-details[open]) {
-    border-color: rgb(139 92 246 / 52%);
-    background: var(--nanke-surface-muted);
-    box-shadow: 0 12px 26px rgb(15 23 42 / 22%);
-  }
-
-  .message-content.rich :global(.konata-thinking-summary) {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 42px;
-    padding: 10px 14px;
-    color: inherit;
-    font-size: var(--app-text-sm);
-    font-weight: 700;
-    list-style: none;
-    user-select: none;
-  }
-
-  .message-content.rich :global(.konata-thinking-summary::-webkit-details-marker) {
-    display: none;
-  }
-
-  .message-content.rich :global(.konata-title-content) {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .message-content.rich :global(.konata-icon) {
-    display: inline-block;
-    color: inherit;
-    filter: drop-shadow(0 0 5px rgb(167 139 250 / 28%));
-    transition: transform 0.2s ease;
-  }
-
-  .message-content.rich :global(.konata-thinking-details[open] .konata-icon) {
-    transform: rotate(90deg);
-  }
-
-  .message-content.rich :global(.konata-arrow) {
-    position: relative;
-    display: inline-flex;
-    width: 18px;
-    height: 18px;
-    flex: 0 0 18px;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.82;
-    transition: transform 0.2s ease;
-  }
-
-  .message-content.rich :global(.konata-arrow::after) {
-    width: 7px;
-    height: 7px;
-    border-right: 2px solid currentColor;
-    border-bottom: 2px solid currentColor;
-    content: '';
-    transform: rotate(45deg) translate(-1px, -1px);
-  }
-
-  .message-content.rich :global(.konata-thinking-details[open] .konata-arrow) {
-    transform: rotate(180deg);
-  }
-
-  .message-content.rich :global(.konata-thinking-content) {
-    border-top: 1px solid rgb(255 255 255 / 8%);
-    padding: 12px 16px 14px;
-    color: inherit;
-  }
-
-  .message-content.rich :global(.konata-thinking-content p),
-  .message-content.rich :global(.konata-thinking-content ul),
-  .message-content.rich :global(.konata-thinking-content ol) {
-    margin-top: 0;
-  }
-
-  .composer {
-    grid-column: 1;
-    grid-row: 2;
-    align-self: end;
-    display: flex;
-    justify-content: center;
-    padding: 6px 20px 18px;
-    background: transparent;
-    pointer-events: none;
-    z-index: 10;
-  }
-
-  .composer-dock {
-    position: relative;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: end;
-    gap: 8px;
-    width: min(100%, 880px);
-    border: 1px solid var(--nanke-border);
-    border-radius: 12px;
-    background: var(--nanke-surface);
-    box-shadow:
-      0 12px 30px rgb(31 36 33 / 10%),
-      0 1px 0 rgb(31 36 33 / 4%);
-    padding: 8px;
-    pointer-events: auto;
-  }
-
-  .composer-toolbox {
-    position: relative;
-    display: grid;
-  }
-
-  .composer-toolbox-trigger,
-  .composer-action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
-  }
-
-  .composer-toolbox-trigger {
-    border: 1px solid var(--nanke-border);
-    background: var(--nanke-field);
-    color: inherit;
-  }
-
-  .composer-toolbox-trigger:hover,
-  .composer-toolbox-trigger:focus-visible,
-  .composer-toolbox-trigger.active {
-    border-color: inherit;
-    background: var(--nanke-field);
-    color: inherit;
-    outline: 0;
-  }
-
-  .composer-menu {
-    position: absolute;
-    bottom: calc(100% + 10px);
-    left: 0;
-    z-index: 20;
-    display: grid;
-    width: 210px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 10px;
-    background: var(--nanke-surface);
-    box-shadow: 0 16px 36px rgb(25 33 28 / 18%);
-    padding: 6px;
-  }
-
-  .composer-menu button {
-    display: grid;
-    grid-template-columns: 20px minmax(0, 1fr);
-    align-items: center;
-    gap: 9px;
-    min-height: 46px;
-    border: 0;
-    border-radius: 8px;
-    background: transparent;
-    color: inherit;
-    padding: 7px 9px;
-    text-align: left;
-  }
-
-  .composer-menu button:not(:disabled):hover,
-  .composer-menu button:not(:disabled):focus-visible {
-    background: var(--nanke-surface-muted);
-    color: inherit;
-    outline: 0;
-  }
-
-  .composer-menu button:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-  }
-
-  .composer-menu span {
-    display: grid;
-    min-width: 0;
-    gap: 2px;
-  }
-
-  .composer-menu strong {
-    font-size: var(--app-text-sm);
-  }
-
-  .composer-menu small {
-    overflow: hidden;
-    color: inherit;
-    font-size: var(--app-text-2xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .composer-input {
-    appearance: none;
-    min-height: 42px;
-    max-height: 38vh;
-    border: 0 !important;
-    border-radius: 8px;
-    background: transparent;
-    box-shadow: none !important;
-    field-sizing: content;
-    font-family: var(--app-chat-font-family);
-    font-size: var(--app-chat-font-size);
-    line-height: 1.55;
-    overflow: auto;
-    padding: 9px 6px;
-    resize: none;
-  }
-
-  .composer-input:focus,
-  .composer-input:focus-visible {
-    outline: 0 !important;
-    box-shadow: none !important;
-  }
-
-  .composer-dock:focus-within {
-    border-color: var(--nanke-border-strong);
-    box-shadow:
-      0 0 0 2px var(--nanke-focus),
-      var(--nanke-shadow-popover);
-  }
-
-  .composer-action {
-    border: 1px solid var(--nanke-border);
-    background: var(--nanke-field);
-    color: var(--nanke-ink);
-  }
-
-  .composer-action:hover,
-  .composer-action:focus-visible {
-    background: var(--nanke-field);
-    outline: 0;
-  }
-
-  .composer-action.stopping {
-    border-color: inherit;
-    background: var(--nanke-field);
-  }
-
-  .composer-action.stopping:hover,
-  .composer-action.stopping:focus-visible {
-    background: var(--nanke-field);
-  }
-
-  .composer-action:disabled {
-    cursor: not-allowed;
-    border-color: inherit;
-    background: var(--nanke-field);
-    color: inherit;
-  }
-
-  .avatar-viewer {
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 25;
-    display: grid;
-    gap: 8px;
-    width: min(34vw, 430px);
-    min-width: min(260px, calc(100vw - 72px));
-    max-width: calc(100vw - 16px);
-    background: transparent;
-    transform: translate3d(var(--avatar-viewer-x), var(--avatar-viewer-y), 0) scale(var(--avatar-viewer-scale));
-    transform-origin: top left;
-    user-select: none;
-    touch-action: none;
-    will-change: transform;
-  }
-
-  .avatar-viewer-image {
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    min-height: 0;
-    background: transparent;
-  }
-
-  .avatar-viewer-image img {
-    display: block;
-    width: 100%;
-    max-height: min(74vh, 680px);
-    object-fit: contain;
-    border-radius: 10px;
-    box-shadow: 0 18px 46px rgb(20 24 22 / 22%);
-    -webkit-user-drag: none;
-  }
-
-  .avatar-viewer-image span {
-    display: grid;
-    place-items: center;
-    width: 100%;
-    aspect-ratio: 1;
-    border-radius: 8px;
-    background: var(--nanke-surface-raised);
-    box-shadow: 0 18px 46px rgb(20 24 22 / 22%);
-    color: var(--nanke-ink);
-    font-size: 96px;
-    font-weight: 800;
-  }
-
-  .avatar-viewer-image.user span {
-    background: var(--nanke-field);
-  }
-
-  .avatar-viewer-controls {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    left: 8px;
-    z-index: 2;
-    display: flex;
-    gap: 8px;
-    justify-content: space-between;
-    align-items: center;
-    opacity: 0.78;
-    transition: opacity 160ms ease;
-  }
-
-  .avatar-viewer:hover .avatar-viewer-controls,
-  .avatar-viewer:focus-within .avatar-viewer-controls,
-  .avatar-viewer.dragging .avatar-viewer-controls {
-    opacity: 1;
-  }
-
-  .avatar-viewer-controls button,
-  .avatar-viewer-scale {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 34px;
-    border: 1px solid var(--nanke-border-strong);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--nanke-surface) 82%, transparent);
-    color: var(--nanke-ink);
-    pointer-events: auto;
-    backdrop-filter: blur(20px) saturate(180%);
-  }
-
-  .avatar-viewer-controls button {
-    width: 34px;
-    cursor: pointer;
-  }
-
-  .avatar-viewer-drag {
-    width: auto !important;
-    max-width: min(52%, 210px);
-    gap: 7px;
-    justify-content: flex-start !important;
-    padding: 0 10px;
-    cursor: grab !important;
-  }
-
-  .avatar-viewer.dragging .avatar-viewer-drag {
-    cursor: grabbing !important;
-  }
-
-  .avatar-viewer-drag span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--app-text-xs);
-    font-weight: 700;
-  }
-
-  .avatar-viewer-tools {
-    display: inline-flex;
-    gap: 6px;
-    align-items: center;
-    min-width: 0;
-  }
-
-  .avatar-viewer-scale {
-    min-width: 46px;
-    padding: 0 8px;
-    font-size: var(--app-text-xs);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .avatar-viewer-controls button:hover,
-  .avatar-viewer-controls button:focus-visible {
-    background: var(--nanke-surface);
-    outline: 0;
-  }
-
-  .delete-dialog-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 58;
-    display: grid;
-    place-items: center;
-    background: var(--nanke-surface-muted);
-    padding: 24px;
-  }
-
-  .delete-dialog {
-    display: grid;
-    gap: 13px;
-    width: min(460px, 100%);
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    box-shadow: 0 24px 70px rgb(28 32 29 / 22%);
-    color: inherit;
-    padding: 16px;
-  }
-
-  .delete-dialog header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: inherit;
-  }
-
-  .delete-dialog p {
-    max-height: 24vh;
-    overflow: auto;
-    margin: 0;
-    color: inherit;
-    font-size: var(--app-text-sm);
-    line-height: 1.55;
-  }
-
-  .delete-dialog p strong,
-  .delete-dialog p span {
-    display: block;
-  }
-
-  .delete-dialog p strong {
-    margin-bottom: 4px;
-    color: inherit;
-    font-size: var(--app-text-md);
-  }
-
-  .delete-dialog-actions {
-    display: grid;
-    grid-template-columns: auto 1fr 1fr;
-    gap: 8px;
-  }
-
-  .delete-dialog-actions.conversation-delete-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .delete-dialog-actions button {
-    min-height: 34px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: inherit;
-    font-size: var(--app-text-xs);
-    font-weight: 800;
-    padding: 0 11px;
-  }
-
-  .delete-dialog-actions button:not(:disabled):hover {
-    border-color: inherit;
-    background: var(--nanke-field);
-  }
-
-  .delete-dialog-actions button.danger {
-    border-color: var(--nanke-danger);
-    background: var(--nanke-danger-soft);
-    color: var(--nanke-danger);
-  }
-
-  .delete-dialog-actions button.danger:not(:disabled):hover {
-    border-color: var(--nanke-danger);
-    background: color-mix(in srgb, var(--nanke-danger) 14%, transparent);
-  }
-
-  .delete-dialog-actions button:disabled {
-    cursor: not-allowed;
-    opacity: 0.58;
-  }
-
-  .delete-dialog small {
-    color: inherit;
-    font-size: var(--app-text-2xs);
-  }
-
-  @media (max-width: 620px) {
-    .delete-dialog-actions {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .primary,
-  .secondary {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    border-radius: 8px;
-    border: 1px solid var(--nanke-border);
-    padding: 10px 14px;
-    background: var(--nanke-field);
-    color: var(--nanke-ink);
-    min-height: 42px;
-  }
-
-  .secondary {
-    border-color: var(--nanke-border);
-    background: var(--nanke-surface);
-    color: inherit;
-  }
-
-  .secondary:hover,
-  .secondary:focus-visible {
-    border-color: var(--nanke-border-strong);
-    outline: 0;
-  }
-
-  .secondary:hover,
-  .primary:hover {
-    filter: brightness(0.98);
-  }
-
-  .full {
-    width: 100%;
-  }
-
-  .scrim {
-    position: fixed;
-    inset: 0 0 0 64px;
-    z-index: 20;
-    border: 0;
-    background: transparent;
-  }
-
-  .drawer {
-    position: fixed;
-    inset: 0 auto 0 64px;
-    z-index: 30;
-    display: flex;
-    flex-direction: column;
-    width: min(390px, calc(100vw - 64px));
-    border-right: 1px solid var(--nanke-border);
-    background: var(--nanke-surface);
-    box-shadow: 16px 0 36px rgb(28 36 31 / 14%);
-  }
-
-  .drawer.right {
-    inset: 0 0 0 auto;
-    width: min(440px, calc(100vw - 64px));
-    border-right: 0;
-    border-left: 1px solid var(--nanke-border);
-    box-shadow: -16px 0 36px rgb(28 36 31 / 14%);
-  }
-
-  .drawer.profiles {
-    width: min(720px, calc(100vw - 64px));
-  }
-
-  .drawer.characters {
-    width: min(1040px, calc(100vw - 64px));
-  }
-
-  .drawer.personas {
-    width: min(920px, calc(100vw - 64px));
-  }
-
-  .drawer.worldbooks {
-    width: min(1040px, calc(100vw - 64px));
-  }
-
-  .drawer-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 64px;
-    border-bottom: 1px solid var(--nanke-border);
-    padding: 12px 16px;
-  }
-
-  .drawer-header h2 {
-    margin: 0;
-    font-size: var(--app-text-2xl);
-    letter-spacing: 0;
-  }
-
-  .drawer-actions,
-  .editor,
-  .import-panel,
-  .inspector-panel,
-  .settings-panel,
-  .toolbox-panel {
-    display: grid;
-    gap: 10px;
-    padding: 16px;
-  }
-
-  .settings-panel,
-  .toolbox-panel {
-    align-content: start;
-    overflow: auto;
-  }
-
-  .settings-section,
-  .toolbox-section {
-    display: grid;
-    gap: 14px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 14px;
-  }
-
-  .settings-section-head,
-  .toolbox-section-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    color: inherit;
-  }
-
-  .toolbox-section-head div {
-    display: grid;
-    min-width: 0;
-    gap: 4px;
-  }
-
-  .toolbox-section-head span,
-  .toolbox-status {
-    color: var(--nanke-muted);
-    font-size: var(--app-text-xs);
-  }
-
-  .settings-section-head > div {
-    display: grid;
-    gap: 2px;
-  }
-
-  .settings-section-head strong {
-    font-size: var(--app-text-md);
-  }
-
-  .settings-section-head span {
-    color: inherit;
-    font-size: var(--app-text-xs);
-  }
-
-  .font-choice-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 6px;
-  }
-
-  .font-field {
-    display: grid;
-    gap: 8px;
-  }
-
-  .font-field > strong {
-    color: inherit;
-    font-size: var(--app-text-xs);
-  }
-
-  .font-choice-grid button {
-    display: grid;
-    gap: 3px;
-    min-width: 0;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: inherit;
-    padding: 9px 8px;
-    text-align: left;
-  }
-
-  .font-choice-grid button.active {
-    border-color: inherit;
-    background: var(--nanke-field);
-    color: inherit;
-  }
-
-  .font-choice-grid strong {
-    font-size: var(--app-text-sm);
-  }
-
-  .font-choice-grid span {
-    overflow: hidden;
-    color: inherit;
-    font-size: var(--app-text-2xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .settings-range {
-    display: grid;
-    gap: 8px;
-  }
-
-  .compact-editor {
-    border-top: 1px solid var(--nanke-border);
-    border-bottom: 1px solid var(--nanke-border);
-    background: var(--nanke-field);
-  }
-
-  .checkbox-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: inherit;
-    font-size: var(--app-text-sm);
-  }
-
-  .checkbox-row input {
-    width: auto;
-  }
-
-  .checkbox-row.compact {
-    min-height: 28px;
-    font-size: var(--app-text-xs);
-  }
-
-  .search-field {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 8px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: inherit;
-    padding: 0 10px;
-  }
-
-  .search-field input {
-    min-height: 38px;
-    border: 0;
-    background: transparent;
-    padding: 0;
-  }
-
-  .search-field input:focus {
-    outline: 0;
-  }
-
-  .import-kind-note {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 40px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 8px 10px;
-    color: inherit;
-    font-size: var(--app-text-sm);
-  }
-
-  .import-kind-note strong {
-    color: inherit;
-    font-weight: 700;
-  }
-
-  .file-picker {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    min-height: 42px;
-    border: 1px dashed var(--nanke-border-strong);
-    border-radius: 8px;
-    background: var(--nanke-field);
-    color: inherit;
-    padding: 10px 12px;
-    overflow: hidden;
-  }
-
-  .file-picker span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .file-picker input {
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    cursor: pointer;
-  }
-
-  .item-list {
-    display: grid;
-    gap: 8px;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: auto;
-    padding: 0 16px 16px;
-  }
-
-  .drawer-item,
-  .drawer-card {
-    display: grid;
-    gap: 5px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 11px 12px;
-    color: inherit;
-    text-align: left;
-  }
-
-  .drawer-item.active,
-  .drawer-item:hover {
-    border-color: inherit;
-    background: var(--nanke-surface-muted);
-  }
-
-  .drawer-item span,
-  .drawer-card span {
-    color: inherit;
-    font-size: var(--app-text-xs);
-    overflow-wrap: anywhere;
-  }
-
-  .persona-workspace {
-    display: grid;
-    grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.35fr);
-    min-height: 0;
-    flex: 1 1 auto;
-  }
-
-  .persona-library,
-  .persona-detail {
-    display: grid;
-    align-content: start;
-    gap: 12px;
-    min-width: 0;
-    min-height: 0;
-    overflow: auto;
-    padding: 16px;
-  }
-
-  .persona-library {
-    border-right: 1px solid var(--nanke-border);
-    background: var(--nanke-surface);
-  }
-
-  .persona-create,
-  .persona-editor,
-  .persona-connections {
-    display: grid;
-    gap: 12px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 14px;
-  }
-
-  .persona-section-head {
-    display: grid;
-    gap: 2px;
-  }
-
-  .persona-section-head strong {
-    color: inherit;
-    font-size: var(--app-text-md);
-  }
-
-  .persona-section-head small {
-    color: inherit;
-    font-size: var(--app-text-xs);
-    line-height: 1.45;
-  }
-
-  .persona-search {
-    background: var(--nanke-surface);
-  }
-
-  .persona-list {
-    display: grid;
-    align-content: start;
-    gap: 8px;
-    min-height: 0;
-  }
-
-  .persona-row {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 10px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: inherit;
-    padding: 9px;
-    text-align: left;
-  }
-
-  .persona-row.active,
-  .persona-row:hover {
-    border-color: inherit;
-    background: var(--nanke-surface-muted);
-  }
-
-  .persona-row-avatar,
-  .persona-avatar-uploader {
-    display: grid;
-    place-items: center;
-    overflow: hidden;
-    border: 1px solid var(--nanke-border);
-    background: var(--nanke-field);
-    color: inherit;
-    font-weight: 800;
-  }
-
-  .persona-row-avatar {
-    width: 42px;
-    height: 42px;
-    border-radius: 8px;
-    font-size: var(--app-text-lg);
-  }
-
-  .persona-row-avatar img,
-  .persona-avatar-uploader img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .persona-row-copy {
-    display: grid;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .persona-row-copy strong,
-  .persona-row-copy small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .persona-row-copy strong {
-    font-size: var(--app-text-sm);
-  }
-
-  .persona-row-copy small {
-    color: inherit;
-    font-size: var(--app-text-2xs);
-  }
-
-  .persona-detail {
-    background: var(--nanke-surface);
-  }
-
-  .persona-identity {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 14px;
-  }
-
-  .persona-avatar-uploader {
-    position: relative;
-    width: 96px;
-    height: 112px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: var(--app-text-6xl);
-  }
-
-  .persona-avatar-uploader input {
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    cursor: pointer;
-  }
-
-  .persona-avatar-uploader:hover {
-    border-color: inherit;
-    box-shadow: 0 0 0 4px rgb(28 107 67 / 10%);
-  }
-
-  .persona-identity span {
-    color: inherit;
-    font-size: var(--app-text-xs);
-    font-weight: 700;
-  }
-
-  .persona-identity h3 {
-    margin: 2px 0;
-    color: inherit;
-    font-size: var(--app-text-4xl);
-    letter-spacing: 0;
-  }
-
-  .persona-identity p {
-    margin: 0;
-    color: inherit;
-    font-size: var(--app-text-sm);
-    line-height: 1.45;
-  }
-
-  .persona-action-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .persona-action-grid button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    min-width: 0;
-    min-height: 38px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-field);
-    color: inherit;
-    font-size: var(--app-text-xs);
-    font-weight: 800;
-    padding: 0 10px;
-  }
-
-  .persona-action-grid button.active {
-    border-color: inherit;
-    background: var(--nanke-field);
-    color: inherit;
-  }
-
-  .persona-action-grid button.danger {
-    border-color: inherit;
-    background: var(--nanke-surface);
-    color: inherit;
-  }
-
-  .persona-action-grid button:not(:disabled):hover {
-    border-color: inherit;
-    background: var(--nanke-field);
-  }
-
-  .persona-action-grid button:disabled {
-    cursor: not-allowed;
-    opacity: 0.52;
-  }
-
-  .persona-editor-meta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    color: inherit;
-    font-size: var(--app-text-xs);
-  }
-
-  .persona-connections {
-    background: var(--nanke-surface);
-  }
-
-  .persona-connection-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 34px;
-    border-top: 1px solid var(--nanke-border);
-    color: inherit;
-    font-size: var(--app-text-xs);
-  }
-
-  .persona-connection-row strong {
-    color: inherit;
-    font-size: var(--app-text-sm);
-  }
-
-  .persona-empty {
-    display: grid;
-    place-items: center;
-    gap: 8px;
-    min-height: 280px;
-    color: inherit;
-    text-align: center;
-  }
-
-  @media (max-width: 820px) {
-    .persona-workspace {
-      grid-template-columns: 1fr;
-    }
-
-    .persona-library {
-      border-right: 0;
-      border-bottom: 1px solid var(--nanke-border);
-    }
-
-    .persona-action-grid {
-      grid-template-columns: 1fr 1fr;
-    }
-  }
-
-  .conversation-list {
-    display: grid;
-    align-content: start;
-    gap: 12px;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: auto;
-    padding: 0 16px 16px;
-  }
-
-  .conversation-group {
-    display: grid;
-    gap: 8px;
-  }
-
-  .conversation-group-toggle {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    width: 100%;
-    gap: 9px;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    list-style: none;
-    padding: 5px 6px;
-  }
-
-  .conversation-group-toggle::-webkit-details-marker {
-    display: none;
-  }
-
-  .conversation-group-toggle:hover,
-  .conversation-group-toggle:focus-visible {
-    border-color: inherit;
-    background: var(--nanke-field);
-    outline: 0;
-  }
-
-  .conversation-group-copy {
-    display: grid;
-    gap: 1px;
-    min-width: 0;
-    text-align: left;
-  }
-
-  .conversation-group-copy strong,
-  .conversation-group-copy small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .conversation-group-copy strong {
-    font-size: var(--app-text-sm);
-  }
-
-  .conversation-group-copy small {
-    color: inherit;
-    font-size: var(--app-text-xs);
-  }
-
-  .conversation-group-chevron {
-    display: grid;
-    place-items: center;
-    color: inherit;
-    transition: transform 140ms ease;
-  }
-
-  .conversation-group:not([open]) .conversation-group-chevron {
-    transform: rotate(-90deg);
-  }
-
-  .conversation-group-avatar {
-    display: grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    overflow: hidden;
-    border: 1px solid var(--nanke-border);
-    border-radius: 7px;
-    background: var(--nanke-field);
-    color: inherit;
-  }
-
-  .conversation-group-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .conversation-group-items {
-    display: grid;
-    gap: 7px;
-  }
-
-  .conversation-group:not([open]) .conversation-group-items {
-    display: none;
-  }
-
-  .conversation-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 8px;
-  }
-
-  .conversation-row.active,
-  .conversation-row:hover {
-    border-color: inherit;
-    background: var(--nanke-surface-muted);
-  }
-
-  .conversation-row.archived {
-    background: var(--nanke-field);
-    color: inherit;
-  }
-
-  .conversation-row-main {
-    display: grid;
-    min-width: 0;
-    gap: 4px;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    padding: 0;
-    text-align: left;
-  }
-
-  .conversation-title-line {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: baseline;
-    gap: 8px;
-  }
-
-  .conversation-title-line strong,
-  .conversation-row-main span,
-  .conversation-row-main small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .conversation-title-line small,
-  .conversation-row-main small,
-  .conversation-row-main > span:not(.conversation-title-line) {
-    color: inherit;
-    font-size: var(--app-text-xs);
-  }
-
-  .conversation-row-actions {
-    display: flex;
-    align-items: flex-start;
-    gap: 3px;
-  }
-
-  .conversation-row-actions button {
-    display: grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    border: 1px solid transparent;
-    border-radius: 7px;
-    background: transparent;
-    color: inherit;
-    padding: 0;
-  }
-
-  .conversation-row-actions button:hover {
-    border-color: inherit;
-    background: var(--nanke-surface);
-    color: inherit;
-  }
-
-  .conversation-row-actions button.danger:hover {
-    border-color: inherit;
-    background: var(--nanke-surface);
-    color: inherit;
-  }
-
-  .drawer-empty.compact {
-    border: 1px dashed var(--nanke-border);
-    border-radius: 7px;
-    background: var(--nanke-surface);
-    padding: 9px 10px;
-    text-align: center;
-  }
-
-  .character-workspace {
-    display: grid;
-    grid-template-columns: minmax(260px, 310px) minmax(0, 1fr);
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: hidden;
-    background: var(--nanke-surface);
-  }
-
-  .character-library {
-    display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr);
-    gap: 10px;
-    min-height: 0;
-    border-right: 1px solid var(--nanke-border);
-    background: var(--nanke-surface);
-    padding: 14px;
-  }
-
-  .character-library-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .character-toolbar input,
-  .character-toolbar select,
-  .character-field-grid input,
-  .character-field-grid textarea,
-  .character-textarea-label textarea {
-    min-height: 36px;
-    border-radius: 7px;
-    padding: 8px 10px;
-    font-size: var(--app-text-sm);
-  }
-
-  .character-library-actions button {
-    min-height: 36px;
-    padding: 0 12px;
-  }
-
-  .character-toolbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(118px, auto);
-    align-items: center;
-    gap: 8px;
-  }
-
-  .character-list {
-    display: grid;
-    align-content: start;
-    gap: 7px;
-    min-height: 0;
-    overflow: auto;
-    scrollbar-width: thin;
-  }
-
-  .character-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 7px;
-  }
-
-  .character-row.active,
-  .character-row:hover {
-    border-color: inherit;
-    background: var(--nanke-surface-muted);
-  }
-
-  .character-row-main {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 9px;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    padding: 0;
-    text-align: left;
-  }
-
-  .character-avatar-small,
-  .character-avatar-large {
-    display: grid;
-    place-items: center;
-    overflow: hidden;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface-raised);
-    color: var(--nanke-ink);
-    font-weight: 800;
-  }
-
-  .character-avatar-small {
-    width: 46px;
-    height: 56px;
-    font-size: var(--app-text-xl);
-  }
-
-  .character-avatar-small img,
-  .character-avatar-large img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .character-row-copy {
-    display: grid;
-    min-width: 0;
-    gap: 3px;
-  }
-
-  .character-row-copy strong,
-  .character-hero-title strong {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .character-row-copy small,
-  .character-hero-title span,
-  .character-field-grid span,
-  .character-textarea-label span,
-  .character-lore-header span,
-  .character-lore-list small,
-  .character-source-panel span,
-  .character-source-panel small {
-    color: inherit;
-    font-size: var(--app-text-xs);
-  }
-
-  .favorite-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 7px;
-    background: var(--nanke-surface);
-    color: inherit;
-    padding: 0;
-  }
-
-  .favorite-button.active {
-    border-color: inherit;
-    background: var(--nanke-surface);
-    color: inherit;
-  }
-
-  .character-editor {
-    display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr);
-    gap: 12px;
-    min-height: 0;
-    overflow: auto;
-    padding: 14px;
-  }
-
-  .character-editor.empty {
-    place-content: center;
-    justify-items: center;
-    color: inherit;
-  }
-
-  .character-editor-hero {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: start;
-    gap: 12px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 12px;
-  }
-
-  .character-avatar-large {
-    width: 104px;
-    height: 136px;
-    padding: 0;
-    cursor: zoom-in;
-  }
-
-  .character-avatar-large:hover,
-  .character-avatar-large:focus-visible {
-    border-color: inherit;
-    box-shadow: 0 0 0 3px rgb(146 191 164 / 22%);
-    outline: 0;
-  }
-
-  .character-avatar-large.placeholder-avatar {
-    cursor: default;
-  }
-
-  .character-avatar-large.placeholder-avatar:hover,
-  .character-avatar-large.placeholder-avatar:focus-visible {
-    border-color: inherit;
-    box-shadow: none;
-  }
-
-  .character-hero-copy,
-  .character-hero-title > div {
-    display: grid;
-    min-width: 0;
-    gap: 5px;
-  }
-
-  .character-hero-title {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-  }
-
-  .character-hero-title strong {
-    font-size: var(--app-text-3xl);
-  }
-
-  .hero-favorite {
-    flex: 0 0 auto;
-  }
-
-  .character-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .character-chips span {
-    border: 1px solid var(--nanke-border);
-    border-radius: 999px;
-    background: var(--nanke-surface);
-    color: inherit;
-    padding: 4px 8px;
-    font-size: var(--app-text-xs);
-    line-height: 1.1;
-  }
-
-  .character-actions {
-    display: flex;
-    gap: 6px;
-  }
-
-  .character-tabs {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-field);
-    padding: 4px;
-  }
-
-  .character-tabs button {
-    min-height: 36px;
-    border: 1px solid transparent;
-    border-radius: 7px;
-    background: transparent;
-    color: inherit;
-  }
-
-  .character-tabs button.active {
-    border-color: inherit;
-    background: var(--nanke-surface);
-    color: inherit;
-    box-shadow: 0 1px 3px rgb(29 39 33 / 8%);
-  }
-
-  .character-editor-section {
-    display: grid;
-    align-content: start;
-    gap: 12px;
-    min-height: 0;
-  }
-
-  .character-field-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .character-field-grid label,
-  .character-textarea-label {
-    display: grid;
-    min-width: 0;
-    gap: 5px;
-  }
-
-  .character-field-grid .span-2 {
-    grid-column: 1 / -1;
-  }
-
-  .character-field-grid textarea,
-  .character-textarea-label textarea {
-    resize: vertical;
-    line-height: 1.45;
-  }
-
-  .character-lore-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 10px 12px;
-  }
-
-  .character-lore-header > div {
-    display: grid;
-    min-width: 0;
-    gap: 3px;
-  }
-
-  .character-lore-list {
-    display: grid;
-    gap: 8px;
-  }
-
-  .character-lore-list article {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 6px;
-  }
-
-  .character-lore-list article.disabled {
-    background: var(--nanke-field);
-    opacity: 0.74;
-  }
-
-  .character-lore-list article > button:first-child {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 9px;
-    min-height: 46px;
-    border: 0;
-    border-radius: 7px;
-    background: transparent;
-    color: inherit;
-    padding: 8px;
-    text-align: left;
-  }
-
-  .character-lore-list article:hover {
-    border-color: inherit;
-    background: var(--nanke-surface-muted);
-  }
-
-  .character-lore-list article > button:first-child span {
-    display: grid;
-    min-width: 0;
-    gap: 3px;
-  }
-
-  .character-lore-actions {
-    display: flex;
-    gap: 4px;
-  }
-
-  .character-lore-actions button {
-    display: inline-grid;
-    place-items: center;
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 7px;
-    background: var(--nanke-surface);
-    color: inherit;
-    padding: 0;
-  }
-
-  .character-source-panel {
-    display: grid;
-    align-content: center;
-    gap: 3px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 8px 10px;
-  }
-
-  .worldbook-workspace {
-    display: grid;
-    grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: hidden;
-    background: var(--nanke-surface);
-  }
-
-  .worldbook-library {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: 12px;
-    min-height: 0;
-    border-right: 1px solid var(--nanke-border);
-    background: var(--nanke-surface);
-    padding: 14px;
-  }
-
-  .worldbook-library-actions {
-    display: grid;
-    gap: 8px;
-  }
-
-  .worldbook-create {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
-  }
-
-  .worldbook-create input,
-  .worldbook-title-row input,
-  .worldbook-entry-toolbar input,
-  .worldbook-entry-toolbar select,
-  .worldbook-entry-fields input,
-  .worldbook-entry-fields textarea {
-    min-height: 36px;
-    border-radius: 7px;
-    padding: 8px 10px;
-    font-size: var(--app-text-sm);
-  }
-
-  .worldbook-create button {
-    min-height: 36px;
-    padding: 0 12px;
-  }
-
-  .worldbook-list,
-  .worldbook-entry-list,
-  .regex-script-list {
-    scrollbar-width: thin;
-  }
-
-  .worldbook-list {
-    display: grid;
-    align-content: start;
-    gap: 7px;
-    min-height: 0;
-    overflow: auto;
-  }
-
-  .worldbook-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    color: inherit;
-    padding: 10px;
-    text-align: left;
-  }
-
-  .worldbook-row.active,
-  .worldbook-row:hover {
-    border-color: inherit;
-    background: var(--nanke-surface-muted);
-  }
-
-  .worldbook-row span {
-    display: grid;
-    min-width: 0;
-    gap: 3px;
-  }
-
-  .worldbook-row strong,
-  .worldbook-entry-row strong {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .worldbook-row small,
-  .worldbook-row em,
-  .worldbook-editor-header span,
-  .worldbook-source span,
-  .worldbook-source small,
-  .worldbook-binding-panel span,
-  .worldbook-binding-panel small,
-  .worldbook-binding-list small,
-  .worldbook-entry-row small,
-  .worldbook-entry-editor-head span,
-  .worldbook-entry-fields span {
-    color: inherit;
-    font-size: var(--app-text-xs);
-  }
-
-  .worldbook-row em {
-    border: 1px solid var(--nanke-border);
-    border-radius: 999px;
-    background: var(--nanke-surface-muted);
-    color: inherit;
-    padding: 2px 6px;
-    font-style: normal;
-  }
-
-  .worldbook-editor {
-    display: grid;
-    grid-template-rows: auto auto auto auto minmax(0, 1fr);
-    gap: 12px;
-    min-height: 0;
-    overflow: hidden;
-    padding: 14px;
-  }
-
-  .worldbook-editor.empty,
-  .worldbook-entry-editor.empty {
-    place-content: center;
-    justify-items: center;
-    color: inherit;
-  }
-
-  .worldbook-editor-header,
-  .worldbook-entry-editor-head,
-  .worldbook-title-row,
-  .worldbook-entry-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .worldbook-editor-header > div:first-child,
-  .worldbook-entry-editor-head > div:first-child {
-    display: grid;
-    min-width: 0;
-    gap: 3px;
-  }
-
-  .worldbook-title-row {
-    align-items: stretch;
-  }
-
-  .worldbook-title-row label {
-    display: grid;
-    flex: 1 1 auto;
-    min-width: 0;
-    gap: 5px;
-  }
-
-  .worldbook-title-row label span {
-    color: inherit;
-    font-size: var(--app-text-xs);
-  }
-
-  .worldbook-source {
-    display: grid;
-    align-content: center;
-    min-width: 150px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 8px 10px;
-  }
-
-  .worldbook-binding-panel {
-    display: grid;
-    gap: 10px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 10px;
-  }
-
-  .worldbook-binding-panel header,
-  .worldbook-binding-selected {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-  }
-
-  .worldbook-binding-panel header > div,
-  .worldbook-binding-selected > div {
-    display: grid;
-    min-width: 0;
-    gap: 3px;
-  }
-
-  .worldbook-binding-panel select {
-    min-width: 180px;
-    min-height: 36px;
-    border-radius: 7px;
-    padding: 7px 9px;
-    font-size: var(--app-text-sm);
-  }
-
-  .worldbook-binding-selected {
-    justify-content: flex-start;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 8px;
-  }
-
-  .character-avatar-small.compact {
-    flex: 0 0 auto;
-    width: 34px;
-    height: 42px;
-    border-radius: 7px;
-    font-size: var(--app-text-sm);
-  }
-
-  .worldbook-binding-actions {
-    display: flex;
-    gap: 6px;
-    margin-left: auto;
-  }
-
-  .worldbook-binding-actions .secondary {
-    min-height: 34px;
-    padding: 0 10px;
-  }
-
-  .tool-button.danger,
-  .character-lore-actions button:last-child {
-    border-color: inherit;
-    color: inherit;
-  }
-
-  .worldbook-binding-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
-    gap: 6px;
-  }
-
-  .worldbook-binding-list button {
-    display: grid;
-    min-width: 0;
-    gap: 2px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 7px;
-    background: var(--nanke-surface);
-    color: inherit;
-    padding: 7px 8px;
-    text-align: left;
-  }
-
-  .worldbook-binding-list button.active {
-    border-color: inherit;
-    box-shadow: 0 0 0 2px rgb(143 190 162 / 18%);
-  }
-
-  .worldbook-binding-list button.enabled {
-    background: var(--nanke-surface-muted);
-  }
-
-  .worldbook-binding-list button.disabled {
-    background: var(--nanke-field);
-  }
-
-  .worldbook-binding-list span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .worldbook-entry-toolbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
-  }
-
-  .worldbook-editor-grid {
-    display: grid;
-    grid-template-columns: minmax(236px, 0.68fr) minmax(0, 1.32fr);
-    gap: 12px;
-    min-height: 0;
-  }
-
-  .worldbook-entry-list {
-    display: grid;
-    align-content: start;
-    gap: 7px;
-    min-height: 0;
-    overflow: auto;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 8px;
-  }
-
-  .worldbook-entry-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 6px;
-  }
-
-  .worldbook-entry-row.active {
-    border-color: inherit;
-    background: var(--nanke-surface-muted);
-  }
-
-  .worldbook-entry-main {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 8px;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    padding: 4px;
-    text-align: left;
-  }
-
-  .worldbook-entry-main > span {
-    display: grid;
-    min-width: 0;
-    gap: 3px;
-  }
-
-  .entry-state {
-    display: inline-grid;
-    place-items: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 999px;
-    background: var(--nanke-field);
-    color: inherit;
-    font-size: var(--app-text-2xs);
-    font-weight: 800;
-  }
-
-  .entry-state[data-state='constant'] {
-    background: var(--nanke-field);
-    color: inherit;
-  }
-
-  .entry-state[data-state='disabled'] {
-    background: var(--nanke-field);
-    color: inherit;
-  }
-
-  .worldbook-entry-actions {
-    display: grid;
-    grid-template-columns: repeat(2, 28px);
-    gap: 4px;
-  }
-
-  .worldbook-entry-actions button {
-    width: 28px;
-    height: 28px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 6px;
-    background: var(--nanke-surface);
-    color: inherit;
-    padding: 0;
-  }
-
-  .worldbook-entry-actions button:hover,
-  .worldbook-entry-actions button:focus-visible {
-    border-color: inherit;
-    background: var(--nanke-surface-muted);
-    outline: 0;
-  }
-
-  .worldbook-entry-editor {
-    display: grid;
-    align-content: start;
-    gap: 12px;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-surface);
-    padding: 12px;
-  }
-
-  .worldbook-entry-fields {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .worldbook-entry-fields label,
-  .content-field {
-    display: grid;
-    min-width: 0;
-    gap: 5px;
-  }
-
-  .worldbook-entry-fields .span-2,
-  .worldbook-entry-fields > .segmented-field,
-  .content-field {
-    grid-column: 1 / -1;
-  }
-
-  .worldbook-entry-fields textarea {
-    resize: vertical;
-  }
-
-  .worldbook-entry-fields .mini-segment button,
-  .worldbook-toggle-grid .toggle-pill {
-    min-width: 0;
-    padding: 0 6px;
-    line-height: 1.15;
-  }
-
-  .content-field textarea {
-    min-height: 190px;
-    font-family: inherit;
-    line-height: 1.45;
-  }
-
-  .worldbook-toggle-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .profile-search {
-    min-height: 38px;
-    padding-block: 8px;
-  }
-
-  .preset-actions {
-    display: flex;
-    gap: 6px;
-  }
-
-  .preset-actions .tool-button {
-    width: 38px;
-    height: 38px;
-    border-radius: 7px;
-  }
-
-  .segmented-field {
-    display: grid;
-    min-width: 0;
-    gap: 5px;
-  }
-
-  .mini-segment {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-field);
-    padding: 4px;
-  }
-
-  .mini-segment.three {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .mini-segment button,
-  .toggle-pill {
-    min-height: 36px;
-    border: 1px solid transparent;
-    border-radius: 7px;
-    background: transparent;
-    color: inherit;
-    padding: 0 10px;
-  }
-
-  .mini-segment button.active,
-  .toggle-pill.active {
-    border-color: inherit;
-    background: var(--nanke-surface);
-    color: inherit;
-    box-shadow: 0 1px 3px rgb(29 39 33 / 8%);
-  }
-
-  .toggle-pill {
-    border-color: inherit;
-    background: var(--nanke-surface);
-  }
-  .drawer-empty {
-    color: inherit;
-    padding: 18px 16px;
-    font-size: var(--app-text-sm);
-  }
-
-  pre {
-    min-height: 260px;
-    max-height: 62vh;
-    margin: 0;
-    border: 1px solid var(--nanke-border);
-    border-radius: 8px;
-    background: var(--nanke-field);
-    color: inherit;
-    overflow: auto;
-    overflow-wrap: anywhere;
-    padding: 12px;
-    white-space: pre-wrap;
-    font-size: var(--app-text-xs);
-  }
-
-  @media (max-width: 860px) {
-    .workspace {
-      grid-template-columns: 56px minmax(0, 1fr);
-    }
-
-    .rail {
-    border-right: 1px solid var(--nanke-border-soft);
-    box-shadow: inset -1px 0 0 rgba(255,255,255,0.02);
-      padding: 10px 8px;
-    }
-
-    .brand,
-    .icon-button,
-    .tool-button {
-      width: 40px;
-      height: 40px;
-    }
-
-    .chatbar {
-    backdrop-filter: blur(20px) saturate(180%);
-    background: var(--nanke-surface-acrylic);
-      grid-template-columns: minmax(0, 1fr);
-      align-items: stretch;
-    }
-
-    .conversation-title-card {
-    box-shadow: var(--nanke-shadow-field);
-    backdrop-filter: blur(20px) saturate(180%);
-      max-width: 100%;
-    }
-
-    .context-strip {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .context-chip.profile,
-    .status-pill {
-      grid-column: auto;
-    }
-
-    .toolbar {
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-
-    .messages {
-      padding: 18px 12px 104px;
-    }
-
-    .composer {
-      padding: 10px;
-    }
-
-    .composer-dock {
-      border-radius: 10px;
-      gap: 6px;
-      padding: 6px;
-    }
-
-    .composer-menu {
-      width: min(210px, calc(100vw - 84px));
-    }
-
-    .stage.tree-open {
-      grid-template-columns: 1fr;
-      grid-template-rows: auto minmax(0, 1fr) minmax(42vh, 52vh);
-    }
-
-    .stage.tree-open :global(.tree-dock),
-    .stage.tree-open .tree-dock-loading {
-      grid-column: 1;
-      grid-row: 3;
-      border-top: 1px solid var(--nanke-border);
-      border-left: 0;
-    }
-
-    .scrim {
-      left: 56px;
-    }
-
-    .drawer {
-      left: 56px;
-      width: calc(100vw - 56px);
-    }
-
-    .drawer.profiles {
-      width: calc(100vw - 56px);
-    }
-
-    .drawer.characters {
-      width: calc(100vw - 56px);
-    }
-
-    .drawer.worldbooks {
-      width: calc(100vw - 56px);
-    }
-
-    .drawer.right {
-      width: calc(100vw - 56px);
-    }
-
-    .character-workspace {
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: auto minmax(0, 1fr);
-      overflow: auto;
-    }
-
-    .character-library {
-      border-right: 0;
-      border-bottom: 1px solid var(--nanke-border);
-    }
-
-    .character-list {
-      grid-auto-flow: column;
-      grid-auto-columns: minmax(230px, 1fr);
-      overflow-x: auto;
-      overflow-y: hidden;
-      padding-bottom: 2px;
-    }
-
-    .character-editor-hero {
-      grid-template-columns: auto minmax(0, 1fr);
-    }
-
-    .character-actions {
-      grid-column: 1 / -1;
-      justify-content: flex-end;
-    }
-
-    .character-field-grid {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .character-tabs {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .worldbook-workspace,
-    .worldbook-editor-grid {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .worldbook-workspace {
-      grid-template-rows: auto minmax(0, 1fr);
-      overflow: auto;
-    }
-
-    .worldbook-library {
-      border-right: 0;
-      border-bottom: 1px solid var(--nanke-border);
-    }
-
-    .worldbook-list {
-      grid-auto-flow: column;
-      grid-auto-columns: minmax(190px, 1fr);
-      overflow-x: auto;
-      overflow-y: hidden;
-      padding-bottom: 2px;
-    }
-
-    .worldbook-entry-list,
-    .worldbook-entry-editor {
-      max-height: none;
-    }
-
-    .worldbook-title-row,
-    .worldbook-entry-editor-head {
-      align-items: stretch;
-      flex-direction: column;
-    }
-
-    .worldbook-entry-fields,
-    .worldbook-toggle-grid {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .avatar-viewer {
-      width: min(70vw, 360px);
-      min-width: min(240px, calc(100vw - 72px));
-    }
-
-    .avatar-viewer-image img {
-      max-height: min(68vh, 560px);
-    }
-
-    .avatar-viewer-controls {
-      gap: 6px;
-    }
-
-    .avatar-viewer-drag {
-      max-width: 44%;
-      padding-inline: 8px;
-    }
-
-    .avatar-viewer-tools {
-      gap: 4px;
-    }
-
-    .avatar-viewer-scale {
-      min-width: 40px;
-      padding-inline: 6px;
-    }
-  }
-</style>

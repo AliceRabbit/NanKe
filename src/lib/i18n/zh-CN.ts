@@ -13,6 +13,7 @@ export const zhCN = {
   'nav.theme': '切换主题',
   'nav.settings': '设置',
   'nav.inspector': '提示词检查器',
+  'nav.more': '更多',
 
   'drawer.chats': '聊天记录',
   'drawer.characters': '角色',
@@ -87,6 +88,9 @@ export const zhCN = {
   'status.generationError': '生成错误',
   'status.exportFailed': '导出失败',
 
+  'toast.region': '操作通知',
+  'toast.dismiss': '关闭通知',
+
   'role.assistant': '助手',
   'role.user': '用户',
   'role.system': '系统',
@@ -107,6 +111,9 @@ export const zhCN = {
   'chat.archived': '已归档',
   'chat.rename': '重命名聊天',
   'chat.renamePrompt': '重命名聊天',
+  'chat.renameDescription': '修改聊天标题，便于稍后查找和整理。',
+  'chat.renameField': '聊天标题',
+  'chat.renameFailed': '聊天重命名失败。',
   'chat.deleteConfirm': '删除“{title}”？此操作无法撤销。',
   'chat.search': '搜索聊天',
   'chat.groupCount': '{count} 条聊天',
@@ -310,6 +317,8 @@ export const zhCN = {
   'persona.noActiveConversation': '没有可锁定的当前聊天',
   'persona.selectOrCreate': '选择或创建一个用户设定',
   'persona.deleteConfirm': '确定删除“{name}”？关联的角色绑定和聊天锁定会被清理，历史消息快照不会被改写。',
+  'persona.deleteTitle': '删除用户设定',
+  'persona.deleteFailed': '用户设定删除失败。',
   'persona.deleteResult': '已删除用户设定，清理 {bindings} 个角色绑定，解除 {conversations} 条聊天锁定',
   'persona.tokenEstimate': '约 {count} Token',
 

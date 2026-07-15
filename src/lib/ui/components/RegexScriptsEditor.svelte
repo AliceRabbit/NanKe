@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { Pencil, Plus, Trash2 } from '@lucide/svelte';
+  import Pencil from '@lucide/svelte/icons/pencil';
+
+  import Plus from '@lucide/svelte/icons/plus';
+
+  import Trash2 from '@lucide/svelte/icons/trash-2';
   import { t } from '$lib/i18n';
   import type { RegexPlacement, RegexScript } from '$lib/schemas/regex';
 

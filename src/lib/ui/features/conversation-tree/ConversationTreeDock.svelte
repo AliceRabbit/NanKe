@@ -1,6 +1,16 @@
 <script lang="ts">
   import { t } from '$lib/i18n';
-  import { GitBranch, LocateFixed, MessageSquare, RefreshCw, Trash2, X } from '@lucide/svelte';
+  import GitBranch from '@lucide/svelte/icons/git-branch';
+
+  import LocateFixed from '@lucide/svelte/icons/locate-fixed';
+
+  import MessageSquare from '@lucide/svelte/icons/message-square';
+
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+
+  import Trash2 from '@lucide/svelte/icons/trash-2';
+
+  import X from '@lucide/svelte/icons/x';
   import {
     Background,
     BackgroundVariant,

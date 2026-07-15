@@ -301,11 +301,10 @@ function providerFromOpenAiPreset(preset: RecordValue, report?: ReturnType<typeo
       model: model ?? 'gemini-2.5-pro',
       ...(source === 'vertexai'
         ? {
-            vertex: {
-              mode: vertexAuthMode === 'oauth' && projectId ? 'oauth' : 'express',
-              ...(projectId ? { projectId } : {}),
-              location
-            }
+            vertex:
+              vertexAuthMode === 'oauth' && projectId
+                ? { mode: 'oauth' as const, projectId, location }
+                : { mode: 'express' as const }
           }
         : {})
     };

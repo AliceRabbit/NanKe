@@ -299,6 +299,10 @@
   gap: 10px;
 }
 
+.profile-workspace .provider-config.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .profile-workspace .model-picker {
   position: relative;
   display: grid;

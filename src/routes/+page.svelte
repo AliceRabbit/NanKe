@@ -482,7 +482,6 @@
   let profileDraftVertexProjectId = '';
   let profileDraftVertexLocation = '';
   let profileDraftVertexApiKey = '';
-  let profileDraftVertexAccessToken = '';
   let profileDraftTemperature = '';
   let profileDraftTopP = '';
   let profileDraftTopK = '';
@@ -1938,7 +1937,6 @@
       profileDraftVertexProjectId = '';
       profileDraftVertexLocation = '';
       profileDraftVertexApiKey = '';
-      profileDraftVertexAccessToken = '';
       profileDraftTemperature = '';
       profileDraftTopP = '';
       profileDraftTopK = '';
@@ -1974,15 +1972,15 @@
     profileDraftName = profile.name;
     profileDraftProviderType = profile.provider.type;
     profileDraftProviderModel = profile.provider.model;
-    profileDraftProviderEndpoint = profile.provider.endpoint ?? '';
+    profileDraftProviderEndpoint = profile.provider.type === 'openai-compatible' ? (profile.provider.endpoint ?? '') : '';
     profileDraftApiKey = profile.provider.apiKey ?? '';
     profileDraftOpenAICompatibility = profile.provider.type === 'openai-compatible' ? (profile.provider.compatibility ?? 'strict-openai') : 'strict-openai';
-    profileDraftVertexEnabled = profile.provider.type === 'gemini' && Boolean(profile.provider.vertex);
-    profileDraftVertexMode = profile.provider.type === 'gemini' ? (profile.provider.vertex?.mode ?? 'express') : 'express';
-    profileDraftVertexProjectId = profile.provider.type === 'gemini' ? (profile.provider.vertex?.projectId ?? '') : '';
-    profileDraftVertexLocation = profile.provider.type === 'gemini' ? (profile.provider.vertex?.location ?? 'us-central1') : 'us-central1';
-    profileDraftVertexApiKey = profile.provider.type === 'gemini' ? (profile.provider.vertex?.apiKey ?? '') : '';
-    profileDraftVertexAccessToken = profile.provider.type === 'gemini' ? (profile.provider.vertex?.accessToken ?? '') : '';
+    const vertex = profile.provider.type === 'gemini' ? profile.provider.vertex : undefined;
+    profileDraftVertexEnabled = Boolean(vertex);
+    profileDraftVertexMode = vertex?.mode ?? 'express';
+    profileDraftVertexProjectId = vertex?.mode === 'oauth' ? vertex.projectId : '';
+    profileDraftVertexLocation = vertex?.mode === 'oauth' ? vertex.location : 'us-central1';
+    profileDraftVertexApiKey = vertex?.mode === 'express' ? (vertex.apiKey ?? '') : '';
     profileDraftTemperature = numberToDraft(sampler.temperature);
     profileDraftTopP = numberToDraft(sampler.topP);
     profileDraftTopK = numberToDraft(sampler.topK);
@@ -2063,19 +2061,21 @@
     if (profileDraftProviderType === 'gemini') {
       const vertexLocation = profileDraftVertexLocation.trim() || 'us-central1';
       const vertex =
-        profileDraftVertexEnabled
-          ? {
-              mode: profileDraftVertexMode,
-              location: vertexLocation,
-              ...(profileDraftVertexProjectId.trim() ? { projectId: profileDraftVertexProjectId.trim() } : {}),
-              ...(profileDraftVertexMode === 'express' && profileDraftVertexApiKey.trim() ? { apiKey: profileDraftVertexApiKey.trim() } : {}),
-              ...(profileDraftVertexMode === 'oauth' && profileDraftVertexAccessToken.trim() ? { accessToken: profileDraftVertexAccessToken.trim() } : {})
-            }
-          : undefined;
+        !profileDraftVertexEnabled
+          ? undefined
+          : profileDraftVertexMode === 'express'
+            ? {
+                mode: 'express' as const,
+                ...(profileDraftVertexApiKey.trim() ? { apiKey: profileDraftVertexApiKey.trim() } : {})
+              }
+            : {
+                mode: 'oauth' as const,
+                projectId: profileDraftVertexProjectId.trim(),
+                location: vertexLocation
+              };
       return {
         type: 'gemini',
         model: model || 'gemini-2.5-pro',
-        ...(endpoint ? { endpoint } : {}),
         ...(apiKey ? { apiKey } : {}),
         ...(vertex ? { vertex } : {})
       };
@@ -2122,7 +2122,6 @@
     profileDraftVertexProjectId = '';
     profileDraftVertexLocation = '';
     profileDraftVertexApiKey = '';
-    profileDraftVertexAccessToken = '';
   }
 
   function normalizedPromptSlot(slot: PromptSlot): PromptSlot {
@@ -4600,7 +4599,6 @@
             bind:profileDraftVertexProjectId
             bind:profileDraftVertexLocation
             bind:profileDraftVertexApiKey
-            bind:profileDraftVertexAccessToken
             bind:profileDraftTemperature
             bind:profileDraftTopP
             bind:profileDraftTopK

@@ -70,7 +70,6 @@
   export let profileDraftVertexProjectId = '';
   export let profileDraftVertexLocation = '';
   export let profileDraftVertexApiKey = '';
-  export let profileDraftVertexAccessToken = '';
   export let profileDraftTemperature = '';
   export let profileDraftTopP = '';
   export let profileDraftTopK = '';
@@ -335,7 +334,7 @@
           </button>
         </div>
 
-        <div class="provider-config">
+        <div class="provider-config" class:single={profileDraftProviderType === 'gemini'}>
           <div class="model-picker">
             <span>{t('profile.model')}</span>
             <button class="model-picker-trigger" type="button" on:click={() => (modelPickerOpen = !modelPickerOpen)} aria-label={t('profile.model')} aria-expanded={modelPickerOpen}>
@@ -367,11 +366,9 @@
               </div>
             {/if}
           </div>
-          <TextField
-            label={t('profile.endpoint')}
-            bind:value={profileDraftProviderEndpoint}
-            placeholder={profileDraftProviderType === 'gemini' ? t('profile.optionalStreamUrl') : 'https://api.openai.com/v1'}
-          />
+          {#if profileDraftProviderType === 'openai-compatible'}
+            <TextField label={t('profile.endpoint')} bind:value={profileDraftProviderEndpoint} placeholder="https://api.openai.com/v1" />
+          {/if}
         </div>
 
         {#if profileDraftProviderType === 'gemini'}
@@ -382,13 +379,13 @@
             {#if profileDraftVertexEnabled}
               <div class="mini-segment vertex-mode-selector" aria-label={t('profile.vertexMode')}>
                 <button class:active={profileDraftVertexMode === 'express'} type="button" on:click={() => (profileDraftVertexMode = 'express')}>Express</button>
-                <button class:active={profileDraftVertexMode === 'oauth'} type="button" on:click={() => (profileDraftVertexMode = 'oauth')}>OAuth</button>
+                <button class:active={profileDraftVertexMode === 'oauth'} type="button" on:click={() => (profileDraftVertexMode = 'oauth')}>ADC</button>
               </div>
             {/if}
           </div>
-          {#if profileDraftVertexEnabled}
+          {#if profileDraftVertexEnabled && profileDraftVertexMode === 'oauth'}
             <div class="provider-config">
-              <TextField label={profileDraftVertexMode === 'oauth' ? t('profile.project') : t('profile.projectOptional')} bind:value={profileDraftVertexProjectId} placeholder="project-id" />
+              <TextField label={t('profile.project')} bind:value={profileDraftVertexProjectId} placeholder="project-id" />
               <TextField label={t('profile.location')} bind:value={profileDraftVertexLocation} placeholder="us-central1" />
             </div>
           {/if}
@@ -428,15 +425,13 @@
           <div class="credential-panel">
             <div class="credential-panel-head">
               <strong>{profileDraftVertexMode === 'express' ? t('profile.vertexExpress') : t('profile.vertexOAuth')}</strong>
-              <span>{profileDraftVertexMode === 'express' ? t('profile.expressApiKey') : t('profile.cloudAccessToken')}</span>
+              <span>{profileDraftVertexMode === 'express' ? t('profile.expressApiKey') : t('profile.applicationDefaultCredentials')}</span>
             </div>
-            <div class="credential-grid single">
-              {#if profileDraftVertexMode === 'express'}
+            {#if profileDraftVertexMode === 'express'}
+              <div class="credential-grid single">
                 <SecretField label={t('profile.apiKey')} bind:value={profileDraftVertexApiKey} autocomplete="off" placeholder="AIza..." />
-              {:else}
-                <SecretField label={t('profile.accessToken')} bind:value={profileDraftVertexAccessToken} autocomplete="off" placeholder="ya29..." />
-              {/if}
-            </div>
+              </div>
+            {/if}
           </div>
         {/if}
       </section>

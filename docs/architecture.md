@@ -7,7 +7,7 @@ NanKe is a SvelteKit modular monolith. The project stays in one deployable app, 
 - `routes` owns Svelte pages and HTTP endpoints. API routes should stay thin and delegate real work to server services.
 - `server/services` owns application orchestration: generation, imports, persona resolution, and repository wiring.
 - `core` owns pure tavern behavior: prompt compilation, world book activation, context budgeting, prompt inspection, and regex execution. It should not know about HTTP, SQLite, Svelte, or provider-specific protocols.
-- `providers` owns model protocol adapters. OpenAI-compatible and Gemini/Vertex profiles are converted into a common `ProviderRequest`, then streamed back as normalized text, thinking, error, and done chunks.
+- `providers` owns model protocol adapters. OpenAI-compatible and Gemini/Vertex profiles are converted into a common `ProviderRequest`, then streamed back as normalized text, thinking, error, and done chunks. Gemini and Vertex transport and authentication use the official `@google/genai` SDK.
 - `compat` owns legacy asset import. SillyTavern data is treated as an external format, converted into NanKe schemas, preserved in `legacy.raw`, and reported through `CompatReport`.
 - `storage` owns SQLite persistence, repositories, native conversation snapshots, and filesystem assets.
 - `schemas` owns runtime contracts shared across UI, server, storage, providers, and tests.

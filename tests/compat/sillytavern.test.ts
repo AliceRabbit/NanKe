@@ -189,10 +189,6 @@ describe('SillyTavern compat importers', () => {
     expect(kind).toBe('openai');
     expect(profile.provider.type).toBe('gemini');
     if (profile.provider.type !== 'gemini') throw new Error('Expected Gemini profile');
-    expect(profile.provider.vertex).toEqual({
-      mode: 'express',
-      projectId: 'optional-project',
-      location: 'global'
-    });
+    expect(profile.provider.vertex).toEqual({ mode: 'express' });
   });
 });
